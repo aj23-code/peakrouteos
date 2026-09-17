@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PeakRoute OS - Initial Setup</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --border-color: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-green: #10b981;
+            --accent-green-hover: #059669;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .setup-container {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 32px;
+            width: 100%;
+            max-width: 520px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        .header h1 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 6px;
+        }
+
+        .header p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        fieldset {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 18px;
+            margin-bottom: 20px;
+        }
+
+        legend {
+            color: var(--accent-green);
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 0 8px;
+        }
+
+        .field-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+
+        .field-group:last-child {
+            margin-bottom: 0;
+        }
+
+        label {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        input[type="text"],
+        input[type="password"],
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-main);
+            font-size: 0.95rem;
+            outline: none;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        select:focus {
+            border-color: var(--accent-green);
+        }
+
+        .checkbox-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background-color: var(--bg-color);
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: opacity 0.2s ease, background-color 0.2s ease;
+        }
+
+        .checkbox-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent-green);
+            cursor: pointer;
+        }
+
+        .checkbox-item label {
+            color: var(--text-main);
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        /* Styling for greyed-out / disabled state */
+        .checkbox-item.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            background-color: #161e2e;
+        }
+
+        .checkbox-item.disabled input,
+        .checkbox-item.disabled label {
+            cursor: not-allowed;
+        }
+
+        .btn-submit {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--accent-green);
+            color: #000;
+            font-weight: 700;
+            font-size: 1rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .btn-submit:hover {
+            background-color: var(--accent-green-hover);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="setup-container">
+        <div class="header">
+            <h1>PeakRoute OS</h1>
+            <p>Initial Edge Router Configuration</p>
+        </div>
+
+        <form action="/api/v1/setup/apply" method="POST">
+
+            <!-- WAN Fieldset -->
+            <fieldset>
+                <legend>WAN Configuration</legend>
+                <div class="field-group">
+                    <label for="wan">WAN Interface:</label>
+                    <select name="wan" id="wan" required onchange="syncInterfaceSelections()">
+                        {{range $i, $iface := .AvailableIfaces}}
+                            <option value="{{$iface.Name}}">{{$iface.Name}} ({{$iface.MAC}})</option>
+                        {{end}}
+                    </select>
+                </div>
+            </fieldset>
+
+            <!-- LAN Fieldset -->
+            <fieldset>
+                <legend>LAN Configuration</legend>
+                <div class="field-group">
+                    <label for="lan_ip">LAN Gateway IP / Subnet:</label>
+                    <input type="text" id="lan_ip" name="lan_ip" value="{{.DefaultLanIP}}" required />
+                </div>
+
+                <div class="field-group" style="margin-top: 12px;">
+                    <label>Select LAN Interfaces (Bridge br0):</label>
+                    <div class="checkbox-list">
+                        {{range $i, $iface := .AvailableIfaces}}
+                            <div class="checkbox-item" id="container_lan_{{$iface.Name}}">
+                                <input type="checkbox" id="lan_{{$iface.Name}}" name="lan_ifaces" value="{{$iface.Name}}" {{if ne $i 0}}checked{{end}}>
+                                <label for="lan_{{$iface.Name}}">{{$iface.Name}} ({{$iface.MAC}})</label>
+                            </div>
+                        {{end}}
+                    </div>
+                </div>
+            </fieldset>
+
+        <!-- Security Fieldset -->
+        <fieldset>
+            <legend>Security</legend>
+            <div class="field-group">
+                <label for="username">Admin Username:</label>
+                <input type="text" id="username" name="username" value="admin" required />
+            </div>
+            <div class="field-group" style="margin-top: 12px;">
+                <label for="password">Admin Password:</label>
+                <input type="password" id="password" name="password" placeholder="Min 8 characters" required />
+            </div>
+        </fieldset>
+
+            <button type="submit" class="btn-submit">Apply & Start PeakRoute OS</button>
+        </form>
+    </div>
+
+    <script>
+        function syncInterfaceSelections() {
+            const wanSelect = document.getElementById('wan');
+            const selectedWan = wanSelect.value;
+            const checkboxes = document.querySelectorAll('input[name="lan_ifaces"]');
+
+            checkboxes.forEach(cb => {
+                const container = document.getElementById('container_' + cb.id);
+                if (cb.value === selectedWan) {
+                    cb.checked = false;
+                    cb.disabled = true;
+                    if (container) container.classList.add('disabled');
+                } else {
+                    cb.disabled = false;
+                    if (container) container.classList.remove('disabled');
+                }
+            });
+        }
+
+        // Run on initial page load to sync initial state
+        document.addEventListener('DOMContentLoaded', syncInterfaceSelections);
+    </script>
+</body>
+</html>
