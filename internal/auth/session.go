@@ -78,20 +78,24 @@ func (sm *SessionManager) ValidateSession(r *http.Request) (string, bool) {
 	return session.Username, true
 }
 
+// DestroySession invalidates the active session in memory and clears the client cookie.
 func (sm *SessionManager) DestroySession(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("peakroute_session")
+	cookie, err := r.Cookie("session_token")
 	if err == nil {
 		sm.mu.Lock()
-		delete(sm.sessions, cookie.Value)
+		delete(sm.sessions, cookie.Value) // Remove from in-memory session store
 		sm.mu.Unlock()
 	}
 
+	// Overwrite the client cookie with an expired MaxAge to purge it from the browser
 	http.SetCookie(w, &http.Cookie{
-		Name:     "peakroute_session",
+		Name:     "session_token",
 		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 		       HttpOnly: true,
-		       Path:     "/",
+		       Secure:   true,
 		       SameSite: http.SameSiteStrictMode,
 	})
 }

@@ -5,13 +5,16 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"time"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 
+	"peakroute/internal/auth"
+	"peakroute/internal/cert"
 	"peakroute/internal/config"
 	"peakroute/internal/network"
-	"peakroute/internal/auth"
 )
 
 //go:embed web/templates/* web/static/*
@@ -24,61 +27,84 @@ var (
 	flagPath   string
 	ifacePath  string
 	listenPort string
-	tmpl     *template.Template
+	tmpl       *template.Template
 )
 
-func init() {
+func initAppConfig() {
 	flag.BoolVar(&devMode, "dev", false, "Run in local development mode")
-	flag.StringVar(&listenPort, "port", "", "Port to listen on (defaults: 8080 for dev, 80 for prod)")
+	flag.StringVar(&listenPort, "port", "", "Port to listen on (defaults: 8443 for dev, 443/8443 for prod)")
 	flag.Parse()
+
+	if listenPort != "" && listenPort[0] != ':' {
+		listenPort = ":" + listenPort
+	}
 
 	if devMode {
 		configDir = "."
 		configPath = "./config.json"
 		flagPath = "./configured"
 		ifacePath = "./interfaces.generated"
+		cert.EnableDevPaths("./certs")
+
 		if listenPort == "" {
-			listenPort = ":8080"
+			listenPort = ":8443"
 		}
-		fmt.Println("[+] Running in DEVELOPMENT mode")
+		fmt.Println("[+] Running in DEVELOPMENT mode (HTTPS)")
 	} else {
 		configDir = "/etc/peakroute"
 		configPath = "/etc/peakroute/config.json"
 		flagPath = "/etc/peakroute/configured"
 		ifacePath = "/etc/network/interfaces"
+
 		if listenPort == "" {
-			listenPort = ":80"
+			listenPort = ":8443"
 		}
-		fmt.Println("[+] Running in PRODUCTION (Alpine) mode")
+		fmt.Println("[+] Running in PRODUCTION (Alpine) mode (HTTPS)")
 	}
 }
 
 var sessionMgr = auth.NewSessionManager()
 
-func main() {
-	var err error
+var loginLimiter = auth.NewRateLimiter(5, 2*time.Minute)
 
-	tmpl, err = template.ParseFS(embeddedFiles, "web/templates/*")
-	if err != nil {
-		fmt.Printf("[-] Failed to parse embedded templates: %v\n", err)
-		os.Exit(1)
+func main() {
+	initAppConfig()
+
+	//  Bootstrapping self-signed TLS cert if missing
+	if err := cert.EnsureTLSCert(); err != nil {
+		log.Fatalf("[-] TLS initialization error: %v", err)
 	}
 
+	//  Parse embedded HTML templates
+	var err error
+	tmpl, err = template.ParseFS(embeddedFiles, "web/templates/*")
+	if err != nil {
+		log.Fatalf("[-] Failed to parse embedded templates: %v", err)
+	}
+
+	mux := http.NewServeMux()
+
+	// Mount static embedded files (CSS/JS) on /static/
+	fs := http.FileServer(http.FS(embeddedFiles))
+	mux.Handle("/static/", fs)
+
+	// Register API endpoints
+	mux.HandleFunc("/api/v1/cert/upload", cert.HandleUploadCert)
 
 	type SetupData struct {
 		AvailableIfaces []network.SystemInterface
 		DefaultLanIP    string
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	//Main application routing logic
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		_, err := os.Stat(flagPath)
 		isConfigured := !os.IsNotExist(err)
 
-		// 1. If unconfigured, restrict routes to first-run setup or apply API
+		// Unconfigured state
 		if !isConfigured {
 			if r.URL.Path == "/first_run" || r.URL.Path == "/first-run" {
 				var ifaces []network.SystemInterface
-				var err error
 
 				if devMode {
 					ifaces = []network.SystemInterface{
@@ -100,39 +126,58 @@ func main() {
 				}
 
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				tmpl.ExecuteTemplate(w, "first_run.html", data)
+				if err := tmpl.ExecuteTemplate(w, "first_run.html", data); err != nil {
+					log.Printf("[-] Template execution error (first_run.html): %v", err)
+				}
 				return
 			}
 
-			// Allow form submission API during setup
 			if r.URL.Path == "/api/v1/setup/apply" && r.Method == http.MethodPost {
 				handleApply(w, r)
 				return
 			}
 
-			// Redirect everything else to first-run when unconfigured
 			http.Redirect(w, r, "/first_run", http.StatusSeeOther)
 			return
 		}
 
-		// 2. Allow public access to login screen when system IS configured
+		// Configured state - Login
 		if r.URL.Path == "/login" {
-			tmpl.ExecuteTemplate(w, "login.html", nil)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			if err := tmpl.ExecuteTemplate(w, "login.html", nil); err != nil {
+				log.Printf("[-] Template execution error (login.html): %v", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
 			return
 		}
+
 		if r.URL.Path == "/api/v1/login" && r.Method == http.MethodPost {
+			clientIP := r.RemoteAddr
+
+			if !loginLimiter.Allow(clientIP) {
+				tmpl.ExecuteTemplate(w, "login.html", map[string]string{
+					"Error": "Too many login requests. Please wait 2 minutes and try again.",
+					})
+				return
+			}
+
 			handleLogin(w, r)
 			return
 		}
 
-		// 3. Auth Check for Dashboard / Protected Routes
+		//Configured Route - Logout
+		if r.URL.Path == "/api/v1/logout" || r.URL.Path == "/logout" {
+			handleLogout(w, r)
+			return
+		}
+
+		// Protected Dashboard
 		_, authenticated := sessionMgr.ValidateSession(r)
 		if !authenticated {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
 
-		// Serve Dashboard if authenticated
 		if r.URL.Path == "/" || r.URL.Path == "/dashboard" {
 			w.Write([]byte("<h1>Welcome to PeakRoute OS Dashboard!</h1>"))
 			return
@@ -141,9 +186,17 @@ func main() {
 		http.NotFound(w, r)
 	})
 
-	fmt.Printf("[+] PeakRoute OS daemon active on %s ...\n", listenPort)
-	if err := http.ListenAndServe(listenPort, nil); err != nil {
-		fmt.Printf("[-] Server error: %v\n", err)
+	secureMux := auth.SecurityHeadersMiddleware(mux)
+
+	// Launch single HTTPS server
+	server := &http.Server{
+		Addr:    listenPort,
+		Handler: secureMux,
+	}
+
+	fmt.Printf("[+] PeakRoute OS daemon active on https://0.0.0.0%s\n", listenPort)
+	if err := server.ListenAndServeTLS(cert.CertPath, cert.KeyPath); err != nil {
+		log.Fatalf("[-] HTTPS server crashed: %v", err)
 	}
 }
 
@@ -155,7 +208,9 @@ func handleApply(w http.ResponseWriter, r *http.Request) {
 
 	username := r.FormValue("username")
 	plainPassword := r.FormValue("password")
-	if username == "" { username = "admin" }
+	if username == "" {
+		username = "admin"
+	}
 
 	hashedPassword, _ := config.HashPassword(plainPassword)
 
@@ -172,7 +227,6 @@ func handleApply(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	// Save configuration and write setup flag
 	os.MkdirAll(configDir, 0700)
 	config.SaveConfig(configPath, cfg)
 
@@ -185,12 +239,15 @@ func handleApply(w http.ResponseWriter, r *http.Request) {
 		exec.Command("lbu", "commit", "-d").Run()
 	}
 
-	// Redirect straight to /login post-setup
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
-	username := r.FormValue("username")
+
+	// Protect against oversized POST payloads (1MB max)
+	auth.LimitPayloadSize(w, r, 1024*1024)
+
+	username := auth.SanitizeString(r.FormValue("username"))
 	password := r.FormValue("password")
 
 	cfg, err := config.LoadConfig(configPath)
@@ -200,6 +257,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var validUser bool
+
 	for _, u := range cfg.Users {
 		if u.Username == username && config.CheckPasswordHash(password, u.PasswordHash) {
 			validUser = true
