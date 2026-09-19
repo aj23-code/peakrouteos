@@ -198,6 +198,11 @@
             <!-- LAN Fieldset -->
             <fieldset>
                 <legend>LAN Configuration</legend>
+                {{if .Error}}
+                    <div style="color: #ff4d4d; background: rgba(255, 77, 77, 0.1); border: 1px solid #ff4d4d; padding: 0.5rem; border-radius: 4px; margin-bottom: 1rem; font-size: 0.9rem;">
+                        {{.Error}}
+                    </div>
+                {{end}}
                 <div class="field-group">
                     <label for="lan_ip">LAN Gateway IP / Subnet:</label>
                     <input type="text" id="lan_ip" name="lan_ip" value="{{.DefaultLanIP}}" required />

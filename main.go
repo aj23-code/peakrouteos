@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"time"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -206,6 +207,29 @@ func handleApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate LAN IP before saving
+	lanIP := r.FormValue("lan_ip")
+	if net.ParseIP(lanIP) == nil {
+		var ifaces []network.SystemInterface
+		if devMode {
+			ifaces = []network.SystemInterface{
+				{Name: "eth0", MAC: "00:11:22:33:44:55"},
+				{Name: "eth1", MAC: "00:11:22:33:44:56"},
+				{Name: "eth2", MAC: "00:11:22:33:44:57"},
+				{Name: "eth3", MAC: "00:11:22:33:44:58"},
+			}
+		} else {
+			ifaces, _ = network.GetPhysicalInterfaces()
+		}
+
+		tmpl.ExecuteTemplate(w, "first_run.html", map[string]any{
+			"AvailableIfaces": ifaces,
+			"DefaultLanIP":    lanIP,
+			"Error":           "Invalid IP address format. Please enter a valid IPv4 address.",
+		})
+		return
+	}
+
 	username := r.FormValue("username")
 	plainPassword := r.FormValue("password")
 	if username == "" {
@@ -235,8 +259,15 @@ func handleApply(w http.ResponseWriter, r *http.Request) {
 	os.WriteFile(flagPath, []byte("1"), 0644)
 
 	if !devMode {
-		exec.Command("rc-service", "networking", "restart").Run()
-		exec.Command("lbu", "commit", "-d").Run()
+		// Apply network changes to the live system
+		if err := exec.Command("rc-service", "networking", "restart").Run(); err != nil {
+			log.Printf("[-] Failed to restart networking service: %v\n", err)
+		}
+
+		// Persist changes to Alpine overlay media via persistence package
+		if err := cert.CommitToAlpineLBU(); err != nil {
+			log.Printf("[-] Failed to execute LBU commit: %v\n", err)
+		}
 	}
 
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
