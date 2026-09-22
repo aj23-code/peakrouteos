@@ -5,17 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"time"
 	"log"
-	"net"
 	"net/http"
 	"os"
-	"os/exec"
+	"time"
 
 	"peakroute/internal/auth"
 	"peakroute/internal/cert"
 	"peakroute/internal/config"
-	"peakroute/internal/network"
 )
 
 //go:embed web/templates/* web/static/*
@@ -26,7 +23,6 @@ var (
 	configDir  string
 	configPath string
 	flagPath   string
-	ifacePath  string
 	listenPort string
 	tmpl       *template.Template
 )
@@ -44,7 +40,6 @@ func initAppConfig() {
 		configDir = "."
 		configPath = "./config.json"
 		flagPath = "./configured"
-		ifacePath = "./interfaces.generated"
 		cert.EnableDevPaths("./certs")
 
 		if listenPort == "" {
@@ -55,12 +50,11 @@ func initAppConfig() {
 		configDir = "/etc/peakroute"
 		configPath = "/etc/peakroute/config.json"
 		flagPath = "/etc/peakroute/configured"
-		ifacePath = "/etc/network/interfaces"
 
 		if listenPort == "" {
 			listenPort = ":8443"
 		}
-		fmt.Println("[+] Running in PRODUCTION (Alpine) mode (HTTPS)")
+		fmt.Println("[+] Running in PRODUCTION mode (HTTPS)")
 	}
 }
 
@@ -71,12 +65,12 @@ var loginLimiter = auth.NewRateLimiter(5, 2*time.Minute)
 func main() {
 	initAppConfig()
 
-	//  Bootstrapping self-signed TLS cert if missing
+	// Bootstrapping self-signed TLS cert if missing
 	if err := cert.EnsureTLSCert(); err != nil {
 		log.Fatalf("[-] TLS initialization error: %v", err)
 	}
 
-	//  Parse embedded HTML templates
+	// Parse embedded HTML templates
 	var err error
 	tmpl, err = template.ParseFS(embeddedFiles, "web/templates/*")
 	if err != nil {
@@ -92,12 +86,7 @@ func main() {
 	// Register API endpoints
 	mux.HandleFunc("/api/v1/cert/upload", cert.HandleUploadCert)
 
-	type SetupData struct {
-		AvailableIfaces []network.SystemInterface
-		DefaultLanIP    string
-	}
-
-	//Main application routing logic
+	// Main application routing logic
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		_, err := os.Stat(flagPath)
 		isConfigured := !os.IsNotExist(err)
@@ -105,29 +94,8 @@ func main() {
 		// Unconfigured state
 		if !isConfigured {
 			if r.URL.Path == "/first_run" || r.URL.Path == "/first-run" {
-				var ifaces []network.SystemInterface
-
-				if devMode {
-					ifaces = []network.SystemInterface{
-						{Name: "eth0", MAC: "00:11:22:33:44:55"},
-						{Name: "eth1", MAC: "00:11:22:33:44:56"},
-						{Name: "eth2", MAC: "00:11:22:33:44:57"},
-						{Name: "eth3", MAC: "00:11:22:33:44:58"},
-					}
-				} else {
-					ifaces, err = network.GetPhysicalInterfaces()
-					if err != nil {
-						fmt.Printf("[-] Failed to detect network interfaces: %v\n", err)
-					}
-				}
-
-				data := SetupData{
-					AvailableIfaces: ifaces,
-					DefaultLanIP:    "192.168.1.1/24",
-				}
-
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				if err := tmpl.ExecuteTemplate(w, "first_run.html", data); err != nil {
+				if err := tmpl.ExecuteTemplate(w, "first_run.html", nil); err != nil {
 					log.Printf("[-] Template execution error (first_run.html): %v", err)
 				}
 				return
@@ -158,7 +126,7 @@ func main() {
 			if !loginLimiter.Allow(clientIP) {
 				tmpl.ExecuteTemplate(w, "login.html", map[string]string{
 					"Error": "Too many login requests. Please wait 2 minutes and try again.",
-					})
+				})
 				return
 			}
 
@@ -166,7 +134,7 @@ func main() {
 			return
 		}
 
-		//Configured Route - Logout
+		// Configured Route - Logout
 		if r.URL.Path == "/api/v1/logout" || r.URL.Path == "/logout" {
 			handleLogout(w, r)
 			return
@@ -201,80 +169,61 @@ func main() {
 	}
 }
 
+
 func handleApply(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		return
 	}
 
-	// Validate LAN IP before saving
-	lanIP := r.FormValue("lan_ip")
-	if net.ParseIP(lanIP) == nil {
-		var ifaces []network.SystemInterface
-		if devMode {
-			ifaces = []network.SystemInterface{
-				{Name: "eth0", MAC: "00:11:22:33:44:55"},
-				{Name: "eth1", MAC: "00:11:22:33:44:56"},
-				{Name: "eth2", MAC: "00:11:22:33:44:57"},
-				{Name: "eth3", MAC: "00:11:22:33:44:58"},
-			}
-		} else {
-			ifaces, _ = network.GetPhysicalInterfaces()
-		}
-
-		tmpl.ExecuteTemplate(w, "first_run.html", map[string]any{
-			"AvailableIfaces": ifaces,
-			"DefaultLanIP":    lanIP,
-			"Error":           "Invalid IP address format. Please enter a valid IPv4 address.",
-		})
-		return
-	}
-
 	username := r.FormValue("username")
 	plainPassword := r.FormValue("password")
+
 	if username == "" {
 		username = "admin"
 	}
 
-	hashedPassword, _ := config.HashPassword(plainPassword)
+	hashedPassword, err := config.HashPassword(plainPassword)
+	if err != nil {
+		http.Error(w, "Failed to process password", http.StatusInternalServerError)
+		return
+	}
 
-	cfg := &config.RouterConfig{
-		WanInterface:  r.FormValue("wan"),
-		LanInterfaces: r.Form["lan_ifaces"],
-		LanIP:         r.FormValue("lan_ip"),
-		Users: []config.User{
-			{
-				Username:     username,
-				PasswordHash: hashedPassword,
-				Role:         "admin",
-			},
+	// Load existing configuration seeded by the OS installer
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		// Fallback if config.json wasn't pre-created
+		cfg = &config.RouterConfig{}
+	}
+
+	// Attach the admin user without overwriting wan_interface, lan_interfaces, or lan_ip
+	cfg.Users = []config.User{
+		{
+			Username:     username,
+			PasswordHash: hashedPassword,
+			Role:         "admin",
 		},
 	}
 
-	os.MkdirAll(configDir, 0700)
-	config.SaveConfig(configPath, cfg)
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		log.Printf("[-] Failed to create config directory: %v", err)
+	}
 
-	ifaceContent := network.GenerateInterfaces(cfg)
-	os.WriteFile(ifacePath, []byte(ifaceContent), 0644)
-	os.WriteFile(flagPath, []byte("1"), 0644)
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		log.Printf("[-] Failed to save config: %v", err)
+		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
+		return
+	}
 
-	if !devMode {
-		// Apply network changes to the live system
-		if err := exec.Command("rc-service", "networking", "restart").Run(); err != nil {
-			log.Printf("[-] Failed to restart networking service: %v\n", err)
-		}
-
-		// Persist changes to Alpine overlay media via persistence package
-		if err := cert.CommitToAlpineLBU(); err != nil {
-			log.Printf("[-] Failed to execute LBU commit: %v\n", err)
-		}
+	// Mark application setup complete
+	if err := os.WriteFile(flagPath, []byte("1"), 0644); err != nil {
+		log.Printf("[-] Failed to write configured flag: %v", err)
 	}
 
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
-
 	// Protect against oversized POST payloads (1MB max)
 	auth.LimitPayloadSize(w, r, 1024*1024)
 

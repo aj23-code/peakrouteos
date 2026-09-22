@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"golang.org/x/crypto/bcrypt"
+
 )
 
 type User struct {
@@ -12,11 +13,17 @@ type User struct {
 	Role         string `json:"role"`
 }
 
+type SystemInterface struct {
+	Name string `json:"name"`
+	MAC  string `json:"mac"`
+}
+
 type RouterConfig struct {
-	WanInterface string   `json:"wan_interface"`
-	LanInterfaces []string `json:"lan_interfaces"`
-	LanIP        string   `json:"lan_ip"`
-	Users        []User   `json:"users"`
+	WanInterface  string            `json:"wan_interface,omitempty"`
+	LanInterfaces []string          `json:"lan_interfaces,omitempty"`
+	LanIP         string            `json:"lan_ip,omitempty"`
+	Interfaces    []SystemInterface `json:"interfaces,omitempty"`
+	Users         []User            `json:"users,omitempty"`
 }
 
 func HashPassword(password string) (string, error) {
