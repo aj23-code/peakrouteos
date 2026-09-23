@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Grant socket binding capabilities directly to the binary
+setcap 'cap_net_bind_service=+ep cap_net_admin=+ep' /usr/local/bin/peakroute
+
 FLAG_FILE="/etc/peakroute/.firstboot_done"
 
 # Double-check flag in case script is executed manually
@@ -295,7 +298,7 @@ mkdir -p /etc/peakroute
 touch "$FLAG_FILE"
 
 # Save mode to config file for Go daemon reading
-echo "OPERATING_MODE=$OPER_MODE" > /etc/peakroute/mode.conf
+echo "OPERATING_MODE=$OPER_MODE" > /etc/peakroute/sys.conf
 
 # Clean up temporary first-boot autologin
 rm -rf /etc/systemd/system/getty@tty1.service.d/

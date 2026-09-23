@@ -59,7 +59,7 @@ sudo ${CONTAINER_CLI} run --rm --privileged --net=host \
     debootstrap \
         --arch=amd64 \
         --variant=minbase \
-        --include=linux-image-amd64,systemd-sysv,live-boot,live-config,dosfstools,e2fsprogs,rsync,ifupdown,iproute2,nftables,dnsmasq,dnsmasq-utils,udhcpc,ca-certificates,lsb-release,util-linux,fdisk,grub-efi-amd64,nano,passwd \
+        --include=linux-image-amd64,systemd-sysv,live-boot,live-config,dosfstools,e2fsprogs,rsync,ifupdown,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ca-certificates,lsb-release,util-linux,fdisk,grub-efi-amd64,nano,passwd \
         trixie /target_rootfs http://deb.debian.org/debian/"
 
 echo "[3/5] Configuring rootfs, security, and embedding PeakRoute binary..."

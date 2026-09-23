@@ -19,12 +19,14 @@ import (
 var embeddedFiles embed.FS
 
 var (
-	devMode    bool
-	configDir  string
-	configPath string
-	flagPath   string
-	listenPort string
-	tmpl       *template.Template
+	devMode      bool
+	configDir    string
+	authPath     string
+	networkPath  string
+	sysConfigPath string
+	flagPath     string
+	listenPort   string
+	tmpl         *template.Template
 )
 
 func initAppConfig() {
@@ -38,7 +40,9 @@ func initAppConfig() {
 
 	if devMode {
 		configDir = "."
-		configPath = "./config.json"
+		authPath = "./auth.json"
+		networkPath = "./network.json"
+		sysConfigPath = "./sys.conf"
 		flagPath = "./configured"
 		cert.EnableDevPaths("./certs")
 
@@ -48,11 +52,13 @@ func initAppConfig() {
 		fmt.Println("[+] Running in DEVELOPMENT mode (HTTPS)")
 	} else {
 		configDir = "/etc/peakroute"
-		configPath = "/etc/peakroute/config.json"
+		authPath = "/etc/peakroute/auth.json"
+		networkPath = "/etc/peakroute/network.json"
 		flagPath = "/etc/peakroute/configured"
+		sysConfigPath = "/etc/peakroute/sys.conf"
 
 		if listenPort == "" {
-			listenPort = ":8443"
+			listenPort = ":443"
 		}
 		fmt.Println("[+] Running in PRODUCTION mode (HTTPS)")
 	}
@@ -189,19 +195,14 @@ func handleApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load existing configuration seeded by the OS installer
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		// Fallback if config.json wasn't pre-created
-		cfg = &config.RouterConfig{}
-	}
-
-	// Attach the admin user without overwriting wan_interface, lan_interfaces, or lan_ip
-	cfg.Users = []config.User{
-		{
-			Username:     username,
-			PasswordHash: hashedPassword,
-			Role:         "admin",
+	// Create Auth config object
+	authCfg := &config.AuthConfig{
+		Users: []config.User{
+			{
+				Username:     username,
+				PasswordHash: hashedPassword,
+				Role:         "admin",
+			},
 		},
 	}
 
@@ -209,13 +210,14 @@ func handleApply(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[-] Failed to create config directory: %v", err)
 	}
 
-	if err := config.SaveConfig(configPath, cfg); err != nil {
-		log.Printf("[-] Failed to save config: %v", err)
-		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
+	// Save to auth.json
+	if err := config.SaveAuthConfig(authPath, authCfg); err != nil {
+		log.Printf("[-] Failed to save auth config: %v", err)
+		http.Error(w, "Failed to save authentication configuration", http.StatusInternalServerError)
 		return
 	}
 
-	// Mark application setup complete
+	// Mark setup as complete
 	if err := os.WriteFile(flagPath, []byte("1"), 0644); err != nil {
 		log.Printf("[-] Failed to write configured flag: %v", err)
 	}
@@ -224,21 +226,20 @@ func handleApply(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
-	// Protect against oversized POST payloads (1MB max)
 	auth.LimitPayloadSize(w, r, 1024*1024)
 
 	username := auth.SanitizeString(r.FormValue("username"))
 	password := r.FormValue("password")
 
-	cfg, err := config.LoadConfig(configPath)
+	// Load auth.json instead of config.json
+	authCfg, err := config.LoadAuthConfig(authPath)
 	if err != nil {
-		http.Error(w, "Failed to load router configuration", http.StatusInternalServerError)
+		http.Error(w, "Failed to load authentication configuration", http.StatusInternalServerError)
 		return
 	}
 
 	var validUser bool
-
-	for _, u := range cfg.Users {
+	for _, u := range authCfg.Users {
 		if u.Username == username && config.CheckPasswordHash(password, u.PasswordHash) {
 			validUser = true
 			break
