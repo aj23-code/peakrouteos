@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"path/filepath"
 	"os"
 	"time"
 	"io"
@@ -108,6 +109,11 @@ func GenerateSelfSignedCert() error {
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
 	if err != nil {
 		return fmt.Errorf("failed to create certificate: %w", err)
+	}
+
+	certDir := filepath.Dir(CertPath)
+	if err := os.MkdirAll(certDir, 0755); err != nil {
+		return fmt.Errorf("failed to create certificate directory %s: %w", certDir, err)
 	}
 
 	// Save Cert

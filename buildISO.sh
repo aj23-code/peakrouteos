@@ -59,7 +59,7 @@ sudo ${CONTAINER_CLI} run --rm --privileged --net=host \
     debootstrap \
         --arch=amd64 \
         --variant=minbase \
-        --include=linux-image-amd64,systemd-sysv,live-boot,live-config,dosfstools,e2fsprogs,rsync,iproute2,nftables,ca-certificates,lsb-release,util-linux,fdisk,grub-efi-amd64 \
+        --include=linux-image-amd64,systemd-sysv,live-boot,live-config,dosfstools,e2fsprogs,rsync,ifupdown,iproute2,nftables,dnsmasq,dnsmasq-utils,udhcpc,ca-certificates,lsb-release,util-linux,fdisk,grub-efi-amd64,nano,passwd \
         trixie /target_rootfs http://deb.debian.org/debian/"
 
 echo "[3/5] Configuring rootfs, security, and embedding PeakRoute binary..."
@@ -95,10 +95,15 @@ sudo sed -i "s|^root:[^:]*|root:${ROOT_HASH}|" "${ROOTFS_DIR}/etc/shadow"
 sudo cp "${GO_BINARY_PATH}" "${ROOTFS_DIR}/usr/local/bin/peakroute"
 sudo chmod +x "${ROOTFS_DIR}/usr/local/bin/peakroute"
 
+# Copy First-Boot Script
+sudo cp "${PROJECT_DIR}/internal/scripts/first_boot.sh" "${ROOTFS_DIR}/usr/local/bin/first_boot.sh"
+sudo chmod +x "${ROOTFS_DIR}/usr/local/bin/first_boot.sh"
+
 # Create Systemd Service for PeakRoute
 cat << 'EOF' | sudo tee "${ROOTFS_DIR}/etc/systemd/system/peakroute.service" > /dev/null
 [Unit]
 Description=PeakRoute OS Edge Routing Daemon
+ConditionPathExists=!/run/live
 After=network-pre.target
 Before=network.target
 
@@ -113,12 +118,31 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 EOF
 
-# Bind-mount pseudo-filesystems for clean chroot operations
-sudo mount --bind /proc "${ROOTFS_DIR}/proc"
-sudo mount --bind /sys "${ROOTFS_DIR}/sys"
-sudo mount --bind /dev "${ROOTFS_DIR}/dev"
+# Create First-Boot Systemd Service
+cat << 'EOF' | sudo tee "${ROOTFS_DIR}/etc/systemd/system/peakroute-firstboot.service" > /dev/null
+[Unit]
+Description=PeakRoute OS First-Time Setup Wizard
+ConditionPathExists=!/etc/peakroute/.firstboot_done
+ConditionPathExists=!/run/live
+After=local-fs.target network-pre.target
+Before=getty@tty1.service
 
-# Override getty@tty1 to drop straight into a root shell without prompting
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/first_boot.sh
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Create getty@tty1 autologin override for Live ISO environment
 sudo mkdir -p "${ROOTFS_DIR}/etc/systemd/system/getty@tty1.service.d"
 cat << 'EOF' | sudo tee "${ROOTFS_DIR}/etc/systemd/system/getty@tty1.service.d/override.conf" > /dev/null
 [Service]
@@ -126,6 +150,15 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
 Type=idle
 EOF
+
+# Bind-mount pseudo-filesystems for clean chroot operations
+sudo mount --bind /proc "${ROOTFS_DIR}/proc"
+sudo mount --bind /sys "${ROOTFS_DIR}/sys"
+sudo mount --bind /dev "${ROOTFS_DIR}/dev"
+
+# =Clean up temporary first-boot autologin
+rm -rf /etc/systemd/system/getty@tty1.service.d/
+systemctl daemon-reload
 
 # ----------------------------------------------------
 # Add PeakRoute Disk Installer Script
@@ -254,7 +287,16 @@ sudo chmod +x "${ROOTFS_DIR}/usr/local/bin/peakroute-install"
 
 # Enable PeakRoute service and clean APT inside chroot
 sudo chroot "${ROOTFS_DIR}" systemctl enable peakroute.service
+sudo chroot "${ROOTFS_DIR}" systemctl enable peakroute-firstboot.service
 sudo chroot "${ROOTFS_DIR}" apt-get clean || true
+
+# Generate SHA-512 password hash
+ROOT_HASH=$(openssl passwd -6 "peakroute")
+
+# Inject directly into target rootfs shadow file
+sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "${ROOTFS_DIR}/etc/shadow"
+
+
 sudo rm -rf "${ROOTFS_DIR}/var/lib/apt/lists/*" "${ROOTFS_DIR}/tmp/*"
 
 # Unmount pseudo-filesystems cleanly
@@ -286,5 +328,6 @@ EOF
 echo "[5/5] Repacking into bootable hybrid ISO..."
 grub-mkrescue -o "${PROJECT_DIR}/${OUTPUT_ISO}" "${ISO_DIR}"
 
-echo "[+] Successfully built Debian 13 Edge ISO: ${OUTPUT_ISO}"
+echo "[+] Successfully built ISO: ${OUTPUT_ISO}"
 ls -lh "${PROJECT_DIR}/${OUTPUT_ISO}"
+
