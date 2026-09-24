@@ -2,52 +2,32 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PeakRoute OS - Login</title>
-    <style>
-        :root {
-            --bg-color: #0f172a;
-            --card-bg: #1e293b;
-            --border-color: #334155;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --accent-green: #10b981;
-            --accent-green-hover: #059669;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
-        body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .login-card { background-color: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 32px; width: 100%; max-width: 400px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); }
-        .header { text-align: center; margin-bottom: 24px; }
-        .header h1 { font-size: 1.5rem; margin-bottom: 4px; }
-        .header p { color: var(--text-muted); font-size: 0.875rem; }
-        .field-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-        label { font-size: 0.875rem; color: var(--text-muted); }
-        input[type="text"], input[type="password"] { width: 100%; padding: 10px 12px; background-color: var(--bg-color); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); outline: none; }
-        input:focus { border-color: var(--accent-green); }
-        .error-msg { color: #ef4444; font-size: 0.85rem; margin-bottom: 12px; text-align: center; }
-        .btn-submit { width: 100%; padding: 12px; background-color: var(--accent-green); color: #000; font-weight: 700; border: none; border-radius: 6px; cursor: pointer; }
-        .btn-submit:hover { background-color: var(--accent-green-hover); }
-    </style>
+    <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="login-card">
-        <div class="header">
-            <h1>PeakRoute OS</h1>
-            <p>Sign in to manage device</p>
+    <div class="login-wrapper">
+        <div class="login-card">
+            <div class="header">
+                <h1>PeakRoute OS</h1>
+                <p>Sign in to manage device</p>
+            </div>
+            {{if .Error}}
+                <div class="error-msg">{{.Error}}</div>
+            {{end}}
+            <form action="/api/v1/login" method="POST">
+                <div class="field-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required autofocus />
+                </div>
+                <div class="field-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required />
+                </div>
+                <button type="submit" class="btn-submit">Login</button>
+            </form>
         </div>
-        {{if .Error}}
-            <div class="error-msg">{{.Error}}</div>
-        {{end}}
-        <form action="/api/v1/login" method="POST">
-            <div class="field-group">
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" required autofocus />
-            </div>
-            <div class="field-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" required />
-            </div>
-            <button type="submit" class="btn-submit">Login</button>
-        </form>
     </div>
 </body>
 </html>

@@ -7,7 +7,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"log"
 	"math/big"
 	"path/filepath"
 	"os"
@@ -71,11 +70,6 @@ func EnsureTLSCert() error {
 	}
 
 	fmt.Printf("[+] TLS cert valid (expires in %d days)\n", int(timeUntilExpiry.Hours()/24))
-
-	// Commit changes to Alpine LBU overlay if new certs were created
-	if err := CommitToAlpineLBU(); err != nil {
-		log.Printf("[!] Warning: Failed to commit cert to Alpine LBU: %v", err)
-	}
 
 	return nil
 }
@@ -194,11 +188,6 @@ func HandleUploadCert(w http.ResponseWriter, r *http.Request) {
 	if err := os.WriteFile(KeyPath, keyBytes, 0600); err != nil {
 		http.Error(w, "Failed to write private key to disk", http.StatusInternalServerError)
 		return
-	}
-
-	// Commit changes to Alpine LBU overlay if new certs were created
-	if err := CommitToAlpineLBU(); err != nil {
-		log.Printf("[!] Warning: Failed to commit cert to Alpine LBU: %v", err)
 	}
 
 	fmt.Println("[+] Custom TLS certificate successfully uploaded and installed.")

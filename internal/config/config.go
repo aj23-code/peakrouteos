@@ -38,6 +38,16 @@ type SysConfig struct {
 	OperationMode string `json:"operation_mode"` // "ROUTER" or "AP"
 }
 
+// Helper to perform atomic writes via temporary files
+func writeAtomic(filepath string, data []byte, perm os.FileMode) error {
+	tmpPath := filepath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, perm); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, filepath)
+}
+
+
 // Password helpers stay the same...
 func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -55,7 +65,7 @@ func SaveAuthConfig(filepath string, cfg *AuthConfig) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath, data, 0600)
+	return writeAtomic(filepath, data, 0600)
 }
 
 func LoadAuthConfig(filepath string) (*AuthConfig, error) {
@@ -76,7 +86,7 @@ func SaveNetworkConfig(filepath string, cfg *NetworkConfig) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath, data, 0644)
+	return writeAtomic(filepath, data, 0644)
 }
 
 func LoadNetworkConfig(filepath string) (*NetworkConfig, error) {
@@ -126,5 +136,11 @@ func LoadSysConfig(filepath string) (*SysConfig, error) {
 
 func SaveSysConfig(filepath string, cfg *SysConfig) error {
 	content := fmt.Sprintf("OPERATION_MODE=%s\n", cfg.OperationMode)
-	return os.WriteFile(filepath, []byte(content), 0644)
+	return writeAtomic(filepath, []byte(content), 0644)
+}
+
+// Check if initial onboarding has been completed
+func IsConfigured(basePath string) bool {
+	_, err := os.Stat(basePath + "/configured")
+	return !os.IsNotExist(err)
 }

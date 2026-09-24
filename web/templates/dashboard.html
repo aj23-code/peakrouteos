@@ -1,20 +1,178 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>PeakRoute OS - Dashboard</title>
-    <style>
-        body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; padding: 2rem; }
-        header { border-bottom: 1px solid #334155; padding-bottom: 1rem; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PeakRoute — Dashboard</title>
+  <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <header>
-        <h1>PeakRoute OS</h1>
-        <small>Powered by Alpine Linux</small>
-    </header>
-    <main>
-        <h2>System Status: Online</h2>
+  <div class="dashboard-layout">
+
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <div class="brand">
+          <div class="brand-badge">PR</div>
+          <span class="brand-title">PeakRoute OS</span>
+        </div>
+        <nav class="nav-menu">
+          <a href="#" class="nav-item active" data-view="overview">Overview</a>
+          <a href="#" class="nav-item" data-view="network">Network Settings</a>
+          <a href="#" class="nav-item" data-view="dhcp">DHCP & Clients</a>
+          <a href="#" class="nav-item" data-view="firewall">Firewall / Rules</a>
+        </nav>
+      </div>
+      <div class="sidebar-bottom">
+        <span class="mode-indicator">Mode: <strong>{{.SystemMode}}</strong></span>
+        <a href="/logout" class="btn-logout">Logout</a>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+
+      <!-- View: Overview -->
+      <div id="view-overview" class="view-section">
+        <header class="dash-header">
+          <div>
+            <h1>Dashboard Overview</h1>
+            <p class="subtitle">Live router telemetry and active interface tracking</p>
+          </div>
+          <div class="status-badge">
+            <span class="status-dot"></span> System Online
+          </div>
+        </header>
+
+        <!-- Telemetry Metrics Cards -->
+        <section class="metrics-grid">
+          <!-- CPU Usage Card -->
+          <div class="card">
+            <div class="metric-header">
+              <span class="metric-label">CPU Usage</span>
+              <span id="cpu-val" class="metric-value-accent">0.0%</span>
+            </div>
+            <div class="progress-track">
+              <div id="cpu-bar" class="progress-fill fill-blue" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- Memory Usage Card -->
+          <div class="card">
+            <div class="metric-header">
+              <span class="metric-label">Memory Usage</span>
+              <span id="mem-val" class="metric-subtext">0 MB / 0 MB</span>
+            </div>
+            <div class="progress-track">
+              <div id="mem-bar" class="progress-fill fill-green" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- System Uptime Card -->
+          <div class="card card-flex-col">
+            <span class="metric-label">System Uptime</span>
+            <div id="uptime-val" class="metric-value-large">0s</div>
+          </div>
+        </section>
+
+        <!-- Network Interfaces Table -->
+        <section class="card card-nopadding">
+          <div class="card-header">
+            <div class="card-header-group">
+              <h2>Network Interfaces</h2>
+              <span class="card-subtitle">Parsed live from /proc/net/dev</span>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Interface</th>
+                  <th>Received (RX)</th>
+                  <th>Transmitted (TX)</th>
+                </tr>
+              </thead>
+              <tbody id="iface-table-body">
+                <tr>
+                  <td colspan="3" class="table-placeholder">Loading interfaces...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Top Clients by Usage -->
+        <section class="card card-nopadding">
+          <div class="card-header">
+            <div class="card-header-group">
+              <h2>Top Clients by Usage</h2>
+              <span class="card-subtitle">Active LAN leases sorted by total transfer</span>
+            </div>
+            <a href="#" class="view-all-link" onclick="loadView('dhcp')">View All Clients &rarr;</a>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Hostname</th>
+                  <th>IP Address</th>
+                  <th>MAC Address</th>
+                  <th>Total Usage</th>
+                </tr>
+              </thead>
+              <tbody id="top-clients-table-body">
+                <tr>
+                  <td colspan="4" class="table-placeholder">Loading top clients...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- View: DHCP & Clients (Dedicated Subpage) -->
+      <div id="view-dhcp" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>DHCP & Connected Clients</h1>
+            <p class="subtitle">Complete active lease list, static assignments, and host resolution</p>
+          </div>
+        </header>
+
+        <section class="card card-nopadding">
+          <div class="card-header">
+            <div class="card-header-group">
+              <h2>All Active DHCP Leases</h2>
+              <span class="card-subtitle" id="lease-count-badge">Parsing active lease table...</span>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Hostname</th>
+                  <th>IP Address</th>
+                  <th>MAC Address</th>
+                  <th>Lease Expiry</th>
+                  <th>Total Usage</th>
+                </tr>
+              </thead>
+              <tbody id="all-clients-table-body">
+                <tr>
+                  <td colspan="5" class="table-placeholder">Loading client leases...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
     </main>
+  </div>
+
+  <!-- Modular Scripts -->
+  <script src="/static/scripts/app.js"></script>
+  <script src="/static/scripts/telemetry.js"></script>
+  <script src="/static/scripts/leases.js"></script>
 </body>
 </html>

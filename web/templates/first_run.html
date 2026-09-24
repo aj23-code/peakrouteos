@@ -3,118 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PeakRoute OS - Initial Setup</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #0f172a;
-            color: #f8fafc;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-        }
-        .setup-card {
-            background-color: #1e293b;
-            border: 1px solid #334155;
-            border-radius: 12px;
-            padding: 2.5rem;
-            width: 100%;
-            max-width: 420px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
-        }
-        .logo-title {
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-        .logo-title h1 {
-            font-size: 1.75rem;
-            margin: 0 0 0.5rem 0;
-            color: #38bdf8;
-        }
-        .logo-title p {
-            color: #94a3b8;
-            font-size: 0.9rem;
-            margin: 0;
-        }
-        .form-group {
-            margin-bottom: 1.25rem;
-        }
-        label {
-            display: block;
-            font-size: 0.875rem;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-            color: #cbd5e1;
-        }
-        input[type="text"],
-        input[type="password"] {
-            width: 100%;
-            padding: 0.75rem;
-            background-color: #0f172a;
-            border: 1px solid #475569;
-            border-radius: 6px;
-            color: #fff;
-            font-size: 1rem;
-            box-sizing: border-box;
-        }
-        input:focus {
-            outline: none;
-            border-color: #38bdf8;
-        }
-        .btn-submit {
-            width: 100%;
-            padding: 0.75rem;
-            background-color: #0284c7;
-            color: #ffffff;
-            border: none;
-            border-radius: 6px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            margin-top: 1rem;
-            transition: background-color 0.2s;
-        }
-        .btn-submit:hover {
-            background-color: #0369a1;
-        }
-        .error-msg {
-            background-color: #7f1d1d;
-            border: 1px solid #f87171;
-            color: #fecaca;
-            padding: 0.75rem;
-            border-radius: 6px;
-            font-size: 0.875rem;
-            margin-bottom: 1.25rem;
-        }
-    </style>
+    <title>PeakRoute OS — Initial Setup</title>
+    <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="setup-card">
-        <div class="logo-title">
-            <h1>PeakRoute OS</h1>
-            <p>Admin Account Onboarding</p>
+    <div class="login-wrapper">
+        <div class="login-card">
+            <div class="header">
+                <h1>PeakRoute OS</h1>
+                <p>Admin Account Onboarding</p>
+            </div>
+
+            {{if .Error}}
+            <div class="error-msg">{{.Error}}</div>
+            {{end}}
+
+            <form action="/api/v1/setup/apply" method="POST">
+                <div class="field-group">
+                    <label for="username">Admin Username</label>
+                    <input type="text" id="username" name="username" value="admin" required placeholder="admin" autofocus />
+                </div>
+
+                <div class="field-group">
+                    <label for="password">Admin Password</label>
+                    <input type="password" id="password" name="password" required placeholder="Set strong password" />
+                </div>
+
+                <button type="submit" class="btn-submit">Complete Setup</button>
+            </form>
         </div>
-
-        {{if .Error}}
-        <div class="error-msg">{{.Error}}</div>
-        {{end}}
-
-        <form action="/api/v1/setup/apply" method="POST">
-            <div class="form-group">
-                <label for="username">Admin Username</label>
-                <input type="text" id="username" name="username" value="admin" required placeholder="admin">
-            </div>
-
-            <div class="form-group">
-                <label for="password">Admin Password</label>
-                <input type="password" id="password" name="password" required placeholder="Set strong password">
-            </div>
-
-            <button type="submit" class="btn-submit">Complete Setup</button>
-        </form>
     </div>
 </body>
 </html>

@@ -13,20 +13,22 @@ import (
 	"peakroute/internal/auth"
 	"peakroute/internal/cert"
 	"peakroute/internal/config"
+	"peakroute/internal/system"
+	"peakroute/internal/network"
 )
 
 //go:embed web/templates/* web/static/*
 var embeddedFiles embed.FS
 
 var (
-	devMode      bool
-	configDir    string
-	authPath     string
-	networkPath  string
+	devMode       bool
+	configDir     string
+	authPath      string
+	networkPath   string
 	sysConfigPath string
-	flagPath     string
-	listenPort   string
-	tmpl         *template.Template
+	flagPath      string
+	listenPort    string
+	tmpl          *template.Template
 )
 
 func initAppConfig() {
@@ -50,6 +52,7 @@ func initAppConfig() {
 			listenPort = ":8443"
 		}
 		fmt.Println("[+] Running in DEVELOPMENT mode (HTTPS)")
+
 	} else {
 		configDir = "/etc/peakroute"
 		authPath = "/etc/peakroute/auth.json"
@@ -70,6 +73,7 @@ var loginLimiter = auth.NewRateLimiter(5, 2*time.Minute)
 
 func main() {
 	initAppConfig()
+	var err error
 
 	// Bootstrapping self-signed TLS cert if missing
 	if err := cert.EnsureTLSCert(); err != nil {
@@ -77,7 +81,6 @@ func main() {
 	}
 
 	// Parse embedded HTML templates
-	var err error
 	tmpl, err = template.ParseFS(embeddedFiles, "web/templates/*")
 	if err != nil {
 		log.Fatalf("[-] Failed to parse embedded templates: %v", err)
@@ -86,11 +89,37 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Mount static embedded files (CSS/JS) on /static/
-	fs := http.FileServer(http.FS(embeddedFiles))
-	mux.Handle("/static/", fs)
+	fs := http.FileServer(http.Dir("web/static"))
+	mux.Handle("/static/", http.StripPrefix("/static/", fs))
 
 	// Register API endpoints
 	mux.HandleFunc("/api/v1/cert/upload", cert.HandleUploadCert)
+
+	// System Stats Telemetry Endpoint
+	mux.HandleFunc("/api/v1/system/stats", func(w http.ResponseWriter, r *http.Request) {
+		_, authenticated := sessionMgr.ValidateSession(r)
+		if !authenticated {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
+			return
+		}
+
+		system.HandleSystemStats(w, r)
+	})
+
+	// System DHCP List Endpoint
+	mux.HandleFunc("/api/v1/dhcp/leases", func(w http.ResponseWriter, r *http.Request) {
+		_, authenticated := sessionMgr.ValidateSession(r)
+		if !authenticated {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
+			return
+		}
+
+		network.HandleDHCPLeases(w, r)
+	})
 
 	// Main application routing logic
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -154,7 +183,23 @@ func main() {
 		}
 
 		if r.URL.Path == "/" || r.URL.Path == "/dashboard" {
-			w.Write([]byte("<h1>Welcome to PeakRoute OS Dashboard!</h1>"))
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+			sysMode := "ROUTER"
+			if sysCfg, err := config.LoadSysConfig(sysConfigPath); err == nil && sysCfg.OperationMode != "" {
+				sysMode = sysCfg.OperationMode
+			}
+
+			data := struct {
+				SystemMode string
+			}{
+				SystemMode: sysMode,
+			}
+
+			if err := tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {
+				log.Printf("[-] Template execution error (dashboard.html): %v", err)
+				return
+			}
 			return
 		}
 
@@ -174,7 +219,6 @@ func main() {
 		log.Fatalf("[-] HTTPS server crashed: %v", err)
 	}
 }
-
 
 func handleApply(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
