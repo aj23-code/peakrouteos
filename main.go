@@ -5,7 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"time"
@@ -13,8 +15,8 @@ import (
 	"peakroute/internal/auth"
 	"peakroute/internal/cert"
 	"peakroute/internal/config"
-	"peakroute/internal/system"
 	"peakroute/internal/network"
+	"peakroute/internal/system"
 )
 
 //go:embed web/templates/* web/static/*
@@ -29,12 +31,18 @@ var (
 	flagPath      string
 	listenPort    string
 	tmpl          *template.Template
+	cfgMgr        *config.Manager
+	sessionMgr    *auth.SessionManager
+	loginLimiter  *auth.RateLimiter
 )
 
 func initAppConfig() {
 	flag.BoolVar(&devMode, "dev", false, "Run in local development mode")
 	flag.StringVar(&listenPort, "port", "", "Port to listen on (defaults: 8443 for dev, 443/8443 for prod)")
 	flag.Parse()
+
+	mime.AddExtensionType(".css", "text/css")
+	mime.AddExtensionType(".js", "application/javascript")
 
 	if listenPort != "" && listenPort[0] != ':' {
 		listenPort = ":" + listenPort
@@ -44,7 +52,7 @@ func initAppConfig() {
 		configDir = "."
 		authPath = "./auth.json"
 		networkPath = "./network.json"
-		sysConfigPath = "./sys.conf"
+		sysConfigPath = "./sys.json"
 		flagPath = "./configured"
 		cert.EnableDevPaths("./certs")
 
@@ -58,24 +66,53 @@ func initAppConfig() {
 		authPath = "/etc/peakroute/auth.json"
 		networkPath = "/etc/peakroute/network.json"
 		flagPath = "/etc/peakroute/configured"
-		sysConfigPath = "/etc/peakroute/sys.conf"
+		sysConfigPath = "/etc/peakroute/sys.json"
 
 		if listenPort == "" {
 			listenPort = ":443"
 		}
 		fmt.Println("[+] Running in PRODUCTION mode (HTTPS)")
 	}
+
+	// Load existing config from disk (or return defaults on error)
+	cfg, err := config.LoadSysConfig(sysConfigPath)
+	if err != nil {
+		log.Println("No existing sys.json found, creating defaults...")
+		cfg = &config.SysConfig{
+			Hostname:      "peakroute-gateway",
+			OperationMode: "ROUTER",
+			Configured:    false,
+		}
+	}
+
+	// Populate/refresh build metadata from Go binary, runtime arch, and kernel
+	cfg.PopulateBuildMetadata()
+
+	// Save updated metadata back to sys.json
+	if err := config.SaveSysConfig(sysConfigPath, cfg); err != nil {
+		log.Printf("Warning: failed to save sys.json: %v", err)
+	}
 }
-
-var sessionMgr = auth.NewSessionManager()
-
-var loginLimiter = auth.NewRateLimiter(5, 2*time.Minute)
 
 func main() {
 	initAppConfig()
+
 	var err error
 
-	// Bootstrapping self-signed TLS cert if missing
+	// Initialize config manager using the resolved configDir
+	cfgMgr, err = config.NewManager(configDir)
+	if err != nil {
+		log.Fatalf("[-] Failed to initialize config manager: %v", err)
+	}
+
+	// Initialize session tracking and rate limiting
+	sessionMgr = auth.NewSessionManager(cfgMgr)
+	loginLimiter = auth.NewRateLimiter(5, 2*time.Minute)
+
+	// Initialize traffic tracking
+	network.InitTrafficTracker(cfgMgr, "")
+
+	// Bootstrap self-signed TLS cert if missing
 	if err := cert.EnsureTLSCert(); err != nil {
 		log.Fatalf("[-] TLS initialization error: %v", err)
 	}
@@ -88,9 +125,12 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Mount static embedded files (CSS/JS) on /static/
-	fs := http.FileServer(http.Dir("web/static"))
-	mux.Handle("/static/", http.StripPrefix("/static/", fs))
+	// Mount embedded static assets (CSS/JS) on /static/
+	staticFS, err := fs.Sub(embeddedFiles, "web/static")
+	if err != nil {
+		log.Fatalf("[-] Failed to create static sub-FS: %v", err)
+	}
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
 	// Register API endpoints
 	mux.HandleFunc("/api/v1/cert/upload", cert.HandleUploadCert)
@@ -105,7 +145,7 @@ func main() {
 			return
 		}
 
-		system.HandleSystemStats(w, r)
+		system.HandleSystemStats(w, r, sysConfigPath)
 	})
 
 	// System DHCP List Endpoint
@@ -208,7 +248,7 @@ func main() {
 
 	secureMux := auth.SecurityHeadersMiddleware(mux)
 
-	// Launch single HTTPS server
+	// Launch HTTPS server
 	server := &http.Server{
 		Addr:    listenPort,
 		Handler: secureMux,

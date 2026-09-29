@@ -37,41 +37,106 @@
         <header class="dash-header">
           <div>
             <h1>Dashboard Overview</h1>
-            <p class="subtitle">Live router telemetry and active interface tracking</p>
+            <p class="subtitle">Live router telemetry and system health tracking</p>
           </div>
           <div class="status-badge">
             <span class="status-dot"></span> System Online
           </div>
         </header>
 
+        <!-- System Information Header Bar -->
+        <section class="card sys-info-bar">
+          <div class="sys-info-item">
+            <span class="metric-label">Hostname</span>
+            <strong id="hostname-val" class="metric-subtext">--</strong>
+          </div>
+          <div class="sys-info-item">
+            <span class="metric-label">PeakRoute Version</span>
+            <strong id="app-version-val" class="metric-subtext">--</strong>
+          </div>
+          <div class="sys-info-item">
+            <span class="metric-label">Architecture</span>
+            <strong id="arch-val" class="metric-subtext">--</strong>
+          </div>
+          <div class="sys-info-item">
+            <span class="metric-label">Kernel</span>
+            <strong id="kernel-val" class="metric-subtext">--</strong>
+          </div>
+          <div class="sys-info-item">
+            <span class="metric-label">CPU Model</span>
+            <strong id="cpu-model-val" class="metric-subtext">--</strong>
+          </div>
+          <div class="sys-info-item">
+            <span class="metric-label">Uptime</span>
+            <strong id="uptime-val" class="metric-subtext">0s</strong>
+          </div>
+          <div class="sys-info-item">
+            <span class="metric-label">Load Averages (1m, 5m, 15m)</span>
+            <strong id="load-avg-val" class="metric-subtext">0.00, 0.00, 0.00</strong>
+          </div>
+          <div class="sys-info-item">
+            <span class="metric-label">DNS Resolvers</span>
+            <strong id="dns-servers-val" class="metric-subtext">--</strong>
+          </div>
+        </section>
+
         <!-- Telemetry Metrics Cards -->
         <section class="metrics-grid">
-          <!-- CPU Usage Card -->
+          <!-- CPU & Thermal Card -->
           <div class="card">
             <div class="metric-header">
               <span class="metric-label">CPU Usage</span>
               <span id="cpu-val" class="metric-value-accent">0.0%</span>
             </div>
-            <div class="progress-track">
+            <div class="progress-track mb-3">
               <div id="cpu-bar" class="progress-fill fill-blue" style="width: 0%"></div>
+            </div>
+
+            <div class="metric-header">
+              <span class="metric-label">CPU Temp</span>
+              <span id="cpu-temp-val" class="metric-subtext">-- °C</span>
+            </div>
+            <div class="progress-track">
+              <div id="cpu-temp-bar" class="progress-fill fill-orange" style="width: 0%"></div>
             </div>
           </div>
 
-          <!-- Memory Usage Card -->
+          <!-- Memory & SWAP Card -->
           <div class="card">
             <div class="metric-header">
               <span class="metric-label">Memory Usage</span>
               <span id="mem-val" class="metric-subtext">0 MB / 0 MB</span>
             </div>
-            <div class="progress-track">
+            <div class="progress-track mb-3">
               <div id="mem-bar" class="progress-fill fill-green" style="width: 0%"></div>
+            </div>
+
+            <div class="metric-header">
+              <span class="metric-label">SWAP Space</span>
+              <span id="swap-val" class="metric-subtext">Disabled</span>
+            </div>
+            <div class="progress-track">
+              <div id="swap-bar" class="progress-fill fill-purple" style="width: 0%"></div>
             </div>
           </div>
 
-          <!-- System Uptime Card -->
-          <div class="card card-flex-col">
-            <span class="metric-label">System Uptime</span>
-            <div id="uptime-val" class="metric-value-large">0s</div>
+          <!-- Storage & Firewall States Card -->
+          <div class="card">
+            <div class="metric-header">
+              <span class="metric-label">Disk Storage ( Root / )</span>
+              <span id="disk-val" class="metric-subtext">0 GB / 0 GB</span>
+            </div>
+            <div class="progress-track mb-3">
+              <div id="disk-bar" class="progress-fill fill-blue" style="width: 0%"></div>
+            </div>
+
+            <div class="metric-header">
+              <span class="metric-label">Firewall States (Conntrack)</span>
+              <span id="state-table-val" class="metric-subtext">0 / 0</span>
+            </div>
+            <div class="progress-track">
+              <div id="state-table-bar" class="progress-fill fill-green" style="width: 0%"></div>
+            </div>
           </div>
         </section>
 

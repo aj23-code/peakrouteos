@@ -53,9 +53,9 @@ func EnsureTLSCert() error {
 	}
 
 	// DO NOT auto-renew custom/uploaded certificates.
-	// We check if the Issuer matches our auto-generated subject line.
+	// We check if the Issuer matches our auto-generated subject line safely.
 	isSelfSigned := parsedCert.Issuer.CommonName == "PeakRoute OS Local CA" ||
-	parsedCert.Issuer.Organization[0] == "PeakRoute OS"
+	(len(parsedCert.Issuer.Organization) > 0 && parsedCert.Issuer.Organization[0] == "PeakRoute OS")
 
 	if !isSelfSigned {
 		fmt.Println("[+] Custom TLS certificate detected. Skipping auto-renewal.")

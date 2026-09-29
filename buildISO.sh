@@ -64,8 +64,7 @@ sudo ${CONTAINER_CLI} run --rm --privileged --net=host \
 
 echo "[3/5] Configuring rootfs, security, and embedding PeakRoute binary..."
 
-# Set Hostname
-echo "peakroute" | sudo tee "${ROOTFS_DIR}/etc/hostname" > /dev/null
+
 
 # Disable recommends/suggests to keep disk footprint ultra-minimal
 cat << 'EOF' | sudo tee "${ROOTFS_DIR}/etc/apt/apt.conf.d/99no-recommends" > /dev/null
@@ -169,11 +168,25 @@ set -euo pipefail
 
 clear
 echo "======================================================="
-echo "        PEAKROUTE OS - Install                        "
+echo "        PEAKROUTE OS - Install                         "
 echo "======================================================="
 echo ""
 
+# Hostname Prompt
+DEFAULT_HOSTNAME="peakroute"
+
+echo ""
+echo "--- System Hostname Configuration ---"
+read -rp "Enter system hostname [$DEFAULT_HOSTNAME]: " USER_HOSTNAME
+
+# Fall back to default if input is empty
+NEW_HOSTNAME="${USER_HOSTNAME:-$DEFAULT_HOSTNAME}"
+
+# Sanitize input: enforce lowercase, replace invalid characters with hyphens
+NEW_HOSTNAME=$(echo "$NEW_HOSTNAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/ /g' | tr -s ' ' '-' | sed 's/^-//;s/-$//')
+
 # List available block devices (excluding loop and ram)
+echo ""
 echo "Available storage targets:"
 lsblk -d -n -o NAME,SIZE,MODEL,TYPE | grep -v "loop" | grep -v "rom"
 echo ""
@@ -223,6 +236,29 @@ mount "$ROOT_PART" "$INSTALL_MOUNT"
 
 # Sync Live OS to target partition (preserve top-level dir paths)
 rsync -aAX --exclude=/proc/* --exclude=/sys/* --exclude=/dev/* --exclude=/run/* --exclude=/mnt/* --exclude=/tmp/* / "$INSTALL_MOUNT/"
+
+# --- Apply Hostname & Sys Config to Installed Rootfs ---
+echo "[+] Setting installed target hostname to: $NEW_HOSTNAME"
+echo "$NEW_HOSTNAME" > "$INSTALL_MOUNT/etc/hostname"
+
+# Update loopback alias in installed /etc/hosts
+if [ -f "$INSTALL_MOUNT/etc/hosts" ]; then
+    if grep -q "127.0.1.1" "$INSTALL_MOUNT/etc/hosts"; then
+        sed -i "s/127.0.1.1.*/127.0.1.1\t$NEW_HOSTNAME/" "$INSTALL_MOUNT/etc/hosts"
+    else
+        echo -e "127.0.1.1\t$NEW_HOSTNAME" >> "$INSTALL_MOUNT/etc/hosts"
+    fi
+fi
+
+# Write initial sys.json into installed rootfs
+mkdir -p "$INSTALL_MOUNT/etc/peakroute"
+cat << SYSJSON > "$INSTALL_MOUNT/etc/peakroute/sys.json"
+{
+  "hostname": "$NEW_HOSTNAME",
+  "operation_mode": "ROUTER",
+  "configured": false
+}
+SYSJSON
 
 # Guarantee essential mount points exist with proper permissions
 mkdir -p "$INSTALL_MOUNT"/{proc,sys,dev,run,mnt,tmp,var/tmp,boot/efi}
@@ -281,8 +317,9 @@ umount "$INSTALL_MOUNT/dev"
 umount "$INSTALL_MOUNT"
 
 echo "Installation complete! Detach live media and reboot."
+read -rp "Press Enter to reboot..."
+reboot
 EOF
-
 sudo chmod +x "${ROOTFS_DIR}/usr/local/bin/peakroute-install"
 
 # Enable PeakRoute service and clean APT inside chroot

@@ -2,7 +2,7 @@
 set -e
 
 # Grant socket binding capabilities directly to the binary
-setcap 'cap_net_bind_service=+ep cap_net_admin=+ep' /usr/local/bin/peakroute
+setcap cap_net_bind_service,cap_net_admin,cap_net_raw=ep /usr/local/bin/peakroute
 
 FLAG_FILE="/etc/peakroute/.firstboot_done"
 
@@ -297,14 +297,53 @@ fi
 mkdir -p /etc/peakroute
 touch "$FLAG_FILE"
 
-# Save mode to config file for Go daemon reading
-echo "OPERATING_MODE=$OPER_MODE" > /etc/peakroute/sys.conf
+# Read system hostname from /etc/hostname (or fallback to hostname command)
+if [ -f "/etc/hostname" ]; then
+    CURRENT_HOSTNAME=$(cat /etc/hostname | tr -d '\r\n')
+else
+    CURRENT_HOSTNAME=$(hostname)
+fi
+
+# Write or update /etc/peakroute/sys.json
+cat << EOF > /etc/peakroute/sys.json
+{
+  "hostname": "$HOSTNAME",
+  "operation_mode": "$OPER_MODE",
+  "configured": true
+}
+
+EOF
+# Format SELECTED_LAN_IFACES array for JSON (e.g. ["eth1", "eth2"])
+LAN_JSON_ARRAY=$(printf '"%s",' "${SELECTED_LAN_IFACES[@]}")
+LAN_JSON_ARRAY="[${LAN_JSON_ARRAY%,}]" # remove trailing comma
+
+cat << EOF > /etc/peakroute/network.json
+{
+    "wan_interface": "$WAN_IFACE",
+    "wan_mode": "dhcp",
+    "wan_ip": "",
+    "wan_subnet": "",
+    "wan_gateway": "",
+    "wan_dns": [],
+    "lan_interfaces": $LAN_JSON_ARRAY,
+    "lan_ip": "$LAN_IP",
+    "lan_subnet": "$NETMASK",
+    "interfaces": [],
+    "managed_switches": []
+}
+EOF
+
 
 # Clean up temporary first-boot autologin
 rm -rf /etc/systemd/system/getty@tty1.service.d/
 systemctl daemon-reload
 
+# Restart peakroute daemon to pick up the new network config
+systemctl restart peakroute.service
+
 echo "=================================================="
 echo "[+] First-boot setup completed successfully in ${OPER_MODE^^} mode!"
 echo "Please press ENTER to continue..."
 echo "=================================================="
+
+read -r

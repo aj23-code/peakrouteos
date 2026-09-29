@@ -2,14 +2,14 @@ package network
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-	"encoding/json"
-	"net/http"
 )
 
 type ClientLease struct {
@@ -54,13 +54,18 @@ func ParseLeases(filepath string) ([]ClientLease, error) {
 			expiryText = fmt.Sprintf("%dh %dm", int(diff.Hours()), int(diff.Minutes())%60)
 		}
 
+		var bytes uint64
+		if GlobalTracker != nil {
+			bytes = GlobalTracker.GetBytesForMAC(mac)
+		}
+
 		leases = append(leases, ClientLease{
 			Expiry:     expiry,
 			ExpiryText: expiryText,
 			MACAddress: mac,
 			IPAddress:  ip,
 			Hostname:   hostname,
-			TotalBytes: 0, // Populated via traffic tracking
+			TotalBytes: bytes,
 		})
 	}
 
@@ -92,5 +97,5 @@ func HandleDHCPLeases(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(leases)
+	_ = json.NewEncoder(w).Encode(leases)
 }

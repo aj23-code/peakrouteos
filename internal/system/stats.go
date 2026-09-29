@@ -2,13 +2,17 @@ package system
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
-	"encoding/json"
-	"net/http"
+
+	"peakroute/internal/config"
 )
 
 type InterfaceStats struct {
@@ -18,26 +22,67 @@ type InterfaceStats struct {
 	TxPackets uint64 `json:"tx_packets"`
 }
 
+type DiskStats struct {
+	TotalMB     uint64  `json:"total_mb"`
+	UsedMB      uint64  `json:"used_mb"`
+	FreeMB      uint64  `json:"free_mb"`
+	UsedPercent float64 `json:"used_percent"`
+}
+
+type StateTableInfo struct {
+	Current int `json:"current"`
+	Max     int `json:"max"`
+}
+
 type SystemStats struct {
-	UptimeSeconds uint64                    `json:"uptime_seconds"`
-	CPUUsagePct   float64                   `json:"cpu_usage_pct"`
-	MemoryTotalMB uint64                    `json:"memory_total_mb"`
-	MemoryUsedMB  uint64                    `json:"memory_used_mb"`
-	MemoryFreeMB  uint64                    `json:"memory_free_mb"`
-	Interfaces    map[string]InterfaceStats `json:"interfaces"`
+	Hostname       string                    `json:"hostname"`
+	PeakRouteBuild string                    `json:"peakroute_build"`
+	Arch           string                    `json:"arch"`
+	Kernel         string                    `json:"kernel"`
+	CPUModel       string                    `json:"cpu_model"`
+	KernelVersion  string                    `json:"kernel_version"`
+	UptimeSeconds  uint64                    `json:"uptime_seconds"`
+	CPUUsagePct    float64                   `json:"cpu_usage_pct"`
+	CPUTempC       float64                   `json:"cpu_temp_celsius"`
+	LoadAvg        [3]float64                `json:"load_avg"`
+	MemoryTotalMB  uint64                    `json:"memory_total_mb"`
+	MemoryUsedMB   uint64                    `json:"memory_used_mb"`
+	MemoryFreeMB   uint64                    `json:"memory_free_mb"`
+	SwapTotalMB    uint64                    `json:"swap_total_mb"`
+	SwapUsedMB     uint64                    `json:"swap_used_mb"`
+	SwapFreeMB     uint64                    `json:"swap_free_mb"`
+	Disk           DiskStats                 `json:"disk"`
+	StateTable     StateTableInfo            `json:"state_table"`
+	DNSServers     []string                  `json:"dns_servers"`
+	Interfaces     map[string]InterfaceStats `json:"interfaces"`
 }
 
 type CpuSample struct {
-	Idle uint64
+	Idle  uint64
 	Total uint64
 }
 
-// GetSystemStats gathers live CPU, Memory, Uptime, and Network Interface metrics
-func GetSystemStats() (SystemStats, error) {
+// GetSystemStats gathers live CPU, Memory, Swap, Uptime, Storage, State Table, and Network metrics
+func GetSystemStats(configPath string) (SystemStats, error) {
 	var stats SystemStats
 	stats.Interfaces = make(map[string]InterfaceStats)
 
-	// 1. Read Uptime
+	// Load sys config — return error on failure
+	sysCfg, err := config.LoadSysConfig(configPath)
+	if err != nil {
+		return stats, fmt.Errorf("failed to load sys config: %w", err)
+	}
+
+	stats.Hostname = sysCfg.Hostname
+	stats.PeakRouteBuild = sysCfg.PeakRouteBuild
+	stats.Arch = sysCfg.Arch
+	stats.Kernel = sysCfg.Kernel
+
+	// 1. CPU Model & Live Kernel Info
+	stats.CPUModel = getCPUModel()
+	stats.KernelVersion = getKernelVersion()
+
+	// 2. Read Uptime
 	if uptimeBytes, err := os.ReadFile("/proc/uptime"); err == nil {
 		fields := strings.Fields(string(uptimeBytes))
 		if len(fields) > 0 {
@@ -47,22 +92,66 @@ func GetSystemStats() (SystemStats, error) {
 		}
 	}
 
-	// 2. Read Memory Info
+	// 3. Read Memory & Swap Info
 	if err := parseMemInfo(&stats); err != nil {
 		return stats, fmt.Errorf("failed to parse meminfo: %w", err)
 	}
 
-	// 3. Sample CPU Usage over 100ms
+	// 4. Sample CPU Usage over 100ms
 	if cpuPct, err := sampleCPUUsage(100 * time.Millisecond); err == nil {
 		stats.CPUUsagePct = cpuPct
 	}
 
-	// 4. Read Interface Statistics
+	// 5. Read Load Averages & CPU Temp
+	stats.LoadAvg = getLoadAverage()
+	stats.CPUTempC = getCPUTemperature()
+
+	// 6. Read Disk Usage & Firewall Conntrack State Table
+	stats.Disk = getDiskUsage("/")
+	stats.StateTable = getStateTableSize()
+
+	// 7. Read DNS Resolvers
+	stats.DNSServers = getDNSServers()
+
+	// 8. Read Interface Statistics
 	if err := parseNetworkInterfaces(&stats); err != nil {
 		return stats, fmt.Errorf("failed to parse net dev: %w", err)
 	}
 
 	return stats, nil
+}
+
+func getCPUModel() string {
+	file, err := os.Open("/proc/cpuinfo")
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "model name") || strings.HasPrefix(line, "Processor") || strings.HasPrefix(line, "Hardware") {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	return ""
+}
+
+func getKernelVersion() string {
+	ostype, _ := os.ReadFile("/proc/sys/kernel/ostype")
+	osrelease, _ := os.ReadFile("/proc/sys/kernel/osrelease")
+
+	sysName := strings.TrimSpace(string(ostype))
+	rel := strings.TrimSpace(string(osrelease))
+	if sysName == "" && rel == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("%s %s", sysName, rel)
 }
 
 func parseMemInfo(stats *SystemStats) error {
@@ -73,6 +162,8 @@ func parseMemInfo(stats *SystemStats) error {
 	defer file.Close()
 
 	var memTotal, memFree, buffers, cached, sReclaimable uint64
+	var swapTotal, swapFree uint64
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
@@ -91,17 +182,26 @@ func parseMemInfo(stats *SystemStats) error {
 				cached = val
 			case "SReclaimable:":
 				sReclaimable = val
+			case "SwapTotal:":
+				swapTotal = val
+			case "SwapFree:":
+				swapFree = val
 		}
 	}
 
 	if memTotal > 0 {
-		// Available memory calculation matching modern Linux 'free' utility
 		memAvailable := memFree + buffers + cached + sReclaimable
 		memUsed := memTotal - memAvailable
 
 		stats.MemoryTotalMB = memTotal / 1024
 		stats.MemoryUsedMB = memUsed / 1024
 		stats.MemoryFreeMB = memAvailable / 1024
+	}
+
+	if swapTotal > 0 {
+		stats.SwapTotalMB = swapTotal / 1024
+		stats.SwapFreeMB = swapFree / 1024
+		stats.SwapUsedMB = (swapTotal - swapFree) / 1024
 	}
 
 	return scanner.Err()
@@ -147,7 +247,6 @@ func readCPUSample() (CpuSample, error) {
 			for i, field := range fields {
 				val, _ := strconv.ParseUint(field, 10, 64)
 				total += val
-				// Index 3 is idle, index 4 is iowait
 				if i == 3 || i == 4 {
 					idle += val
 				}
@@ -156,6 +255,87 @@ func readCPUSample() (CpuSample, error) {
 		}
 	}
 	return CpuSample{}, fmt.Errorf("cpu line not found in /proc/stat")
+}
+
+func getLoadAverage() [3]float64 {
+	data, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		return [3]float64{0, 0, 0}
+	}
+	parts := strings.Fields(string(data))
+	var load [3]float64
+	for i := 0; i < 3 && i < len(parts); i++ {
+		load[i], _ = strconv.ParseFloat(parts[i], 64)
+	}
+	return load
+}
+
+func getCPUTemperature() float64 {
+	zones, err := filepath.Glob("/sys/class/thermal/thermal_zone*/temp")
+	if err == nil && len(zones) > 0 {
+		raw, err := os.ReadFile(zones[0])
+		if err == nil {
+			mC, err := strconv.ParseFloat(strings.TrimSpace(string(raw)), 64)
+			if err == nil {
+				return mC / 1000.0
+			}
+		}
+	}
+	return 0.0
+}
+
+func getStateTableSize() StateTableInfo {
+	var info StateTableInfo
+	if countBytes, err := os.ReadFile("/proc/sys/net/netfilter/nf_conntrack_count"); err == nil {
+		info.Current, _ = strconv.Atoi(strings.TrimSpace(string(countBytes)))
+	}
+	if maxBytes, err := os.ReadFile("/proc/sys/net/netfilter/nf_conntrack_max"); err == nil {
+		info.Max, _ = strconv.Atoi(strings.TrimSpace(string(maxBytes)))
+	}
+	return info
+}
+
+func getDiskUsage(path string) DiskStats {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return DiskStats{}
+	}
+	total := stat.Blocks * uint64(stat.Bsize)
+	free := stat.Bfree * uint64(stat.Bsize)
+	used := total - free
+
+	var percent float64
+	if total > 0 {
+		percent = (float64(used) / float64(total)) * 100.0
+	}
+
+	return DiskStats{
+		TotalMB:     total / (1024 * 1024),
+		UsedMB:      used / (1024 * 1024),
+		FreeMB:      free / (1024 * 1024),
+		UsedPercent: percent,
+	}
+}
+
+func getDNSServers() []string {
+	file, err := os.Open("/etc/resolv.conf")
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+
+	var servers []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "nameserver") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				servers = append(servers, fields[1])
+			}
+		}
+	}
+	return servers
 }
 
 func parseNetworkInterfaces(stats *SystemStats) error {
@@ -169,7 +349,6 @@ func parseNetworkInterfaces(stats *SystemStats) error {
 	lineCount := 0
 	for scanner.Scan() {
 		lineCount++
-		// Skip header lines
 		if lineCount <= 2 {
 			continue
 		}
@@ -201,19 +380,21 @@ func parseNetworkInterfaces(stats *SystemStats) error {
 	return scanner.Err()
 }
 
-func RegisterStatsRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/api/v1/system/stats", HandleSystemStats)
+func RegisterStatsRoutes(mux *http.ServeMux, configPath string) {
+	mux.HandleFunc("/api/v1/system/stats", func(w http.ResponseWriter, r *http.Request) {
+		HandleSystemStats(w, r, configPath)
+	})
 }
 
-func HandleSystemStats(w http.ResponseWriter, r *http.Request) {
+func HandleSystemStats(w http.ResponseWriter, r *http.Request, configPath string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	stats, err := GetSystemStats()
+	stats, err := GetSystemStats(configPath)
 	if err != nil {
-		http.Error(w, "Failed to retrieve system metrics", http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Failed to retrieve system metrics: %v", err), http.StatusInternalServerError)
 		return
 	}
 

@@ -1,9 +1,9 @@
 package auth
 
 import (
+	"net"
 	"sync"
 	"time"
-	"net"
 )
 
 type RateLimiter struct {
@@ -39,8 +39,7 @@ func NewRateLimiter(maxRequests int, window time.Duration) *RateLimiter {
 }
 
 func (rl *RateLimiter) Allow(ip string) bool {
-
-	// Strip port if present
+	// Strip port if present (e.g., "192.168.1.50:54321" -> "192.168.1.50")
 	if host, _, err := net.SplitHostPort(ip); err == nil {
 		ip = host
 	}

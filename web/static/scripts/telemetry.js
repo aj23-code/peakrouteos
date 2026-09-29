@@ -3,13 +3,90 @@
 window.TelemetryModule = (function () {
     let pollInterval = null;
 
+    // Safe fetch wrapper falling back to window.fetch if apiFetch is undefined
+    async function safeFetch(url) {
+        if (typeof apiFetch === 'function') {
+            return await apiFetch(url);
+        }
+        try {
+            return await fetch(url);
+        } catch (e) {
+            console.error(`Fetch error for ${url}:`, e);
+            return null;
+        }
+    }
+
+    // Helper: Byte formatter
+    function formatBytes(bytes) {
+        if (!bytes || bytes <= 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Helper: Uptime formatter
+    function formatUptime(seconds) {
+        if (!seconds || seconds <= 0) return '0s';
+        const days = Math.floor(seconds / 86400);
+        const hours = Math.floor((seconds % 86400) / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+
+        let parts = [];
+        if (days > 0) parts.push(`${days}d`);
+        if (hours > 0) parts.push(`${hours}h`);
+        if (mins > 0) parts.push(`${mins}m`);
+        if (secs > 0 || parts.length === 0) parts.push(`${secs}s`);
+
+        return parts.join(' ');
+    }
+
     async function fetchStats() {
-        const res = await apiFetch('/api/v1/system/stats');
+        const res = await safeFetch('/api/v1/system/stats');
         if (!res || !res.ok) return;
 
         const data = await res.json();
 
-        // 1. CPU Usage
+        // 1. Hostname
+        const hostnameEl = document.getElementById('hostname-val');
+        if (hostnameEl && data.hostname) {
+            hostnameEl.innerText = data.hostname;
+        }
+
+        // 2. Build Metadata, Arch & Kernel (Flat Structure)
+        const version = data.peakroute_build || '--';
+        let arch = data.arch || '';
+        let rawKernel = data.kernel || data.kernel_version || '';
+
+        // If arch is missing, extract embedded arch from kernel like "(amd64)"
+        if (!arch && rawKernel) {
+            const archMatch = rawKernel.match(/\(([^)]+)\)/);
+if (archMatch) {
+    arch = archMatch[1];
+}
+        }
+
+        // Clean redundant parentheses from kernel string
+        if (rawKernel) {
+            rawKernel = rawKernel.replace(/\s*\([^)]+\)/g, '').trim();
+        }
+
+        const versionEl = document.getElementById('app-version-val');
+        if (versionEl) versionEl.innerText = version;
+
+        const archEl = document.getElementById('arch-val');
+        if (archEl) archEl.innerText = arch || '--';
+
+        const kernelEl = document.getElementById('kernel-val');
+        if (kernelEl) kernelEl.innerText = rawKernel || '--';
+
+        const cpuModelEl = document.getElementById('cpu-model-val');
+        if (cpuModelEl) {
+            cpuModelEl.innerText = data.cpu_model || 'Unknown CPU';
+        }
+
+        // 3. CPU Usage & Temperature
         const cpuValEl = document.getElementById('cpu-val');
         const cpuBarEl = document.getElementById('cpu-bar');
         if (cpuValEl && cpuBarEl) {
@@ -18,7 +95,24 @@ window.TelemetryModule = (function () {
             cpuBarEl.style.width = `${cpuPct}%`;
         }
 
-        // 2. Memory Usage
+        const cpuTempEl = document.getElementById('cpu-temp-val');
+        const cpuTempBarEl = document.getElementById('cpu-temp-bar');
+        if (typeof data.cpu_temp_celsius === 'number') {
+            const temp = data.cpu_temp_celsius.toFixed(1);
+            if (cpuTempEl) cpuTempEl.innerText = `${temp} °C`;
+            if (cpuTempBarEl) {
+                const tempPct = Math.min(100, Math.max(0, data.cpu_temp_celsius));
+                cpuTempBarEl.style.width = `${tempPct}%`;
+            }
+        }
+
+        // 4. Load Averages (1m, 5m, 15m)
+        const loadAvgEl = document.getElementById('load-avg-val');
+        if (loadAvgEl && Array.isArray(data.load_avg)) {
+            loadAvgEl.innerText = data.load_avg.map(n => Number(n).toFixed(2)).join(', ');
+        }
+
+        // 5. Memory Usage
         const memValEl = document.getElementById('mem-val');
         const memBarEl = document.getElementById('mem-bar');
         if (memValEl && memBarEl) {
@@ -30,31 +124,88 @@ window.TelemetryModule = (function () {
             memBarEl.style.width = `${memPct}%`;
         }
 
-        // 3. System Uptime
+        // 6. SWAP Usage
+        const swapValEl = document.getElementById('swap-val');
+        const swapBarEl = document.getElementById('swap-bar');
+        if (swapValEl && swapBarEl) {
+            const swapTotal = data.swap_total_mb || 0;
+            const swapUsed = data.swap_used_mb || 0;
+            const swapPct = swapTotal > 0 ? Math.min(100, Math.round((swapUsed / swapTotal) * 100)) : 0;
+
+            swapValEl.innerText = swapTotal > 0 ? `${swapUsed} MB / ${swapTotal} MB` : 'Disabled';
+            swapBarEl.style.width = `${swapPct}%`;
+        }
+
+        // 7. Disk Storage Usage
+        const diskValEl = document.getElementById('disk-val');
+        const diskBarEl = document.getElementById('disk-bar');
+        if (diskValEl && diskBarEl && data.disk) {
+            const diskUsedMB = data.disk.used_mb || 0;
+            const diskTotalMB = data.disk.total_mb || 1;
+            const diskPct = (data.disk.used_percent || 0).toFixed(1);
+
+            const usedGB = (diskUsedMB / 1024).toFixed(1);
+            const totalGB = (diskTotalMB / 1024).toFixed(1);
+
+            diskValEl.innerText = `${usedGB} GB / ${totalGB} GB (${diskPct}%)`;
+            diskBarEl.style.width = `${diskPct}%`;
+        }
+
+        // 8. Firewall State Table (Conntrack)
+        const stateTableValEl = document.getElementById('state-table-val');
+        const stateTableBarEl = document.getElementById('state-table-bar');
+        if (stateTableValEl && data.state_table) {
+            const current = data.state_table.current || 0;
+            const max = data.state_table.max || 1;
+            const statePct = Math.min(100, ((current / max) * 100)).toFixed(1);
+
+            stateTableValEl.innerText = `${current.toLocaleString()} / ${max.toLocaleString()}`;
+            if (stateTableBarEl) {
+                stateTableBarEl.style.width = `${statePct}%`;
+            }
+        }
+
+        // 9. DNS Servers
+        const dnsValEl = document.getElementById('dns-servers-val');
+        if (dnsValEl) {
+            dnsValEl.innerText = (Array.isArray(data.dns_servers) && data.dns_servers.length > 0)
+            ? data.dns_servers.join(', ')
+            : 'None configured';
+        }
+
+        // 10. System Uptime
         const uptimeValEl = document.getElementById('uptime-val');
         if (uptimeValEl) {
             uptimeValEl.innerText = formatUptime(data.uptime_seconds || 0);
         }
 
-        // 4. Interfaces Table
+        // 11. Interfaces Table
         const tbody = document.getElementById('iface-table-body');
-        if (tbody && data.interfaces && Object.keys(data.interfaces).length > 0) {
-            let rowsHtml = '';
-            for (const [iface, stats] of Object.entries(data.interfaces)) {
-                rowsHtml += `
-                <tr>
-                <td class="iface-name">${iface}</td>
-                <td>${formatBytes(stats.rx_bytes)} <span class="pkt-subtext">(${stats.rx_packets.toLocaleString()} pkts)</span></td>
-                <td>${formatBytes(stats.tx_bytes)} <span class="pkt-subtext">(${stats.tx_packets.toLocaleString()} pkts)</span></td>
-                </tr>
-                `;
+        if (tbody && data.interfaces && typeof data.interfaces === 'object') {
+            const entries = Object.entries(data.interfaces);
+            if (entries.length > 0) {
+                let rowsHtml = '';
+                for (const [iface, stats] of entries) {
+                    const rxPkts = stats.rx_packets !== undefined ? stats.rx_packets.toLocaleString() : '0';
+                    const txPkts = stats.tx_packets !== undefined ? stats.tx_packets.toLocaleString() : '0';
+
+                    rowsHtml += `
+                    <tr>
+                    <td class="iface-name"><strong>${iface}</strong></td>
+                    <td>${formatBytes(stats.rx_bytes || 0)} <span class="pkt-subtext">(${rxPkts} pkts)</span></td>
+                    <td>${formatBytes(stats.tx_bytes || 0)} <span class="pkt-subtext">(${txPkts} pkts)</span></td>
+                    </tr>
+                    `;
+                }
+                tbody.innerHTML = rowsHtml;
+            } else {
+                tbody.innerHTML = '<tr><td colspan="3" class="table-placeholder">No interfaces found</td></tr>';
             }
-            tbody.innerHTML = rowsHtml;
         }
     }
 
     async function fetchTopClients() {
-        const res = await apiFetch('/api/v1/dhcp/leases');
+        const res = await safeFetch('/api/v1/dhcp/leases');
         const tbody = document.getElementById('top-clients-table-body');
         if (!tbody) return;
 
@@ -65,7 +216,7 @@ window.TelemetryModule = (function () {
 
         const leases = (await res.json()) || [];
 
-        if (leases.length === 0) {
+        if (!Array.isArray(leases) || leases.length === 0) {
             tbody.innerHTML = `<tr><td colspan="4" class="table-placeholder">No active LAN clients detected</td></tr>`;
             return;
         }
@@ -77,9 +228,9 @@ window.TelemetryModule = (function () {
 
         tbody.innerHTML = topClients.map(c => `
         <tr>
-        <td><strong>${c.hostname}</strong></td>
-        <td>${c.ip_address}</td>
-        <td><code>${c.mac_address}</code></td>
+        <td><strong>${c.hostname || 'Unknown'}</strong></td>
+        <td>${c.ip_address || c.ip || '--'}</td>
+        <td><code>${c.mac_address || c.mac || '--'}</code></td>
         <td>${formatBytes(c.total_bytes || 0)}</td>
         </tr>
         `).join('');
@@ -91,13 +242,9 @@ window.TelemetryModule = (function () {
     }
 
     function init() {
-        // Immediate initial poll
         updateAll();
-
-        // Start 1-second polling loop for both stats and top clients
         pollInterval = setInterval(updateAll, 1000);
 
-        // Return cleanup hook to stop polling when switching tabs
         return function destroy() {
             if (pollInterval) {
                 clearInterval(pollInterval);
