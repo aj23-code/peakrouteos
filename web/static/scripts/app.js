@@ -58,14 +58,24 @@ function loadView(viewName) {
         activeViewCleanup = null;
     }
 
-    // Toggle active tab navigation state
+    // Toggle active link highlight
     document.querySelectorAll('.nav-item').forEach(item => {
         item.classList.remove('active');
     });
-    const activeNav = document.querySelector(`.nav-item[data-view="${viewName}"]`);
-    if (activeNav) activeNav.classList.add('active');
 
-    // Toggle view visibility
+    const activeNav = document.querySelector(`.nav-item[data-view="${viewName}"]`);
+    if (activeNav) {
+        activeNav.classList.add('active');
+
+        // Automatically expand parent banners & sub-folders when navigated to programmatically
+        let ancestor = activeNav.closest('details');
+        while (ancestor) {
+            ancestor.open = true;
+            ancestor = ancestor.parentElement ? ancestor.parentElement.closest('details') : null;
+        }
+    }
+
+    // Toggle main view section visibility
     document.querySelectorAll('.view-section').forEach(section => {
         section.classList.add('hidden');
     });
@@ -81,27 +91,53 @@ function loadView(viewName) {
                 activeViewCleanup = window.TelemetryModule.init();
             }
             break;
+        case 'traffic':
+            if (window.TrafficModule) {
+                activeViewCleanup = window.TrafficModule.init();
+            }
+            break;
+        case 'logs':
+            if (window.SysLogsModule) {
+                activeViewCleanup = window.SysLogsModule.init();
+            }
+            break;
         case 'dhcp':
             if (window.DHCPModule) {
                 activeViewCleanup = window.DHCPModule.init();
             }
             break;
         default:
-            console.warn(`No initializer found for view: ${viewName}`);
+            console.warn(`No view module configured for: ${viewName}`);
     }
 }
 
 // App Shell Initialization
 document.addEventListener('DOMContentLoaded', () => {
-    // Event listeners for navigation items
-    document.querySelectorAll('.nav-item[data-view]').forEach(navItem => {
-        navItem.addEventListener('click', (e) => {
+    const sidebarNav = document.getElementById('sidebar-nav');
+
+    if (sidebarNav) {
+        // Event delegation for sidebar link navigation
+        sidebarNav.addEventListener('click', (e) => {
+            const navLink = e.target.closest('.nav-item[data-view]');
+            if (!navLink) return;
+
             e.preventDefault();
-            const view = navItem.getAttribute('data-view');
+            const view = navLink.getAttribute('data-view');
             loadView(view);
         });
-    });
 
-    // Load default view
+        // Accordion behavior: auto-close other top-level banners when a new banner opens
+        sidebarNav.addEventListener('toggle', (e) => {
+            if (!e.target.classList.contains('nav-banner-group') || !e.target.open) return;
+
+            sidebarNav.querySelectorAll('.nav-banner-group[open]').forEach(banner => {
+                if (banner !== e.target) {
+                    banner.open = false;
+                }
+            });
+        }, true);
+    }
+
+    // Load default initial view
     loadView('overview');
 });

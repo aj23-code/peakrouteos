@@ -16,13 +16,146 @@
           <div class="brand-badge">PR</div>
           <span class="brand-title">PeakRoute OS</span>
         </div>
-        <nav class="nav-menu">
-          <a href="#" class="nav-item active" data-view="overview">Overview</a>
-          <a href="#" class="nav-item" data-view="network">Network Settings</a>
-          <a href="#" class="nav-item" data-view="dhcp">DHCP & Clients</a>
-          <a href="#" class="nav-item" data-view="firewall">Firewall / Rules</a>
+
+        <nav class="nav-menu" id="sidebar-nav">
+
+          <!-- Banner: Dashboard -->
+          <details class="nav-banner-group" open>
+            <summary class="nav-banner">
+              <span class="banner-title"><span class="banner-icon">📊</span> Dashboard</span>
+              <span class="chevron">▸</span>
+            </summary>
+            <div class="folder-content">
+              <a href="#" class="nav-item active" data-view="overview">Overview</a>
+              <a href="#" class="nav-item" data-view="traffic">Interface Traffic</a>
+              <a href="#" class="nav-item" data-view="logs">System Logs</a>
+            </div>
+          </details>
+
+          <!-- Banner: Network -->
+          <details class="nav-banner-group">
+            <summary class="nav-banner">
+              <span class="banner-title"><span class="banner-icon">🌐</span> Network</span>
+              <span class="chevron">▸</span>
+            </summary>
+            <div class="folder-content">
+              <details class="sub-folder">
+                <summary class="sub-summary">Interfaces</summary>
+                <div class="sub-content">
+                  <a href="#" class="nav-item" data-view="network-physical">Physical Ports</a>
+                  <a href="#" class="nav-item" data-view="network-vlans">VLANs & Bridges</a>
+                </div>
+              </details>
+
+              <details class="sub-folder">
+                <summary class="sub-summary">Routing</summary>
+                <div class="sub-content">
+                  <a href="#" class="nav-item" data-view="routing-static">Static Routes</a>
+                  <a href="#" class="nav-item" data-view="routing-gateways">Gateway Monitor</a>
+                </div>
+              </details>
+
+              <details class="sub-folder">
+                <summary class="sub-summary">Wireless</summary>
+                <div class="sub-content">
+                  <a href="#" class="nav-item" data-view="wifi-settings">Radios & SSIDs</a>
+                  <a href="#" class="nav-item" data-view="wifi-clients">Wireless Clients</a>
+                </div>
+              </details>
+            </div>
+          </details>
+
+          <!-- Banner: Firewall & NAT -->
+          <details class="nav-banner-group">
+            <summary class="nav-banner">
+              <span class="banner-title"><span class="banner-icon">🛡️</span> Firewall & NAT</span>
+              <span class="chevron">▸</span>
+            </summary>
+            <div class="folder-content">
+              <details class="sub-folder">
+                <summary class="sub-summary">Filter Rules</summary>
+                <div class="sub-content">
+                  <a href="#" class="nav-item" data-view="fw-wan">WAN Ingress</a>
+                  <a href="#" class="nav-item" data-view="fw-lan">LAN / Inter-VLAN</a>
+                </div>
+              </details>
+
+              <details class="sub-folder">
+                <summary class="sub-summary">NAT & Forwarding</summary>
+                <div class="sub-content">
+                  <a href="#" class="nav-item" data-view="nat-portforward">Port Forwarding</a>
+                  <a href="#" class="nav-item" data-view="nat-outbound">Outbound NAT</a>
+                </div>
+              </details>
+
+              <a href="#" class="nav-item" data-view="fw-conntrack">State Table</a>
+              <a href="#" class="nav-item" data-view="fw-logs">Firewall Logs</a>
+            </div>
+          </details>
+
+          <!-- Banner: Services -->
+          <details class="nav-banner-group">
+            <summary class="nav-banner">
+              <span class="banner-title"><span class="banner-icon">🔌</span> Services</span>
+              <span class="chevron">▸</span>
+            </summary>
+            <div class="folder-content">
+              <a href="#" class="nav-item" data-view="dhcp">DHCP & Clients</a>
+
+              <details class="sub-folder">
+                <summary class="sub-summary">DNS Resolver</summary>
+                <div class="sub-content">
+                  <a href="#" class="nav-item" data-view="dns-settings">General Settings</a>
+                  <a href="#" class="nav-item" data-view="dns-overrides">Host Overrides</a>
+                </div>
+              </details>
+
+              <details class="sub-folder">
+                <summary class="sub-summary">VPN & Tunnels</summary>
+                <div class="sub-content">
+                  <a href="#" class="nav-item" data-view="vpn-wireguard">WireGuard</a>
+                  <a href="#" class="nav-item" data-view="vpn-ipsec">IPsec</a>
+                </div>
+              </details>
+            </div>
+          </details>
+
+          <!-- Banner: System -->
+          <details class="nav-banner-group">
+            <summary class="nav-banner">
+              <span class="banner-title"><span class="banner-icon">⚙️</span> System</span>
+              <span class="chevron">▸</span>
+            </summary>
+            <div class="folder-content">
+              <details class="sub-folder">
+                <summary class="sub-summary">Administration</summary>
+                <div class="sub-content">
+                  <a href="#" class="nav-item" data-view="sys-general">General Settings</a>
+                  <a href="#" class="nav-item" data-view="sys-users">Users & Auth</a>
+                </div>
+              </details>
+
+              <details class="sub-folder">
+                <summary class="sub-summary">Configuration</summary>
+                <div class="sub-content">
+                  <a href="#" class="nav-item" data-view="sys-staged">Staged Changes</a>
+                  <a href="#" class="nav-item" data-view="sys-backup">Backup / Restore</a>
+                </div>
+              </details>
+
+              <details class="sub-folder">
+                <summary class="sub-summary">Diagnostics</summary>
+                <div class="sub-content">
+                  <a href="#" class="nav-item" data-view="diag-ping">Ping & Traceroute</a>
+                  <a href="#" class="nav-item" data-view="diag-pcap">Packet Capture</a>
+                </div>
+              </details>
+            </div>
+          </details>
+
         </nav>
       </div>
+
       <div class="sidebar-bottom">
         <span class="mode-indicator">Mode: <strong>{{.SystemMode}}</strong></span>
         <a href="/logout" class="btn-logout">Logout</a>
@@ -37,7 +170,7 @@
         <header class="dash-header">
           <div>
             <h1>Dashboard Overview</h1>
-            <p class="subtitle">Live router telemetry and system health tracking</p>
+            <p class="subtitle"></p>
           </div>
           <div class="status-badge">
             <span class="status-dot"></span> System Online
@@ -195,6 +328,46 @@
         </section>
       </div>
 
+      <!-- View: Interface Traffic - Sub-page View -->
+      <div id="view-traffic" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Interface Traffic</h1>
+            <p class="subtitle">Historical and live bandwidth utilization across network interfaces</p>
+          </div>
+        </header>
+
+        <!-- Dynamic Stacked Interface Cards Container -->
+        <div id="traffic-interfaces-container">
+          <!-- traffic.js dynamic interface cards inject here -->
+        </div>
+      </div>
+
+      <!-- View: System Logs -->
+      <div id="view-logs" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>System Logs</h1>
+            <p class="subtitle">Live systemd journal entries and kernel logs</p>
+          </div>
+          <div class="status-badge">
+            <span class="status-dot"></span> Live Tail
+          </div>
+        </header>
+
+        <section class="card syslog-card">
+          <div class="syslog-header">
+            <h3 class="syslog-title">Journal Output</h3>
+            <div class="syslog-controls">
+              <span id="syslog-status" class="syslog-status-badge">Polling (5s)</span>
+            </div>
+          </div>
+          <div id="syslog-entries-container" class="syslog-viewport">
+            <div class="table-placeholder">Initializing system logs...</div>
+          </div>
+        </section>
+      </div>
+
       <!-- View: DHCP & Clients (Dedicated Subpage) -->
       <div id="view-dhcp" class="view-section hidden">
         <header class="dash-header">
@@ -231,13 +404,14 @@
           </div>
         </section>
       </div>
-
     </main>
   </div>
 
   <!-- Modular Scripts -->
   <script src="/static/scripts/app.js"></script>
   <script src="/static/scripts/telemetry.js"></script>
+  <script src="/static/scripts/traffic.js"></script>
   <script src="/static/scripts/leases.js"></script>
+  <script src="/static/scripts/syslogs.js"></script>
 </body>
 </html>

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"embed"
+	"errors"
 	"flag"
 	"fmt"
 	"html/template"
@@ -10,6 +12,9 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
 	"time"
 
 	"peakroute/internal/auth"
@@ -109,8 +114,19 @@ func main() {
 	sessionMgr = auth.NewSessionManager(cfgMgr)
 	loginLimiter = auth.NewRateLimiter(5, 2*time.Minute)
 
-	// Initialize traffic tracking
+	// Initialize traffic tracking & time-series database
 	network.InitTrafficTracker(cfgMgr, "")
+	dbPath := filepath.Join(configDir, "traffic_history.db")
+	trafficDB, err := system.NewTrafficDB(dbPath)
+	if err != nil {
+		log.Fatalf("[-] Failed to initialize traffic database: %v", err)
+	}
+	system.SetTrafficDB(trafficDB)
+
+	// Start 1-second background poller for traffic metrics
+	pollerCtx, cancelPoller := context.WithCancel(context.Background())
+	defer cancelPoller()
+	go startBackgroundNetworkPoller(pollerCtx, sysConfigPath)
 
 	// Bootstrap self-signed TLS cert if missing
 	if err := cert.EnsureTLSCert(); err != nil {
@@ -146,6 +162,37 @@ func main() {
 		}
 
 		system.HandleSystemStats(w, r, sysConfigPath)
+	})
+
+	// Historical Traffic Graph Data Endpoint
+	mux.HandleFunc("/api/v1/system/traffic", func(w http.ResponseWriter, r *http.Request) {
+		_, authenticated := sessionMgr.ValidateSession(r)
+		if !authenticated {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
+			return
+		}
+
+		if trafficDB == nil {
+			http.Error(w, "Traffic database not initialized", http.StatusServiceUnavailable)
+			return
+		}
+
+		trafficDB.HandleTrafficHistory(w, r)
+	})
+
+	// System Logs Endpoint
+	mux.HandleFunc("/api/v1/system/logs", func(w http.ResponseWriter, r *http.Request) {
+		_, authenticated := sessionMgr.ValidateSession(r)
+		if !authenticated {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
+			return
+		}
+
+		system.HandleGetLogs(w, r)
 	})
 
 	// System DHCP List Endpoint
@@ -250,13 +297,58 @@ func main() {
 
 	// Launch HTTPS server
 	server := &http.Server{
-		Addr:    listenPort,
-		Handler: secureMux,
+		Addr:         listenPort,
+		Handler:      secureMux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 
-	fmt.Printf("[+] PeakRoute OS daemon active on https://0.0.0.0%s\n", listenPort)
-	if err := server.ListenAndServeTLS(cert.CertPath, cert.KeyPath); err != nil {
-		log.Fatalf("[-] HTTPS server crashed: %v", err)
+	// Capture OS signals for graceful shutdown
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		fmt.Printf("[+] PeakRoute OS daemon active on https://0.0.0.0%s\n", listenPort)
+		if err := server.ListenAndServeTLS(cert.CertPath, cert.KeyPath); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("[-] HTTPS server crashed: %v", err)
+		}
+	}()
+
+	<-stop
+	log.Println("[*] Shutting down PeakRoute OS...")
+
+	// Stop background polling loop
+	cancelPoller()
+
+	// Shutdown server gracefully
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("[-] Server shutdown error: %v", err)
+	}
+
+	// Flush RAM samples and close SQLite connection
+	if err := trafficDB.Close(); err != nil {
+		log.Printf("[-] Error closing TrafficDB: %v", err)
+	} else {
+		log.Println("[+] TrafficDB successfully flushed and closed.")
+	}
+}
+
+func startBackgroundNetworkPoller(ctx context.Context, configPath string) {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	// Initial sample on startup
+	_ = system.PollNetworkInterfaces(configPath)
+
+	for {
+		select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_ = system.PollNetworkInterfaces(configPath)
+		}
 	}
 }
 
@@ -279,7 +371,6 @@ func handleApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create Auth config object
 	authCfg := &config.AuthConfig{
 		Users: []config.User{
 			{
@@ -294,14 +385,12 @@ func handleApply(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[-] Failed to create config directory: %v", err)
 	}
 
-	// Save to auth.json
 	if err := config.SaveAuthConfig(authPath, authCfg); err != nil {
 		log.Printf("[-] Failed to save auth config: %v", err)
 		http.Error(w, "Failed to save authentication configuration", http.StatusInternalServerError)
 		return
 	}
 
-	// Mark setup as complete
 	if err := os.WriteFile(flagPath, []byte("1"), 0644); err != nil {
 		log.Printf("[-] Failed to write configured flag: %v", err)
 	}
@@ -315,7 +404,6 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	username := auth.SanitizeString(r.FormValue("username"))
 	password := r.FormValue("password")
 
-	// Load auth.json instead of config.json
 	authCfg, err := config.LoadAuthConfig(authPath)
 	if err != nil {
 		http.Error(w, "Failed to load authentication configuration", http.StatusInternalServerError)

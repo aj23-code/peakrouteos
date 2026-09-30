@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -16,10 +17,14 @@ import (
 )
 
 type InterfaceStats struct {
-	RxBytes   uint64 `json:"rx_bytes"`
-	RxPackets uint64 `json:"rx_packets"`
-	TxBytes   uint64 `json:"tx_bytes"`
-	TxPackets uint64 `json:"tx_packets"`
+	RxBytes    uint64 `json:"rx_bytes"`
+	RxPackets  uint64 `json:"rx_packets"`
+	RxBytesSec uint64 `json:"rx_bytes_sec"` // Calculated live throughput (Bytes/sec)
+	TxBytes    uint64 `json:"tx_bytes"`
+	TxPackets  uint64 `json:"tx_packets"`
+	TxBytesSec uint64 `json:"tx_bytes_sec"` // Calculated live throughput (Bytes/sec)
+	IsPhysical bool   `json:"is_physical"`
+	Role       string `json:"role"` // "wan", "lan", or "unassigned"
 }
 
 type DiskStats struct {
@@ -62,12 +67,39 @@ type CpuSample struct {
 	Total uint64
 }
 
+type ifaceSample struct {
+	rxBytes   uint64
+	txBytes   uint64
+	timestamp time.Time
+}
+
+var (
+	ifaceMu         sync.Mutex
+	lastIfaceStats  = make(map[string]ifaceSample)
+	globalTrafficDB *TrafficDB
+)
+
+// SetTrafficDB registers the database instance so stats poller can record history
+func SetTrafficDB(db *TrafficDB) {
+	globalTrafficDB = db
+}
+
+// PollNetworkInterfaces strictly parses /proc/net/dev for 1-second background ticks
+func PollNetworkInterfaces(configPath string) error {
+	netConfigPath := filepath.Join(filepath.Dir(configPath), "network.json")
+	netCfg, _ := config.LoadNetworkConfig(netConfigPath)
+
+	var dummyStats SystemStats
+	dummyStats.Interfaces = make(map[string]InterfaceStats)
+
+	return parseNetworkInterfaces(&dummyStats, netCfg)
+}
+
 // GetSystemStats gathers live CPU, Memory, Swap, Uptime, Storage, State Table, and Network metrics
 func GetSystemStats(configPath string) (SystemStats, error) {
 	var stats SystemStats
 	stats.Interfaces = make(map[string]InterfaceStats)
 
-	// Load sys config — return error on failure
 	sysCfg, err := config.LoadSysConfig(configPath)
 	if err != nil {
 		return stats, fmt.Errorf("failed to load sys config: %w", err)
@@ -78,11 +110,12 @@ func GetSystemStats(configPath string) (SystemStats, error) {
 	stats.Arch = sysCfg.Arch
 	stats.Kernel = sysCfg.Kernel
 
-	// 1. CPU Model & Live Kernel Info
+	netConfigPath := filepath.Join(filepath.Dir(configPath), "network.json")
+	netCfg, _ := config.LoadNetworkConfig(netConfigPath)
+
 	stats.CPUModel = getCPUModel()
 	stats.KernelVersion = getKernelVersion()
 
-	// 2. Read Uptime
 	if uptimeBytes, err := os.ReadFile("/proc/uptime"); err == nil {
 		fields := strings.Fields(string(uptimeBytes))
 		if len(fields) > 0 {
@@ -92,29 +125,21 @@ func GetSystemStats(configPath string) (SystemStats, error) {
 		}
 	}
 
-	// 3. Read Memory & Swap Info
 	if err := parseMemInfo(&stats); err != nil {
 		return stats, fmt.Errorf("failed to parse meminfo: %w", err)
 	}
 
-	// 4. Sample CPU Usage over 100ms
 	if cpuPct, err := sampleCPUUsage(100 * time.Millisecond); err == nil {
 		stats.CPUUsagePct = cpuPct
 	}
 
-	// 5. Read Load Averages & CPU Temp
 	stats.LoadAvg = getLoadAverage()
 	stats.CPUTempC = getCPUTemperature()
-
-	// 6. Read Disk Usage & Firewall Conntrack State Table
 	stats.Disk = getDiskUsage("/")
 	stats.StateTable = getStateTableSize()
-
-	// 7. Read DNS Resolvers
 	stats.DNSServers = getDNSServers()
 
-	// 8. Read Interface Statistics
-	if err := parseNetworkInterfaces(&stats); err != nil {
+	if err := parseNetworkInterfaces(&stats, netCfg); err != nil {
 		return stats, fmt.Errorf("failed to parse net dev: %w", err)
 	}
 
@@ -227,8 +252,7 @@ func sampleCPUUsage(interval time.Duration) (float64, error) {
 		return 0, nil
 	}
 
-	usage := ((totalDelta - idleDelta) / totalDelta) * 100.0
-	return usage, nil
+	return ((totalDelta - idleDelta) / totalDelta) * 100.0, nil
 }
 
 func readCPUSample() (CpuSample, error) {
@@ -338,12 +362,33 @@ func getDNSServers() []string {
 	return servers
 }
 
-func parseNetworkInterfaces(stats *SystemStats) error {
+func isPhysicalHardware(ifaceName string) bool {
+	if ifaceName == "lo" || strings.Contains(ifaceName, ".") {
+		return false
+	}
+	_, err := os.Stat("/sys/class/net/" + ifaceName + "/device")
+	return err == nil
+}
+
+func parseNetworkInterfaces(stats *SystemStats, netCfg *config.NetworkConfig) error {
 	file, err := os.Open("/proc/net/dev")
 	if err != nil {
 		return err
 	}
 	defer file.Close()
+
+	wanIface := ""
+	var lanIfaces []string
+
+	if netCfg != nil {
+		wanIface = strings.TrimSpace(netCfg.WanInterface)
+		lanIfaces = netCfg.LanInterfaces
+	}
+
+	now := time.Now()
+
+	ifaceMu.Lock()
+	defer ifaceMu.Unlock()
 
 	scanner := bufio.NewScanner(file)
 	lineCount := 0
@@ -369,11 +414,52 @@ func parseNetworkInterfaces(stats *SystemStats) error {
 		txBytes, _ := strconv.ParseUint(fields[8], 10, 64)
 		txPackets, _ := strconv.ParseUint(fields[9], 10, 64)
 
+		// Calculate live throughput delta
+		var rxBytesSec, txBytesSec uint64
+		if prev, ok := lastIfaceStats[iface]; ok {
+			dt := now.Sub(prev.timestamp).Seconds()
+			if dt > 0 {
+				if rxBytes >= prev.rxBytes {
+					rxBytesSec = uint64(float64(rxBytes-prev.rxBytes) / dt)
+				}
+				if txBytes >= prev.txBytes {
+					txBytesSec = uint64(float64(txBytes-prev.txBytes) / dt)
+				}
+			}
+		}
+
+		// Record live throughput (Bytes/sec) into SQLite history
+		if globalTrafficDB != nil {
+			globalTrafficDB.RecordSample(iface, int64(rxBytesSec), int64(txBytesSec))
+		}
+
+		lastIfaceStats[iface] = ifaceSample{
+			rxBytes:   rxBytes,
+			txBytes:   txBytes,
+			timestamp: now,
+		}
+
+		role := "unassigned"
+		if wanIface != "" && iface == wanIface {
+			role = "wan"
+		} else {
+			for _, lan := range lanIfaces {
+				if iface == lan {
+					role = "lan"
+					break
+				}
+			}
+		}
+
 		stats.Interfaces[iface] = InterfaceStats{
-			RxBytes:   rxBytes,
-			RxPackets: rxPackets,
-			TxBytes:   txBytes,
-			TxPackets: txPackets,
+			RxBytes:    rxBytes,
+			RxPackets:  rxPackets,
+			RxBytesSec: rxBytesSec,
+			TxBytes:    txBytes,
+			TxPackets:  txPackets,
+			TxBytesSec: txBytesSec,
+			IsPhysical: isPhysicalHardware(iface),
+			Role:       role,
 		}
 	}
 
