@@ -52,7 +52,8 @@ Effort: S = under an hour, M = one session, L = multi-session.
 - [ ] 10. **Split sampling from reading.** Only the 1s poller updates `lastIfaceStats` and calls `RecordSample`. `GetSystemStats` reads the poller's latest snapshot. Move CPU sampling into the poller to drop the 100ms sleep per request. (M) `system_stats.go:88-147`, `:373`
 - [ ] 11. **Traffic DB hygiene.** Record only WAN, LAN and bridge interfaces. Run retention at startup as well as daily. Create the DB with `auto_vacuum=INCREMENTAL`. (S)
 - [ ] 12. **Fix `writeAtomic`.** Unique temp file, fsync the file, rename, fsync the directory. (S) `config.go:342`
-- [ ] 13. **Fix host-side commands in `buildISO.sh` (lines 158-160).** They run on the host instead of the chroot. (S)
+- [x] 12b. **Build on Ubuntu without containers.** Done 2026-10-05: `buildISO.sh` now runs `debootstrap` natively (no docker/podman) and fetches a checksum-pinned Debian keyring, because Ubuntu 24.04's keyring cannot verify Trixie. `BUILD_DIR` can be overridden. Not yet tested end-to-end (needs `sudo apt install debootstrap xorriso mtools` first).
+- [x] 13. **Fix host-side commands in `buildISO.sh`.** Done 2026-10-05: removed the stray `rm -rf /etc/systemd/system/getty@tty1.service.d/` and `systemctl daemon-reload`, which ran as root against the build host. The image keeps its autologin override for the live ISO, and `first_boot.sh` removes it on the installed system.
 - [ ] 14. **First-boot script fixes.**
   - Use `CURRENT_HOSTNAME`, not `$HOSTNAME`.
   - Range-check IPv4 octets and validate the DHCP range against the subnet.

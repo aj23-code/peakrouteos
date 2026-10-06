@@ -3,37 +3,29 @@ set -euo pipefail
 
 # ==========================================
 # PeakRoute OS - Debian 13 (Trixie) Build Pipeline
-# Containerized Bootstrap (Docker/Podman Compatible)
+# Native debootstrap on an Ubuntu/Debian host (no container needed)
 # Target: Edge Router Appliance (x86_64)
 # ==========================================
 
 PROJECT_DIR="$(pwd)"
-BUILD_DIR="${PROJECT_DIR}/build"
+# Override with e.g. BUILD_DIR=/tmp/peakroute-build if the project drive is mounted noexec/nodev
+BUILD_DIR="${BUILD_DIR:-${PROJECT_DIR}/build}"
 ROOTFS_DIR="${BUILD_DIR}/rootfs"
 ISO_DIR="${BUILD_DIR}/iso"
 OUTPUT_ISO="peakroute-os.iso"
 GO_BINARY_PATH="${PROJECT_DIR}/peakroute"
 
-# Detect container runtime (Docker or Podman)
-CONTAINER_CLI=""
-if command -v docker >/dev/null 2>&1; then
-    CONTAINER_CLI="docker"
-elif command -v podman >/dev/null 2>&1; then
-    CONTAINER_CLI="podman"
-else
-    echo "Error: Neither 'docker' nor 'podman' was found."
-    echo "Please install docker or podman on CachyOS: sudo pacman -S docker"
+# Check host build dependencies (mformat comes from mtools, needed by grub-mkrescue for EFI)
+MISSING_TOOLS=()
+for cmd in debootstrap xorriso mksquashfs grub-mkrescue mformat openssl wget dpkg-deb; do
+    command -v "$cmd" >/dev/null 2>&1 || MISSING_TOOLS+=("$cmd")
+done
+if [ ${#MISSING_TOOLS[@]} -gt 0 ]; then
+    echo "Error: Missing host build tools: ${MISSING_TOOLS[*]}"
+    echo "Install on Ubuntu/Debian with:"
+    echo "  sudo apt install debootstrap xorriso squashfs-tools grub-common grub-efi-amd64-bin grub-pc-bin mtools openssl wget"
     exit 1
 fi
-
-# Check host build dependencies for ISO generation
-for cmd in xorriso mksquashfs grub-mkrescue; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        echo "Error: Missing host build tool: $cmd"
-        echo "Install on CachyOS with: sudo pacman -S xorriso squashfs-tools grub mtools libisoburn"
-        exit 1
-    fi
-done
 
 if [ ! -f "${GO_BINARY_PATH}" ]; then
     echo "Error: PeakRoute Go binary not found at ${GO_BINARY_PATH}"
@@ -51,16 +43,26 @@ sudo umount -l "${ROOTFS_DIR}/dev" 2>/dev/null || true
 sudo rm -rf "${BUILD_DIR}"
 mkdir -p "${ROOTFS_DIR}" "${ISO_DIR}/boot/grub"
 
-echo "[2/5] Bootstrapping Debian 13 (Trixie) minbase inside ${CONTAINER_CLI} container..."
-sudo ${CONTAINER_CLI} run --rm --privileged --net=host \
-    -v "${ROOTFS_DIR}:/target_rootfs" \
-    debian:bookworm-slim \
-    bash -c "apt-get update && apt-get install -y debootstrap ca-certificates passwd && \
-    debootstrap \
-        --arch=amd64 \
-        --variant=minbase \
-        --include=linux-image-amd64,systemd-sysv,live-boot,live-config,dosfstools,e2fsprogs,rsync,ifupdown,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ca-certificates,lsb-release,util-linux,fdisk,grub-efi-amd64,nano,passwd \
-        trixie /target_rootfs http://deb.debian.org/debian/"
+echo "[2/5] Bootstrapping Debian 13 (Trixie) minbase with debootstrap..."
+
+# Ubuntu's packaged debian-archive-keyring predates Trixie and can't verify its Release files,
+# so fetch Debian's own keyring package (pinned by checksum) and hand it to debootstrap.
+KEYRING_DEB="debian-archive-keyring_2025.1_all.deb"
+KEYRING_SHA256="9ea7778e443144ca490668737a8ab22dd3e748bb99e805e22ec055abeb3c7fac"
+KEYRING_DIR="${BUILD_DIR}/keyring"
+mkdir -p "${KEYRING_DIR}"
+wget -q -O "${KEYRING_DIR}/${KEYRING_DEB}" \
+    "https://deb.debian.org/debian/pool/main/d/debian-archive-keyring/${KEYRING_DEB}"
+echo "${KEYRING_SHA256}  ${KEYRING_DIR}/${KEYRING_DEB}" | sha256sum -c --quiet -
+dpkg-deb -x "${KEYRING_DIR}/${KEYRING_DEB}" "${KEYRING_DIR}/extracted"
+DEBIAN_KEYRING="${KEYRING_DIR}/extracted/usr/share/keyrings/debian-archive-keyring.gpg"
+
+sudo debootstrap \
+    --arch=amd64 \
+    --variant=minbase \
+    --keyring="${DEBIAN_KEYRING}" \
+    --include=linux-image-amd64,systemd-sysv,live-boot,live-config,dosfstools,e2fsprogs,rsync,ifupdown,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ca-certificates,lsb-release,util-linux,fdisk,grub-efi-amd64,nano,passwd \
+    trixie "${ROOTFS_DIR}" http://deb.debian.org/debian/
 
 echo "[3/5] Configuring rootfs, security, and embedding PeakRoute binary..."
 
@@ -154,10 +156,6 @@ EOF
 sudo mount --bind /proc "${ROOTFS_DIR}/proc"
 sudo mount --bind /sys "${ROOTFS_DIR}/sys"
 sudo mount --bind /dev "${ROOTFS_DIR}/dev"
-
-# =Clean up temporary first-boot autologin
-rm -rf /etc/systemd/system/getty@tty1.service.d/
-systemctl daemon-reload
 
 # ----------------------------------------------------
 # Add PeakRoute Disk Installer Script
