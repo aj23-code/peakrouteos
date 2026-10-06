@@ -54,12 +54,16 @@ func initAppConfig() {
 	}
 
 	if devMode {
-		configDir = "."
-		authPath = "./auth.json"
-		networkPath = "./network.json"
-		sysConfigPath = "./sys.json"
-		flagPath = "./configured"
-		cert.EnableDevPaths("./certs")
+		// Keep dev state out of the repo root (dev-data/ is gitignored)
+		configDir = "./dev-data"
+		if err := os.MkdirAll(configDir, 0700); err != nil {
+			log.Fatalf("[-] Failed to create dev data directory: %v", err)
+		}
+		authPath = filepath.Join(configDir, "auth.json")
+		networkPath = filepath.Join(configDir, "network.json")
+		sysConfigPath = filepath.Join(configDir, "sys.json")
+		flagPath = filepath.Join(configDir, "configured")
+		cert.EnableDevPaths(filepath.Join(configDir, "certs"))
 
 		if listenPort == "" {
 			listenPort = ":8443"
