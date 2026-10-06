@@ -143,6 +143,30 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
+# Create Live Installer Systemd Service (live session only; launches the installer on tty1)
+cat << 'EOF' | sudo tee "${ROOTFS_DIR}/etc/systemd/system/peakroute-installer.service" > /dev/null
+[Unit]
+Description=PeakRoute OS Live Installer
+ConditionPathExists=/run/live
+After=local-fs.target sysinit.target
+Before=getty@tty1.service getty.target
+
+[Service]
+Type=oneshot
+Environment=TERM=linux
+ExecStart=/usr/local/bin/peakroute-install
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 # Create getty@tty1 autologin override for Live ISO environment
 sudo mkdir -p "${ROOTFS_DIR}/etc/systemd/system/getty@tty1.service.d"
 cat << 'EOF' | sudo tee "${ROOTFS_DIR}/etc/systemd/system/getty@tty1.service.d/override.conf" > /dev/null
@@ -168,6 +192,9 @@ clear
 echo "======================================================="
 echo "        PEAKROUTE OS - Install                         "
 echo "======================================================="
+echo ""
+echo "Press Ctrl+C at any prompt to cancel and drop to a shell."
+echo "(Run 'peakroute-install' again to restart.)"
 echo ""
 
 # Hostname Prompt
@@ -234,6 +261,10 @@ mount "$ROOT_PART" "$INSTALL_MOUNT"
 
 # Sync Live OS to target partition (preserve top-level dir paths)
 rsync -aAX --exclude=/proc/* --exclude=/sys/* --exclude=/dev/* --exclude=/run/* --exclude=/mnt/* --exclude=/tmp/* / "$INSTALL_MOUNT/"
+
+# The auto-start unit is for the live session only; drop it from the installed system
+rm -f "$INSTALL_MOUNT/etc/systemd/system/peakroute-installer.service" \
+      "$INSTALL_MOUNT/etc/systemd/system/multi-user.target.wants/peakroute-installer.service"
 
 # --- Apply Hostname & Sys Config to Installed Rootfs ---
 echo "[+] Setting installed target hostname to: $NEW_HOSTNAME"
@@ -323,6 +354,7 @@ sudo chmod +x "${ROOTFS_DIR}/usr/local/bin/peakroute-install"
 # Enable PeakRoute service and clean APT inside chroot
 sudo chroot "${ROOTFS_DIR}" systemctl enable peakroute.service
 sudo chroot "${ROOTFS_DIR}" systemctl enable peakroute-firstboot.service
+sudo chroot "${ROOTFS_DIR}" systemctl enable peakroute-installer.service
 sudo chroot "${ROOTFS_DIR}" apt-get clean || true
 
 # Generate SHA-512 password hash
