@@ -42,8 +42,8 @@ Effort: S = under an hour, M = one session, L = multi-session.
 ## Tier 1: Structure (unblocks the rest)
 
 - [ ] 5. **`requireAuth` middleware** wrapping every `/api/v1/*` route. Remove the five copy-pasted checks. Add method checks. (S)
-- [ ] 6. **`.gitignore`**: `auth.json`, `network.json`, `sys.json`, `configured`, `certs/`, `*.iso`, `build/`, `peakroute`, `*.db`. Untrack those files. Make `-dev` write to `./dev-data/`. (S)
-- [ ] 7. **Repo cleanup.** `.git` is 2.1 GB (ISOs and `build/` in history) and one `filesystem.squashfs` blob is corrupt (`bef9fd9d…`). Decide between a `git filter-repo` rewrite and a fresh repo that keeps the tags. Move ISOs to Releases. Back up `.git` first. Do this last, after everything else is committed. (M)
+- [ ] 6. **`.gitignore` and dev-data.** `.gitignore` is done (build output, ISO, runtime state, certs, DBs; dev files already untracked). Still to do: make `-dev` write to `./dev-data/` instead of the repo root. (S)
+- [x] 7. **Repo cleanup.** Done 2026-10-05: history rewritten with `git filter-branch` (ISOs, `build/`, dev state and certs removed). `.git` went from 2.1 GB to 256 KB, fsck is clean, all 9 tags kept (hashes changed). ISOs are built manually with `full_build.sh` and go in GitHub Releases, not in git. Pre-rewrite backup: `/media/alec/DATA/peakroute_os_backup_2026-10-05` (delete once things are verified).
 - [ ] 8. **One source of truth for config.** Go through `config.Manager` for all reads and writes. Stop re-reading JSON per request in handlers and stats. (M)
 - [ ] 9. **Wire up staged and commit.** Call `StartProvisioner`, reload networking after writing, and add commit and discard endpoints. Remove or use the dead code. Reconcile `generator.go` with `first_boot.sh` on when `br0` is created. (L)
 

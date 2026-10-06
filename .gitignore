@@ -1,0 +1,17 @@
+# Build outputs (the ISO is built manually with full_build.sh and published via Releases)
+/build/
+/peakroute
+*.iso
+
+# Runtime state written by the daemon in -dev mode (lives in /etc/peakroute in production)
+/auth.json
+/network.json
+/network.json.staged
+/sys.json
+/configured
+/certs/
+/dev-data/
+*.db
+*.db-wal
+*.db-shm
+*.tmp
