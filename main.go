@@ -195,6 +195,20 @@ func main() {
 		system.HandleGetLogs(w, r)
 	})
 
+
+	//Physical Devices Endpoint
+	mux.HandleFunc("/api/v1/system/devices", func(w http.ResponseWriter, r *http.Request) {
+		_, authenticated := sessionMgr.ValidateSession(r)
+		if !authenticated {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
+			return
+		}
+
+		network.HandleGetDevices(w, r)
+	})
+
 	// System DHCP List Endpoint
 	mux.HandleFunc("/api/v1/dhcp/leases", func(w http.ResponseWriter, r *http.Request) {
 		_, authenticated := sessionMgr.ValidateSession(r)

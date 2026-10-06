@@ -36,10 +36,15 @@ type AuthConfig struct {
 }
 
 type SystemInterface struct {
-	Name string `json:"name"`
-	MAC  string `json:"mac"`
+	Name   string `json:"name"`
+	MAC    string `json:"mac"`
+	State  string `json:"state"`  // "up" or "down"
+	Speed  string `json:"speed"`  // e.g., "1000Mb/s"
+	MTU    int    `json:"mtu"`    // e.g., 1500
+	Driver string `json:"driver"` // e.g., "igb", "e1000e"
 }
 
+//Unused for now until OS can run on a managed switch
 type SwitchPortConfig struct {
 	Port   int    `json:"port"`
 	VLAN   int    `json:"vlan"`
@@ -48,6 +53,7 @@ type SwitchPortConfig struct {
 	Status string `json:"status"`
 }
 
+//Also unused for the same reason
 type ManagedSwitchConfig struct {
 	SwitchID string             `json:"switch_id"`
 	Ports    []SwitchPortConfig `json:"ports"`

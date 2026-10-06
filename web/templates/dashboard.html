@@ -27,7 +27,6 @@
             </summary>
             <div class="folder-content">
               <a href="#" class="nav-item active" data-view="overview">Overview</a>
-              <a href="#" class="nav-item" data-view="traffic">Interface Traffic</a>
               <a href="#" class="nav-item" data-view="logs">System Logs</a>
             </div>
           </details>
@@ -39,11 +38,12 @@
               <span class="chevron">▸</span>
             </summary>
             <div class="folder-content">
-              <details class="sub-folder">
+              <details class="sub-folder" open>
                 <summary class="sub-summary">Interfaces</summary>
                 <div class="sub-content">
-                  <a href="#" class="nav-item" data-view="network-physical">Physical Ports</a>
-                  <a href="#" class="nav-item" data-view="network-vlans">VLANs & Bridges</a>
+                  <a href="#" class="nav-item" data-view="traffic">Interface Traffic</a>
+                  <a href="#" class="nav-item" data-view="network-physical">Devices</a>
+                  <a href="#" class="nav-item" data-view="network-vlans">Interfaces/VLANs</a>
                 </div>
               </details>
 
@@ -343,6 +343,47 @@
         </div>
       </div>
 
+      <!-- View: Physical Devices -->
+      <div id="view-network-physical" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Physical Devices</h1>
+            <p class="subtitle">Hardware discovery and physical network interface parameters</p>
+          </div>
+          <button id="refresh-devices-btn" class="btn-refresh">
+            Refresh Hardware
+          </button>
+        </header>
+
+        <section class="card card-nopadding">
+          <div class="card-header">
+            <div class="card-header-group">
+              <h2>Detected Network Hardware</h2>
+              <span class="card-subtitle">Hardware metrics queried live via Linux sysfs</span>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table" id="devices-table">
+              <thead>
+                <tr>
+                  <th>Interface</th>
+                  <th>MAC Address</th>
+                  <th>State</th>
+                  <th>Speed</th>
+                  <th>MTU</th>
+                  <th>Driver</th>
+                </tr>
+              </thead>
+              <tbody id="devices-list">
+                <tr>
+                  <td colspan="6" class="table-placeholder">Discovering physical network hardware...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
       <!-- View: System Logs -->
       <div id="view-logs" class="view-section hidden">
         <header class="dash-header">
@@ -411,6 +452,7 @@
   <script src="/static/scripts/app.js"></script>
   <script src="/static/scripts/telemetry.js"></script>
   <script src="/static/scripts/traffic.js"></script>
+  <script src="/static/scripts/devices.js"></script>
   <script src="/static/scripts/leases.js"></script>
   <script src="/static/scripts/syslogs.js"></script>
 </body>
