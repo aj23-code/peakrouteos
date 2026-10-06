@@ -3,6 +3,7 @@ package cert
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -179,18 +180,42 @@ func HandleUploadCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Save custom cert and key directly to defined paths
-	if err := os.WriteFile(CertPath, certBytes, 0644); err != nil {
-		http.Error(w, "Failed to write certificate to disk", http.StatusInternalServerError)
+	// Never touch the installed cert/key unless the upload is a valid, matching pair
+	pair, err := tls.X509KeyPair(certBytes, keyBytes)
+	if err != nil {
+		http.Error(w, "Invalid certificate or private key, or they do not match", http.StatusBadRequest)
+		return
+	}
+	if pair.Leaf != nil && time.Now().After(pair.Leaf.NotAfter) {
+		http.Error(w, "Certificate has already expired", http.StatusBadRequest)
 		return
 	}
 
-	if err := os.WriteFile(KeyPath, keyBytes, 0600); err != nil {
+	// Stage both files next to their targets, then rename into place so a failed write
+	// can't leave a half-written or mismatched cert/key behind
+	certTmp, keyTmp := CertPath+".new", KeyPath+".new"
+	defer os.Remove(certTmp)
+	defer os.Remove(keyTmp)
+
+	if err := os.WriteFile(certTmp, certBytes, 0644); err != nil {
+		http.Error(w, "Failed to write certificate to disk", http.StatusInternalServerError)
+		return
+	}
+	if err := os.WriteFile(keyTmp, keyBytes, 0600); err != nil {
 		http.Error(w, "Failed to write private key to disk", http.StatusInternalServerError)
+		return
+	}
+	if err := os.Rename(keyTmp, KeyPath); err != nil {
+		http.Error(w, "Failed to install private key", http.StatusInternalServerError)
+		return
+	}
+	if err := os.Rename(certTmp, CertPath); err != nil {
+		http.Error(w, "Failed to install certificate", http.StatusInternalServerError)
 		return
 	}
 
 	fmt.Println("[+] Custom TLS certificate successfully uploaded and installed.")
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"success","message":"Certificate uploaded. Restart daemon or service to apply changes."}`))
 }

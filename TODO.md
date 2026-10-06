@@ -34,7 +34,7 @@ Effort: S = under an hour, M = one session, L = multi-session.
 
 ## Tier 0: Security holes (do first)
 
-- [ ] 1. **Authenticate `/api/v1/cert/upload`.** (auth done 2026-10-05 via `requireAuth`; still to do: POST-only, validate the cert and key pair, atomic write) Add a session check and require POST. Validate that the cert and key parse and match (`tls.X509KeyPair`) before writing, and write via temp files and rename. (S) `main.go:152`, `cert.go:139`
+- [x] 1. **Authenticate `/api/v1/cert/upload`.** Done 2026-10-05: behind `requireAuth`, POST-only, validates that the cert and key parse, match and are unexpired, and installs both via temp files and rename. (Expired-cert rejection not exercised in testing.)
 - [ ] 2. **Escape DHCP hostnames in `innerHTML`.** Share one `escapeHtml` helper in `app.js`. Fix `leases.js:27` and `telemetry.js:230`, then audit the `traffic.js` templates. (S)
 - [ ] 3. **Harden first-run.** Reject empty or short passwords and validate the username. Print the web UI URL and IP at the end of the console wizard. (S) `main.go:369`, `first_boot.sh`
 - [ ] 4. **Remove the baked-in root password and tty1 root autologin.** The installer should prompt for a root password. Make sure autologin is removed even if the wizard exits early. (M) `buildISO.sh`
