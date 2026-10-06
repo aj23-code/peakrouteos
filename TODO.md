@@ -34,14 +34,14 @@ Effort: S = under an hour, M = one session, L = multi-session.
 
 ## Tier 0: Security holes (do first)
 
-- [ ] 1. **Authenticate `/api/v1/cert/upload`.** Add a session check and require POST. Validate that the cert and key parse and match (`tls.X509KeyPair`) before writing, and write via temp files and rename. (S) `main.go:152`, `cert.go:139`
+- [ ] 1. **Authenticate `/api/v1/cert/upload`.** (auth done 2026-10-05 via `requireAuth`; still to do: POST-only, validate the cert and key pair, atomic write) Add a session check and require POST. Validate that the cert and key parse and match (`tls.X509KeyPair`) before writing, and write via temp files and rename. (S) `main.go:152`, `cert.go:139`
 - [ ] 2. **Escape DHCP hostnames in `innerHTML`.** Share one `escapeHtml` helper in `app.js`. Fix `leases.js:27` and `telemetry.js:230`, then audit the `traffic.js` templates. (S)
 - [ ] 3. **Harden first-run.** Reject empty or short passwords and validate the username. Print the web UI URL and IP at the end of the console wizard. (S) `main.go:369`, `first_boot.sh`
 - [ ] 4. **Remove the baked-in root password and tty1 root autologin.** The installer should prompt for a root password. Make sure autologin is removed even if the wizard exits early. (M) `buildISO.sh`
 
 ## Tier 1: Structure (unblocks the rest)
 
-- [ ] 5. **`requireAuth` middleware** wrapping every `/api/v1/*` route. Remove the five copy-pasted checks. Add method checks. (S)
+- [x] 5. **`requireAuth` middleware** (done 2026-10-05; method checks still to do) wrapping every `/api/v1/*` route. Remove the five copy-pasted checks. Add method checks. (S)
 - [x] 6. **`.gitignore` and dev-data.** Done 2026-10-05: `.gitignore` covers build output, ISO, runtime state, certs and DBs, and `-dev` mode now keeps all its state in `./dev-data/` instead of the repo root.
 - [x] 7. **Repo cleanup.** Done 2026-10-05: history rewritten with `git filter-branch` (ISOs, `build/`, dev state and certs removed). `.git` went from 2.1 GB to 256 KB, fsck is clean, all 9 tags kept (hashes changed). ISOs are built manually with `full_build.sh` and go in GitHub Releases, not in git. Pre-rewrite backup: `/media/alec/DATA/peakroute_os_backup_2026-10-05` (delete once things are verified).
 - [ ] 8. **One source of truth for config.** Go through `config.Manager` for all reads and writes. Stop re-reading JSON per request in handlers and stats. (M)

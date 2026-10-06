@@ -152,79 +152,32 @@ func main() {
 	}
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
-	// Register API endpoints
-	mux.HandleFunc("/api/v1/cert/upload", cert.HandleUploadCert)
+	// Register API endpoints. Every /api/v1/* route except login/setup goes through requireAuth.
+	mux.HandleFunc("/api/v1/cert/upload", requireAuth(cert.HandleUploadCert))
 
 	// System Stats Telemetry Endpoint
-	mux.HandleFunc("/api/v1/system/stats", func(w http.ResponseWriter, r *http.Request) {
-		_, authenticated := sessionMgr.ValidateSession(r)
-		if !authenticated {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"unauthorized"}`))
-			return
-		}
-
+	mux.HandleFunc("/api/v1/system/stats", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		system.HandleSystemStats(w, r, sysConfigPath)
-	})
+	}))
 
 	// Historical Traffic Graph Data Endpoint
-	mux.HandleFunc("/api/v1/system/traffic", func(w http.ResponseWriter, r *http.Request) {
-		_, authenticated := sessionMgr.ValidateSession(r)
-		if !authenticated {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"unauthorized"}`))
-			return
-		}
-
+	mux.HandleFunc("/api/v1/system/traffic", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		if trafficDB == nil {
 			http.Error(w, "Traffic database not initialized", http.StatusServiceUnavailable)
 			return
 		}
 
 		trafficDB.HandleTrafficHistory(w, r)
-	})
+	}))
 
 	// System Logs Endpoint
-	mux.HandleFunc("/api/v1/system/logs", func(w http.ResponseWriter, r *http.Request) {
-		_, authenticated := sessionMgr.ValidateSession(r)
-		if !authenticated {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"unauthorized"}`))
-			return
-		}
+	mux.HandleFunc("/api/v1/system/logs", requireAuth(system.HandleGetLogs))
 
-		system.HandleGetLogs(w, r)
-	})
-
-
-	//Physical Devices Endpoint
-	mux.HandleFunc("/api/v1/system/devices", func(w http.ResponseWriter, r *http.Request) {
-		_, authenticated := sessionMgr.ValidateSession(r)
-		if !authenticated {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"unauthorized"}`))
-			return
-		}
-
-		network.HandleGetDevices(w, r)
-	})
+	// Physical Devices Endpoint
+	mux.HandleFunc("/api/v1/system/devices", requireAuth(network.HandleGetDevices))
 
 	// System DHCP List Endpoint
-	mux.HandleFunc("/api/v1/dhcp/leases", func(w http.ResponseWriter, r *http.Request) {
-		_, authenticated := sessionMgr.ValidateSession(r)
-		if !authenticated {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"unauthorized"}`))
-			return
-		}
-
-		network.HandleDHCPLeases(w, r)
-	})
+	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.HandleDHCPLeases))
 
 	// Main application routing logic
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -350,6 +303,20 @@ func main() {
 		log.Printf("[-] Error closing TrafficDB: %v", err)
 	} else {
 		log.Println("[+] TrafficDB successfully flushed and closed.")
+	}
+}
+
+// requireAuth rejects requests without a valid session with a JSON 401 before calling next.
+func requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, authenticated := sessionMgr.ValidateSession(r); !authenticated {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"unauthorized"}`))
+			return
+		}
+
+		next(w, r)
 	}
 }
 
