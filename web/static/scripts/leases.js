@@ -24,10 +24,10 @@ window.DHCPModule = (function () {
 
         tbody.innerHTML = leases.map(c => `
         <tr>
-        <td><strong>${c.hostname}</strong></td>
-        <td>${c.ip_address}</td>
-        <td><code>${c.mac_address}</code></td>
-        <td>${c.expiry_text}</td>
+        <td><strong>${escapeHtml(c.hostname)}</strong></td>
+        <td>${escapeHtml(c.ip_address)}</td>
+        <td><code>${escapeHtml(c.mac_address)}</code></td>
+        <td>${escapeHtml(c.expiry_text)}</td>
         <td>${formatBytes(c.total_bytes || 0)}</td>
         </tr>
         `).join('');

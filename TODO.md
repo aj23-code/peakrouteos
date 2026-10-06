@@ -35,7 +35,7 @@ Effort: S = under an hour, M = one session, L = multi-session.
 ## Tier 0: Security holes (do first)
 
 - [x] 1. **Authenticate `/api/v1/cert/upload`.** Done 2026-10-05: behind `requireAuth`, POST-only, validates that the cert and key parse, match and are unexpired, and installs both via temp files and rename. (Expired-cert rejection not exercised in testing.)
-- [ ] 2. **Escape DHCP hostnames in `innerHTML`.** Share one `escapeHtml` helper in `app.js`. Fix `leases.js:27` and `telemetry.js:230`, then audit the `traffic.js` templates. (S)
+- [x] 2. **Escape DHCP hostnames in `innerHTML`.** Done 2026-10-05: one shared `escapeHtml` in `app.js` is used by the leases, top-clients, interface-table, traffic-card and devices renderers. The inline `onclick` in the devices table was replaced with a data attribute and a delegated listener. Verified in a browser: a lease named `<img/src="x"/onerror=...>` ran script before the fix and renders as plain text after.
 - [ ] 3. **Harden first-run.** Reject empty or short passwords and validate the username. Print the web UI URL and IP at the end of the console wizard. (S) `main.go:369`, `first_boot.sh`
 - [ ] 4. **Remove the baked-in root password and tty1 root autologin.** The installer should prompt for a root password. Make sure autologin is removed even if the wizard exits early. (M) `buildISO.sh`
 

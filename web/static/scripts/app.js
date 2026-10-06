@@ -31,6 +31,20 @@ function formatBytes(bytes) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+/**
+ * Escape a value for safe use in HTML text or a quoted attribute value.
+ * Use for anything that ends up in innerHTML and did not come from this codebase
+ * (DHCP hostnames in particular are chosen by whatever device is on the LAN).
+ */
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 function formatUptime(seconds) {
     if (!seconds) return '0s';
     const days = Math.floor(seconds / (3600 * 24));

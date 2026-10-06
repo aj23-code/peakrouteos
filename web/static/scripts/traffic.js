@@ -373,23 +373,23 @@ window.TrafficModule = (() => {
                 <div class="traffic-card-header">
                 <div class="traffic-card-meta">
                 <span class="traffic-badge ${role === 'wan' ? 'wan' : 'lan'}">
-                ${iface.toUpperCase()}
+                ${escapeHtml(iface.toUpperCase())}
                 </span>
                 <div class="traffic-stats-group">
                 <span class="traffic-stat-item">
                 <span class="traffic-dot rx"></span>
                 <span class="traffic-stat-label">Inbound:</span>
-                <strong id="rx-rate-${iface}" class="traffic-stat-value rx">0.00 bps</strong>
+                <strong id="rx-rate-${escapeHtml(iface)}" class="traffic-stat-value rx">0.00 bps</strong>
                 </span>
                 <span class="traffic-stat-item">
                 <span class="traffic-dot tx"></span>
                 <span class="traffic-stat-label">Outbound:</span>
-                <strong id="tx-rate-${iface}" class="traffic-stat-value tx">0.00 bps</strong>
+                <strong id="tx-rate-${escapeHtml(iface)}" class="traffic-stat-value tx">0.00 bps</strong>
                 </span>
-                <span class="traffic-vol" id="vol-${iface}">Vol: 0 B</span>
+                <span class="traffic-vol" id="vol-${escapeHtml(iface)}">Vol: 0 B</span>
                 </div>
                 </div>
-                <div class="traffic-time-picker time-picker" data-iface="${iface}">
+                <div class="traffic-time-picker time-picker" data-iface="${escapeHtml(iface)}">
                 <button class="time-btn" data-range="5m">5m</button>
                 <button class="time-btn active" data-range="1h">1h</button>
                 <button class="time-btn" data-range="24h">24h</button>
@@ -397,7 +397,7 @@ window.TrafficModule = (() => {
                 </div>
                 </div>
                 <div class="traffic-chart-container">
-                <canvas id="canvas-${iface}" class="traffic-canvas"></canvas>
+                <canvas id="canvas-${escapeHtml(iface)}" class="traffic-canvas"></canvas>
                 </div>
                 `;
                 targetWrapper.appendChild(card);
@@ -486,7 +486,7 @@ window.TrafficModule = (() => {
         state.isFetching = true;
         drawInterfaceChart(iface);
 
-        const res = await safeFetch(`/api/v1/system/traffic?iface=${iface}&range=${state.range}`);
+        const res = await safeFetch(`/api/v1/system/traffic?iface=${encodeURIComponent(iface)}&range=${state.range}`);
         state.isFetching = false;
 
         if (res && res.ok) {

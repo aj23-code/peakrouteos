@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <td>${dev.mtu || 1500}</td>
             <td><span class="badge-driver">${escapeHtml(dev.driver || 'unknown')}</span></td>
             <td class="pe-4 text-end">
-            <button class="btn btn-sm btn-icon" title="Configure Interface Settings" onclick="configureDevice('${escapeHtml(dev.name)}')">
+            <button class="btn btn-sm btn-icon" title="Configure Interface Settings" data-configure-device="${escapeHtml(dev.name)}">
             <i class="bi bi-gear-fill"></i>
             </button>
             </td>
@@ -68,19 +68,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
     }
 
-    function escapeHtml(str) {
-        if (!str) return '';
-        return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
+    function configureDevice(ifaceName) {
+        console.log(`Navigating to config for ${ifaceName}`);
     }
 
-    window.configureDevice = function(ifaceName) {
-        console.log(`Navigating to config for ${ifaceName}`);
-    };
+    // Delegated handler: the device name travels in a data attribute, never inside inline JS
+    devicesList.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-configure-device]');
+        if (btn) configureDevice(btn.dataset.configureDevice);
+    });
 
     refreshBtn.addEventListener('click', () => {
         devicesList.innerHTML = `

@@ -191,7 +191,7 @@ if (archMatch) {
 
                     rowsHtml += `
                     <tr>
-                    <td class="iface-name"><strong>${iface}</strong></td>
+                    <td class="iface-name"><strong>${escapeHtml(iface)}</strong></td>
                     <td>${formatBytes(stats.rx_bytes || 0)} <span class="pkt-subtext">(${rxPkts} pkts)</span></td>
                     <td>${formatBytes(stats.tx_bytes || 0)} <span class="pkt-subtext">(${txPkts} pkts)</span></td>
                     </tr>
@@ -228,9 +228,9 @@ if (archMatch) {
 
         tbody.innerHTML = topClients.map(c => `
         <tr>
-        <td><strong>${c.hostname || 'Unknown'}</strong></td>
-        <td>${c.ip_address || c.ip || '--'}</td>
-        <td><code>${c.mac_address || c.mac || '--'}</code></td>
+        <td><strong>${escapeHtml(c.hostname || 'Unknown')}</strong></td>
+        <td>${escapeHtml(c.ip_address || c.ip || '--')}</td>
+        <td><code>${escapeHtml(c.mac_address || c.mac || '--')}</code></td>
         <td>${formatBytes(c.total_bytes || 0)}</td>
         </tr>
         `).join('');
