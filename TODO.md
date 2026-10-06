@@ -36,7 +36,7 @@ Effort: S = under an hour, M = one session, L = multi-session.
 
 - [x] 1. **Authenticate `/api/v1/cert/upload`.** Done 2026-10-05: behind `requireAuth`, POST-only, validates that the cert and key parse, match and are unexpired, and installs both via temp files and rename. (Expired-cert rejection not exercised in testing.)
 - [x] 2. **Escape DHCP hostnames in `innerHTML`.** Done 2026-10-05: one shared `escapeHtml` in `app.js` is used by the leases, top-clients, interface-table, traffic-card and devices renderers. The inline `onclick` in the devices table was replaced with a data attribute and a delegated listener. Verified in a browser: a lease named `<img/src="x"/onerror=...>` ran script before the fix and renders as plain text after.
-- [ ] 3. **Harden first-run.** Reject empty or short passwords and validate the username. Print the web UI URL and IP at the end of the console wizard. (S) `main.go:369`, `first_boot.sh`
+- [x] 3. **Harden first-run.** Done 2026-10-05 for the web setup page: username must be 3-32 chars (letters, numbers, `.`, `_`, `-`, starting with a letter or number), password 8-72 bytes, and a confirm-password field must match. Enforced on the server (400 with the form re-shown) and mirrored client-side. First unit tests added (`internal/auth/validate_test.go`). Still to do: print the web UI URL/IP at the end of the console wizard (deferred with the console wording pass).
 - [ ] 4. **Remove the baked-in root password and tty1 root autologin.** The installer should prompt for a root password. Make sure autologin is removed even if the wizard exits early. (M) `buildISO.sh`
 
 ## Tier 1: Structure (unblocks the rest)

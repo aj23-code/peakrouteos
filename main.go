@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -187,10 +188,7 @@ func main() {
 		// Unconfigured state
 		if !isConfigured {
 			if r.URL.Path == "/first_run" || r.URL.Path == "/first-run" {
-				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				if err := tmpl.ExecuteTemplate(w, "first_run.html", nil); err != nil {
-					log.Printf("[-] Template execution error (first_run.html): %v", err)
-				}
+				renderFirstRun(w, http.StatusOK, "admin", "")
 				return
 			}
 
@@ -337,17 +335,41 @@ func startBackgroundNetworkPoller(ctx context.Context, configPath string) {
 	}
 }
 
+// renderFirstRun serves the setup page, optionally with an error and the username to keep filled in.
+func renderFirstRun(w http.ResponseWriter, status int, username, errMsg string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+
+	data := map[string]string{"Username": username, "Error": errMsg}
+	if err := tmpl.ExecuteTemplate(w, "first_run.html", data); err != nil {
+		log.Printf("[-] Template execution error (first_run.html): %v", err)
+	}
+}
+
 func handleApply(w http.ResponseWriter, r *http.Request) {
+	auth.LimitPayloadSize(w, r, 1024*1024)
+
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		return
 	}
 
-	username := r.FormValue("username")
+	username := strings.TrimSpace(r.FormValue("username"))
 	plainPassword := r.FormValue("password")
+	confirmPassword := r.FormValue("confirm_password")
 
 	if username == "" {
 		username = "admin"
+	}
+
+	if err := auth.ValidateUsername(username); err != nil {
+		renderFirstRun(w, http.StatusBadRequest, username, err.Error())
+		return
+	}
+
+	if err := auth.ValidateNewPassword(plainPassword, confirmPassword); err != nil {
+		renderFirstRun(w, http.StatusBadRequest, username, err.Error())
+		return
 	}
 
 	hashedPassword, err := config.HashPassword(plainPassword)
@@ -378,6 +400,8 @@ func handleApply(w http.ResponseWriter, r *http.Request) {
 
 	if err := os.WriteFile(flagPath, []byte("1"), 0644); err != nil {
 		log.Printf("[-] Failed to write configured flag: %v", err)
+		http.Error(w, "Failed to finish setup", http.StatusInternalServerError)
+		return
 	}
 
 	http.Redirect(w, r, "/login", http.StatusSeeOther)

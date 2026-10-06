@@ -18,20 +18,33 @@
             <div class="error-msg">{{.Error}}</div>
             {{end}}
 
-            <form action="/api/v1/setup/apply" method="POST">
+            <form action="/api/v1/setup/apply" method="POST" id="setup-form">
                 <div class="field-group">
                     <label for="username">Admin Username</label>
-                    <input type="text" id="username" name="username" value="admin" required placeholder="admin" autofocus />
+                    <input type="text" id="username" name="username" value="{{.Username}}" required
+                           minlength="3" maxlength="32" pattern="[a-zA-Z0-9][a-zA-Z0-9._\-]{2,31}"
+                           title="3-32 characters: letters, numbers, '.', '_' or '-', starting with a letter or number"
+                           placeholder="admin" autofocus />
                 </div>
 
                 <div class="field-group">
                     <label for="password">Admin Password</label>
-                    <input type="password" id="password" name="password" required placeholder="Set strong password" />
+                    <input type="password" id="password" name="password" required
+                           minlength="8" maxlength="72" autocomplete="new-password"
+                           placeholder="At least 8 characters" />
+                </div>
+
+                <div class="field-group">
+                    <label for="confirm_password">Confirm Password</label>
+                    <input type="password" id="confirm_password" name="confirm_password" required
+                           minlength="8" maxlength="72" autocomplete="new-password"
+                           placeholder="Re-enter password" />
                 </div>
 
                 <button type="submit" class="btn-submit">Complete Setup</button>
             </form>
         </div>
     </div>
+    <script src="/static/scripts/first_run.js"></script>
 </body>
 </html>
