@@ -166,6 +166,12 @@
       </div>
     </aside>
 
+    <!-- Right-hand column: the banner pinned above the content -->
+    <div class="content-column">
+
+    <!-- Uncommitted-changes / confirm banner: shown above every view, driven by /api/v1/config/status -->
+    <div id="config-banner" class="config-banner hidden" aria-live="polite"></div>
+
     <!-- Main Content Area -->
     <main class="main-content">
 
@@ -450,10 +456,21 @@
         </section>
       </div>
     </main>
+    </div>
   </div>
+
+  <!-- Review dialog behind the banner's "Review & commit" -->
+  <dialog id="config-review" class="config-dialog" aria-labelledby="config-review-title">
+    <div id="config-review-body" class="config-dialog-body"></div>
+    <div class="config-dialog-actions">
+      <button type="button" id="config-review-cancel" class="cfg-btn cfg-btn--ghost">Close</button>
+      <button type="button" id="config-review-commit" class="cfg-btn cfg-btn--primary" disabled>Commit</button>
+    </div>
+  </dialog>
 
   <!-- Modular Scripts -->
   <script src="/static/scripts/app.js"></script>
+  <script src="/static/scripts/config_banner.js"></script>
   <script src="/static/scripts/telemetry.js"></script>
   <script src="/static/scripts/traffic.js"></script>
   <script src="/static/scripts/devices.js"></script>

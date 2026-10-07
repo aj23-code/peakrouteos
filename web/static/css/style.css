@@ -9,6 +9,7 @@
     --accent-blue: #38bdf8;
     --accent-blue-bg: rgba(56, 189, 248, 0.12);
     --error-color: #ef4444;
+    --accent-amber: #f59e0b;
 }
 
 * {
@@ -995,4 +996,181 @@ height: 260px;
     border-radius: 0.25rem;
     font-size: 0.8rem;
     font-family: monospace;
+}
+
+
+/* ==========================================================================
+ *  Uncommitted-changes banner, review dialog and confirm countdown
+ *  ========================================================================== */
+
+/* The page scrolls (not <main>), so the banner lives above <main> and sticks to the viewport:
+   it stays visible in every view however far you scroll */
+.content-column {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.config-banner {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+}
+
+.config-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1.25rem;
+    padding: 0.75rem 2rem;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--card-bg);
+}
+
+.config-bar-text {
+    flex: 1 1 24rem;
+    min-width: 0;
+}
+
+.config-bar-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.config-bar--changes  { background: var(--accent-blue-bg); border-bottom-color: rgba(56, 189, 248, 0.45); }
+.config-bar--applying { background: var(--accent-blue-bg); border-bottom-color: rgba(56, 189, 248, 0.45); }
+.config-bar--confirm  { background: rgba(245, 158, 11, 0.16); border-bottom-color: var(--accent-amber); }
+.config-bar--lost     { background: rgba(245, 158, 11, 0.16); border-bottom-color: var(--accent-amber); }
+.config-bar--bad      { background: rgba(239, 68, 68, 0.14); border-bottom-color: var(--error-color); }
+.config-bar--ok       { background: rgba(16, 185, 129, 0.12); border-bottom-color: rgba(16, 185, 129, 0.5); }
+
+.config-bar-details {
+    margin: 0.5rem 0 0 1.1rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.config-bar-details code,
+.config-dialog code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8em;
+}
+
+/* Small buttons used by the banner and dialog */
+.cfg-btn {
+    padding: 0.4rem 0.85rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-main);
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.cfg-btn:hover:not(:disabled) { border-color: var(--text-muted); }
+.cfg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.cfg-btn:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+
+.cfg-btn--primary { background: var(--accent-green); border-color: var(--accent-green); color: #000; }
+.cfg-btn--primary:hover:not(:disabled) { background: var(--accent-green-hover); border-color: var(--accent-green-hover); }
+.cfg-btn--danger  { background: transparent; border-color: var(--error-color); color: var(--error-color); }
+.cfg-btn--danger:hover:not(:disabled) { background: rgba(239, 68, 68, 0.12); border-color: var(--error-color); }
+.cfg-btn--ghost   { color: var(--text-muted); }
+
+/* Review dialog (native <dialog>) */
+.config-dialog {
+    margin: auto;
+    width: min(44rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 3rem);
+    padding: 0;
+    color: var(--text-main);
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
+}
+
+.config-dialog[open] {
+    display: flex;
+    flex-direction: column;
+}
+
+.config-dialog::backdrop { background: rgba(2, 6, 23, 0.7); }
+
+.config-dialog-body {
+    padding: 1.5rem 1.75rem 0.5rem;
+    overflow-y: auto;
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.config-dialog-body h2 { font-size: 1.15rem; margin-bottom: 1rem; }
+.config-dialog-body h3 {
+    margin: 1.25rem 0 0.5rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+
+.config-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 1rem 1.75rem 1.25rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.config-review-table { width: 100%; border-collapse: collapse; }
+.config-review-table th,
+.config-review-table td { padding: 0.45rem 0.5rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+.config-review-table th { width: 36%; font-weight: 500; color: var(--text-muted); }
+
+.config-old   { color: var(--text-muted); text-decoration: line-through; }
+.config-new   { color: var(--accent-green); font-weight: 600; }
+.config-arrow { color: var(--text-muted); margin: 0 0.25rem; }
+
+.config-review-list { margin-left: 1.1rem; }
+.config-review-list li { margin: 0.2rem 0; }
+
+.config-review-empty,
+.config-review-note { color: var(--text-muted); margin-top: 0.75rem; }
+
+.config-review-errors,
+.config-review-warning,
+.config-review-result {
+    margin-top: 1rem;
+    padding: 0.75rem 0.9rem;
+    border-radius: 8px;
+}
+
+.config-review-errors  { background: rgba(239, 68, 68, 0.12); border: 1px solid var(--error-color); }
+.config-review-errors ul { margin: 0.4rem 0 0 1.1rem; }
+.config-review-warning { background: rgba(245, 158, 11, 0.12); border: 1px solid var(--accent-amber); }
+.config-review-result  { background: rgba(239, 68, 68, 0.12); border: 1px solid var(--error-color); }
+
+/* Narrow screens: the dashboard has a fixed-width sidebar, which would squeeze the banner into a
+   sliver. Pin it across the whole viewport instead, and push the page down by its height
+   (config_banner.js keeps --config-banner-h up to date). */
+@media (max-width: 720px) {
+    .config-banner {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+    }
+
+    body { padding-top: var(--config-banner-h, 0px); }
+
+    .config-bar { padding: 0.75rem 1rem; }
 }

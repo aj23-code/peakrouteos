@@ -172,6 +172,26 @@ token, 202 with), the countdown, confirm; and a **SIGKILL in the middle of the 6
 restart the countdown continued (46 s left, not 60) and the deadline reverted the sandbox files,
 `network.json`, and put the edit back in the pending changes.
 
+- **9d (banner), `web/static/scripts/config_banner.js`** (built): a bar above every view, driven only by
+  `GET /api/v1/config/status` (all state lives on the server, so it survives reloads and daemon restarts).
+  - *Uncommitted changes* (real differences, not a file): "N uncommitted changes" with **Review & commit** and
+    **Discard**.
+  - *Review dialog* (native `<dialog>`, independent of any page layout): the diff (old struck through, new
+    in green), the files to be written, the services affected in plain language, per-field validation errors
+    (Commit disabled), notes, and, when confirmation is needed, a warning with the seconds allowed and, if
+    the LAN address changes, the exact new `https://` address to reconnect at.
+  - *Applying*: brief in-progress bar. *Awaiting confirmation*: prominent amber bar with a live countdown
+    (ticks locally, resynced by every 1 s poll) and **Confirm** / **Revert now**.
+  - *Lost contact* (the poll fails, as after a LAN address change): says where to reconnect (the address
+    is remembered in `sessionStorage` when the commit is made, forgotten once the state is idle again).
+  - *Outcome*: failures and reverts stay until dismissed (persisted per outcome timestamp); good news
+    ("The change was confirmed") shows for about 8 seconds.
+  - All server text goes through `escapeHtml` (checked with hostile strings). POSTs use `apiFetch` (CSRF).
+  - Layout: the banner sits in `.content-column` above `<main>` and is `position: sticky; top: 0`, so it is
+    pinned while the page scrolls. Below 720 px it is `position: fixed` across the viewport and
+    `--config-banner-h` (kept current by a ResizeObserver) pushes the page down, because the dashboard's
+    fixed 280 px sidebar otherwise squeezes it into a sliver.
+
 Decisions for the remaining steps (9c to 9e):
 
 - **Default LAN in router mode: 192.168.1.1/24**, DHCP enabled `.100` to `.200`, lease 12h. Done
@@ -247,6 +267,8 @@ Decisions for the remaining steps (9c to 9e):
 | 2026-10-06 | Revert from a snapshot of the real previous files, persisted for the confirm window | works even if the previous config cannot be rendered, and survives a power cut |
 | 2026-10-06 | Only networking/firewall changes need the 60 s confirmation | a DHCP-only change cannot lock the admin out |
 | 2026-10-06 | A failed or reverted change keeps the user's edit as the pending candidate | fix it instead of retyping it |
+| 2026-10-06 | The banner and review dialog do not depend on any page or sidebar layout | the user has not yet decided the sidebar/settings organization |
+| 2026-10-06 | Success messages show ~8 s; failures and reverts stay until dismissed | problems must not be missed, good news should not nag |
 
 ## 10. How things are tested (worth documenting)
 
@@ -276,9 +298,25 @@ Decisions for the remaining steps (9c to 9e):
 - Test helpers that dereference a result (`info.Mode()`) must check the error first: a nil dereference panics
   the whole test binary and hides every other failure (found while mutation-testing the pipeline).
 - A mutant that does not compile proves nothing: when a mutation test prints a build failure, redo it.
+- `position: sticky` binds to the nearest ancestor that is a scroll container, even one that never scrolls.
+  `.main-content` has `overflow-y: auto` while the page itself scrolls, so a sticky element inside it never
+  stuck (and sat 32 px low because sticky respects the container's padding). Put sticky things outside such
+  containers. Found by measuring in a real browser, not by reading the CSS.
+- The dashboard is not responsive: the sidebar is a fixed 280 px column at every width, so on a phone the
+  content column is about 110 px wide. Only the banner has a narrow-screen fix so far.
+- There is no JavaScript test runner in the repo (no Node available on the dev machine). Front-end behaviour was
+  verified in a real browser: the banner's `describe()` logic with 20 assertions, every state, hostile text,
+  scrolling, view switching, a phone width, and a stopped server. A runner would be worth adding later.
 - For POST/PUT/DELETE from the browser use `apiFetch` (it adds the CSRF header), never bare `fetch`.
 
-## 12. Documentation to write later
+## 12. Open questions for the maintainer
+
+- Sidebar layout and how settings are organized (needed before the first editor page, 9e).
+- Whether the dashboard should get a real responsive layout (sidebar collapsing on narrow screens).
+- 9e first slice: DHCP only (a dnsmasq restart cannot lock anyone out) or LAN address plus DHCP.
+- Where the Staged Changes page, if any, should live (the banner and dialog already cover the workflow).
+
+## 13. Documentation to write later
 
 - Install and first boot (wizard, ISO, installer)
 - Web UI tour and admin tasks (staging, review, commit, confirm, revert)
