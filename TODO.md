@@ -66,8 +66,8 @@ Effort: S = under an hour, M = one session, L = multi-session.
 
 ## Tier 3: Auth and session hardening
 
-- [ ] 16. Constant-time login: always run bcrypt, with a dummy hash when the user is not found. (S)
-- [ ] 17. Remove `SanitizeString` from usernames. (S)
+- [x] 16. Constant-time login. Done 2026-10-06: `auth.Authenticate` always performs exactly one bcrypt comparison (against a same-cost dummy hash when the user doesn't exist) and visits every user without stopping early. Measured on a live server: unknown username 3.5 ms vs wrong password 65 ms before (a 62 ms leak), 66 ms vs 67 ms after.
+- [x] 17. Remove `SanitizeString` from usernames. Done 2026-10-06: deleted the function (it protected nothing and could silently alter a valid name); login now only trims surrounding whitespace.
 - [ ] 18. Use `SessionTimeoutMinutes` from config. Add an expired-session janitor. (S)
 - [ ] 19. Make logout POST-only and add CSRF tokens (before write endpoints ship). (M)
 - [ ] 20. Drop `'unsafe-inline'` from the CSP, which means moving the `onclick=` handlers into JS. (M)

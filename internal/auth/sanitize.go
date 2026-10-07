@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strings"
 )
 
@@ -13,26 +12,6 @@ import (
 // maxBytes specifies the maximum allowed size (e.g., 1MB for API routes, 10MB for certs).
 func LimitPayloadSize(w http.ResponseWriter, r *http.Request, maxBytes int64) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
-}
-
-// SanitizeString scrubs basic path traversal, dangerous characters, and trailing whitespace.
-func SanitizeString(input string) string {
-	// Trim whitespace
-	cleaned := strings.TrimSpace(input)
-
-	// Clean path traversal sequences
-	cleaned = filepath.Clean(cleaned)
-
-	// Strip null bytes and common shell control characters
-	replacer := strings.NewReplacer(
-		"\x00", "",
-		"`", "",
-		";", "",
-		"&", "",
-		"|", "",
-		"$", "",
-	)
-	return replacer.Replace(cleaned)
 }
 
 // DecodeJSONStrict decodes JSON and enforces unknown fields, body size limits, and Content-Type.

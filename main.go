@@ -412,7 +412,7 @@ func handleApply(w http.ResponseWriter, r *http.Request) {
 func handleLogin(w http.ResponseWriter, r *http.Request) {
 	auth.LimitPayloadSize(w, r, 1024*1024)
 
-	username := auth.SanitizeString(r.FormValue("username"))
+	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
 
 	authCfg, err := config.LoadAuthConfig(authPath)
@@ -421,15 +421,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var validUser bool
-	for _, u := range authCfg.Users {
-		if u.Username == username && config.CheckPasswordHash(password, u.PasswordHash) {
-			validUser = true
-			break
-		}
-	}
-
-	if !validUser {
+	if !auth.Authenticate(authCfg.Users, username, password) {
 		tmpl.ExecuteTemplate(w, "login.html", map[string]string{
 			"Error": "Invalid username or password",
 		})
