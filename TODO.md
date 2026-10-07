@@ -49,7 +49,7 @@ Effort: S = under an hour, M = one session, L = multi-session.
 
 ## Tier 2: Correctness (duplicate calls, bad data)
 
-- [ ] 10. **Split sampling from reading.** Only the 1s poller updates `lastIfaceStats` and calls `RecordSample`. `GetSystemStats` reads the poller's latest snapshot. Move CPU sampling into the poller to drop the 100ms sleep per request. (M) `system_stats.go:88-147`, `:373`
+- [x] 10. **Split sampling from reading.** Done 2026-10-06: `PollSystemSample` (1s poller) is the only code that samples `/proc`, records history and computes CPU %; `GetSystemStats` just reads the latest snapshot. Stats requests dropped from ~121 ms to ~20 ms, CPU % now covers a 1s window instead of 100 ms, the poller no longer re-reads `network.json` every second, and a first reading no longer records a bogus 0 rate. Regression tests in `internal/system/system_stats_test.go` (verified to fail if the old behaviour returns).
 - [ ] 11. **Traffic DB hygiene.** Record only WAN, LAN and bridge interfaces. Run retention at startup as well as daily. Create the DB with `auto_vacuum=INCREMENTAL`. (S)
 - [ ] 12. **Fix `writeAtomic`.** Unique temp file, fsync the file, rename, fsync the directory. (S) `config.go:342`
 - [x] 12b. **Build on Ubuntu without containers.** Done 2026-10-05: `buildISO.sh` now runs `debootstrap` natively (no docker/podman) and fetches a checksum-pinned Debian keyring, because Ubuntu 24.04's keyring cannot verify Trixie. `BUILD_DIR` can be overridden. Not yet tested end-to-end (needs `sudo apt install debootstrap xorriso mtools` first).

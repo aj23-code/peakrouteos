@@ -73,26 +73,108 @@ type ifaceSample struct {
 	timestamp time.Time
 }
 
+// sampleRecorder receives one throughput sample per interface per poll (implemented by *TrafficDB)
+type sampleRecorder interface {
+	RecordSample(iface string, rxBytes, txBytes int64)
+}
+
+// ifaceSnapshot is the latest reading of one interface, produced by the background poller
+type ifaceSnapshot struct {
+	rxBytes, rxPackets, rxBytesSec uint64
+	txBytes, txPackets, txBytesSec uint64
+}
+
+// Sampling state. PollSystemSample is the only writer; GetSystemStats only reads.
 var (
-	ifaceMu         sync.Mutex
+	sampleMu        sync.Mutex
 	lastIfaceStats  = make(map[string]ifaceSample)
-	globalTrafficDB *TrafficDB
+	latestIfaces    map[string]ifaceSnapshot // replaced wholesale each poll, never mutated
+	lastCPU         CpuSample
+	haveLastCPU     bool
+	latestCPUPct    float64
+	globalTrafficDB sampleRecorder
 )
 
 // SetTrafficDB registers the database instance so stats poller can record history
 func SetTrafficDB(db *TrafficDB) {
+	if db == nil {
+		globalTrafficDB = nil
+		return
+	}
 	globalTrafficDB = db
 }
 
-// PollNetworkInterfaces strictly parses /proc/net/dev for 1-second background ticks
-func PollNetworkInterfaces(configPath string) error {
-	netConfigPath := filepath.Join(filepath.Dir(configPath), "network.json")
-	netCfg, _ := config.LoadNetworkConfig(netConfigPath)
+// bytesPerSec returns the rate between two counter readings, and false if it can't be
+// computed (no elapsed time, or the counter went backwards after an interface reset)
+func bytesPerSec(prev, cur uint64, seconds float64) (uint64, bool) {
+	if seconds <= 0 || cur < prev {
+		return 0, false
+	}
+	return uint64(float64(cur-prev) / seconds), true
+}
 
-	var dummyStats SystemStats
-	dummyStats.Interfaces = make(map[string]InterfaceStats)
+// PollSystemSample reads /proc once and updates the shared snapshot (interface counters and
+// rates, CPU usage), recording interface throughput into the history database. Called once a
+// second by the background poller; request handlers must not call it.
+func PollSystemSample() error {
+	raw, err := readNetDev()
+	if err != nil {
+		return err
+	}
+	cpu, cpuErr := readCPUSample()
+	now := time.Now()
 
-	return parseNetworkInterfaces(&dummyStats, netCfg)
+	sampleMu.Lock()
+	defer sampleMu.Unlock()
+
+	next := make(map[string]ifaceSnapshot, len(raw))
+	for iface, cur := range raw {
+		snap := cur
+
+		// Only record when there is a valid previous reading; a first sample or a counter
+		// reset would otherwise store a bogus zero rate
+		if prev, ok := lastIfaceStats[iface]; ok {
+			dt := now.Sub(prev.timestamp).Seconds()
+			rx, rxOK := bytesPerSec(prev.rxBytes, cur.rxBytes, dt)
+			tx, txOK := bytesPerSec(prev.txBytes, cur.txBytes, dt)
+			snap.rxBytesSec, snap.txBytesSec = rx, tx
+
+			if rxOK && txOK && globalTrafficDB != nil {
+				globalTrafficDB.RecordSample(iface, int64(rx), int64(tx))
+			}
+		}
+
+		lastIfaceStats[iface] = ifaceSample{rxBytes: cur.rxBytes, txBytes: cur.txBytes, timestamp: now}
+		next[iface] = snap
+	}
+	latestIfaces = next
+
+	if cpuErr == nil {
+		if haveLastCPU {
+			if totalDelta := cpu.Total - lastCPU.Total; totalDelta > 0 {
+				idleDelta := cpu.Idle - lastCPU.Idle
+				latestCPUPct = (float64(totalDelta-idleDelta) / float64(totalDelta)) * 100.0
+			}
+		}
+		lastCPU, haveLastCPU = cpu, true
+	}
+
+	return nil
+}
+
+// latestSample returns the most recent snapshot, taking one first if the poller hasn't run yet
+func latestSample() (map[string]ifaceSnapshot, float64) {
+	sampleMu.Lock()
+	ifaces, cpu := latestIfaces, latestCPUPct
+	sampleMu.Unlock()
+
+	if ifaces == nil {
+		_ = PollSystemSample()
+		sampleMu.Lock()
+		ifaces, cpu = latestIfaces, latestCPUPct
+		sampleMu.Unlock()
+	}
+	return ifaces, cpu
 }
 
 // GetSystemStats gathers live CPU, Memory, Swap, Uptime, Storage, State Table, and Network metrics
@@ -129,9 +211,10 @@ func GetSystemStats(configPath string) (SystemStats, error) {
 		return stats, fmt.Errorf("failed to parse meminfo: %w", err)
 	}
 
-	if cpuPct, err := sampleCPUUsage(100 * time.Millisecond); err == nil {
-		stats.CPUUsagePct = cpuPct
-	}
+	// Interface rates and CPU usage come from the background poller's latest snapshot, so
+	// serving this request neither blocks on a sampling window nor records history samples
+	snapshot, cpuPct := latestSample()
+	stats.CPUUsagePct = cpuPct
 
 	stats.LoadAvg = getLoadAverage()
 	stats.CPUTempC = getCPUTemperature()
@@ -139,9 +222,7 @@ func GetSystemStats(configPath string) (SystemStats, error) {
 	stats.StateTable = getStateTableSize()
 	stats.DNSServers = getDNSServers()
 
-	if err := parseNetworkInterfaces(&stats, netCfg); err != nil {
-		return stats, fmt.Errorf("failed to parse net dev: %w", err)
-	}
+	fillInterfaceStats(&stats, snapshot, netCfg)
 
 	return stats, nil
 }
@@ -230,29 +311,6 @@ func parseMemInfo(stats *SystemStats) error {
 	}
 
 	return scanner.Err()
-}
-
-func sampleCPUUsage(interval time.Duration) (float64, error) {
-	s1, err := readCPUSample()
-	if err != nil {
-		return 0, err
-	}
-
-	time.Sleep(interval)
-
-	s2, err := readCPUSample()
-	if err != nil {
-		return 0, err
-	}
-
-	totalDelta := float64(s2.Total - s1.Total)
-	idleDelta := float64(s2.Idle - s1.Idle)
-
-	if totalDelta == 0 {
-		return 0, nil
-	}
-
-	return ((totalDelta - idleDelta) / totalDelta) * 100.0, nil
 }
 
 func readCPUSample() (CpuSample, error) {
@@ -370,25 +428,15 @@ func isPhysicalHardware(ifaceName string) bool {
 	return err == nil
 }
 
-func parseNetworkInterfaces(stats *SystemStats, netCfg *config.NetworkConfig) error {
+// readNetDev parses /proc/net/dev into raw per-interface counters (no rates, no side effects)
+func readNetDev() (map[string]ifaceSnapshot, error) {
 	file, err := os.Open("/proc/net/dev")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer file.Close()
 
-	wanIface := ""
-	var lanIfaces []string
-
-	if netCfg != nil {
-		wanIface = strings.TrimSpace(netCfg.WanInterface)
-		lanIfaces = netCfg.LanInterfaces
-	}
-
-	now := time.Now()
-
-	ifaceMu.Lock()
-	defer ifaceMu.Unlock()
+	result := make(map[string]ifaceSnapshot)
 
 	scanner := bufio.NewScanner(file)
 	lineCount := 0
@@ -409,36 +457,29 @@ func parseNetworkInterfaces(stats *SystemStats, netCfg *config.NetworkConfig) er
 			continue
 		}
 
-		rxBytes, _ := strconv.ParseUint(fields[0], 10, 64)
-		rxPackets, _ := strconv.ParseUint(fields[1], 10, 64)
-		txBytes, _ := strconv.ParseUint(fields[8], 10, 64)
-		txPackets, _ := strconv.ParseUint(fields[9], 10, 64)
+		var snap ifaceSnapshot
+		snap.rxBytes, _ = strconv.ParseUint(fields[0], 10, 64)
+		snap.rxPackets, _ = strconv.ParseUint(fields[1], 10, 64)
+		snap.txBytes, _ = strconv.ParseUint(fields[8], 10, 64)
+		snap.txPackets, _ = strconv.ParseUint(fields[9], 10, 64)
+		result[iface] = snap
+	}
 
-		// Calculate live throughput delta
-		var rxBytesSec, txBytesSec uint64
-		if prev, ok := lastIfaceStats[iface]; ok {
-			dt := now.Sub(prev.timestamp).Seconds()
-			if dt > 0 {
-				if rxBytes >= prev.rxBytes {
-					rxBytesSec = uint64(float64(rxBytes-prev.rxBytes) / dt)
-				}
-				if txBytes >= prev.txBytes {
-					txBytesSec = uint64(float64(txBytes-prev.txBytes) / dt)
-				}
-			}
-		}
+	return result, scanner.Err()
+}
 
-		// Record live throughput (Bytes/sec) into SQLite history
-		if globalTrafficDB != nil {
-			globalTrafficDB.RecordSample(iface, int64(rxBytesSec), int64(txBytesSec))
-		}
+// fillInterfaceStats turns the poller's snapshot into API output, tagging each interface
+// with its configured role. It only reads; it never samples or records anything.
+func fillInterfaceStats(stats *SystemStats, snapshot map[string]ifaceSnapshot, netCfg *config.NetworkConfig) {
+	wanIface := ""
+	var lanIfaces []string
 
-		lastIfaceStats[iface] = ifaceSample{
-			rxBytes:   rxBytes,
-			txBytes:   txBytes,
-			timestamp: now,
-		}
+	if netCfg != nil {
+		wanIface = strings.TrimSpace(netCfg.WanInterface)
+		lanIfaces = netCfg.LanInterfaces
+	}
 
+	for iface, snap := range snapshot {
 		role := "unassigned"
 		if wanIface != "" && iface == wanIface {
 			role = "wan"
@@ -452,18 +493,16 @@ func parseNetworkInterfaces(stats *SystemStats, netCfg *config.NetworkConfig) er
 		}
 
 		stats.Interfaces[iface] = InterfaceStats{
-			RxBytes:    rxBytes,
-			RxPackets:  rxPackets,
-			RxBytesSec: rxBytesSec,
-			TxBytes:    txBytes,
-			TxPackets:  txPackets,
-			TxBytesSec: txBytesSec,
+			RxBytes:    snap.rxBytes,
+			RxPackets:  snap.rxPackets,
+			RxBytesSec: snap.rxBytesSec,
+			TxBytes:    snap.txBytes,
+			TxPackets:  snap.txPackets,
+			TxBytesSec: snap.txBytesSec,
 			IsPhysical: isPhysicalHardware(iface),
 			Role:       role,
 		}
 	}
-
-	return scanner.Err()
 }
 
 func RegisterStatsRoutes(mux *http.ServeMux, configPath string) {

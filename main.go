@@ -131,7 +131,7 @@ func main() {
 	// Start 1-second background poller for traffic metrics
 	pollerCtx, cancelPoller := context.WithCancel(context.Background())
 	defer cancelPoller()
-	go startBackgroundNetworkPoller(pollerCtx, sysConfigPath)
+	go startBackgroundNetworkPoller(pollerCtx)
 
 	// Bootstrap self-signed TLS cert if missing
 	if err := cert.EnsureTLSCert(); err != nil {
@@ -318,19 +318,19 @@ func requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func startBackgroundNetworkPoller(ctx context.Context, configPath string) {
+func startBackgroundNetworkPoller(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	// Initial sample on startup
-	_ = system.PollNetworkInterfaces(configPath)
+	_ = system.PollSystemSample()
 
 	for {
 		select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_ = system.PollNetworkInterfaces(configPath)
+				_ = system.PollSystemSample()
 		}
 	}
 }
