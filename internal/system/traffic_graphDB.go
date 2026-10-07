@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	// Samples are buffered in RAM and written in a single transaction at this interval.
-	// Fewer, larger writes mean far less flash wear; a power loss costs at most this much history.
+	// Samples are averaged per minute in RAM and written in a single transaction at this
+	// interval. Fewer, smaller writes mean far less flash wear; a power loss costs at most
+	// this much history.
 	defaultFlushInterval = 60 * time.Second
 
 	retentionDays          = 30
@@ -185,13 +186,14 @@ func (tdb *TrafficDB) GetHistory(iface string, timeRange string) (*TrafficHistor
 	return resp, nil
 }
 
-// startFlusher drains the RAM buffer to SQLite in single transactions every flushInterval.
+// startFlusher averages incoming samples into per-minute rows and writes the ones that changed
+// to SQLite in a single transaction every flushInterval.
 func (tdb *TrafficDB) startFlusher(ctx context.Context) {
 	defer tdb.wg.Done()
 	ticker := time.NewTicker(tdb.flushInterval)
 	defer ticker.Stop()
 
-	var buffer []MetricSample
+	agg := newMinuteAggregator()
 
 	for {
 		select {
@@ -200,21 +202,19 @@ func (tdb *TrafficDB) startFlusher(ctx context.Context) {
 			for {
 				select {
 				case sample := <-tdb.sampleCh:
-					buffer = append(buffer, sample)
+					agg.add(sample)
 				default:
-					tdb.flush(buffer)
+					tdb.flush(agg.changed())
 					return
 				}
 			}
 
 		case sample := <-tdb.sampleCh:
-			buffer = append(buffer, sample)
+			agg.add(sample)
 
 		case <-ticker.C:
-			if len(buffer) > 0 {
-				tdb.flush(buffer)
-				buffer = nil // Reset buffer slice
-			}
+			tdb.flush(agg.changed())
+			agg.expire(time.Now())
 		}
 	}
 }
