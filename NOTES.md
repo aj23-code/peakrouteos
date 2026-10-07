@@ -159,10 +159,18 @@ Decisions for the remaining steps (9c to 9e):
   uncommitted change. The installer/wizard will be revisited later; the daemon does not depend on it.
 - **Dev mode system root:** `systemRoot` is `""` on the appliance and `./dev-data/sysroot` in `-dev`, so a
   dev instance reads (and, once apply exists, writes) a sandbox instead of the host's real `/etc`.
-- **Applying** runs after the HTTP response (networking restarts drop connections), through an
-  injectable command runner and filesystem so tests need no root. Config files are written
-  atomically, checked (`nft -c`, `dnsmasq --test`) before any service is touched, and rolled back if a
-  check or a service action fails.
+- **Applying** (`translator.Applier`, built) takes a `Desired` and a `Plan` and: backs up every file that will
+  change; writes them atomically; **checks the new configuration before any service is touched**
+  (`ifquery --list --all`, `nft -c -f /etc/nftables.conf`, `dnsmasq --test`; a rejected check restores the
+  files and stops); runs the service actions in order (`sysctl -p`, `systemctl restart networking`,
+  `systemctl reload nftables`, `systemctl restart dnsmasq`); and if an action fails restores the files and
+  re-runs the actions so services return to the previous configuration. Rollback problems are reported
+  in the result, never swallowed, and the rollback uses a fresh context so a cancelled apply (shutdown)
+  still puts things back. Applies are serialised. Everything goes through two interfaces so tests need no
+  root: `FileSystem` (`RootFS` maps `/etc/...` into a directory) and `Runner` (`ExecRunner` runs real
+  commands with a fixed `PATH` and no inherited environment, output capped, per-command timeouts;
+  `LogRunner` only logs and is what `-dev` uses). The HTTP layer will run applies after the response is
+  sent (networking restarts drop connections).
 - **Dev mode** uses a sandbox root plus a logging runner and never runs real commands.
 - **Revert survives a daemon restart:** the pending confirm (previous config + deadline) is persisted.
 - First editor page: LAN settings (LAN IP/netmask and DHCP range, lease, on/off). DHCP-only is the
@@ -199,6 +207,7 @@ Decisions for the remaining steps (9c to 9e):
 | 2026-10-06 | Router default LAN 192.168.1.1/24, adopted at startup | installer setup will be revisited later; wizard boxes keep their real DHCP range |
 | 2026-10-06 | CSRF token per session, header for the API, POST-only logout | commit/discard are the first write endpoints |
 | 2026-10-06 | Dev mode works on a sandbox root and never touches the host's /etc | developers run `-dev` on their own machines |
+| 2026-10-06 | Check new config before touching services; roll back files and services on any failure | a bad config must never leave a router half-configured |
 
 ## 10. How things are tested (worth documenting)
 
