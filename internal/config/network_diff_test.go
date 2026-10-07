@@ -272,3 +272,124 @@ func TestDHCPSectionSurvivesJSONRoundTripAndCloning(t *testing.T) {
 		t.Errorf("DHCP after reload = %+v", d)
 	}
 }
+
+// --- RevertNetwork: how a failed or unconfirmed commit is undone ---
+
+func commitConfig(t *testing.T, mgr *Manager, cfg NetworkConfig) {
+	t.Helper()
+	if err := mgr.StageNetwork(func(c *NetworkConfig) error { *c = cfg; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.CommitNetwork(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRevertNetworkRestoresThePreviousConfigAndKeepsTheRejectedEditPending(t *testing.T) {
+	mgr, dir := newTestManager(t)
+	prev := validNet()
+	commitConfig(t, mgr, prev)
+
+	candidate := validNet()
+	candidate.LanIP = "10.0.0.1"
+	commitConfig(t, mgr, candidate) // committed, but the apply failed or was not confirmed
+
+	if err := mgr.RevertNetwork(prev, &candidate); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := mgr.NetworkConfig().LanIP; got != "192.168.1.1" {
+		t.Errorf("active LAN IP = %q, want the previous 192.168.1.1", got)
+	}
+	onDisk, err := LoadNetworkConfig(filepath.Join(dir, "network.json"))
+	if err != nil || onDisk.LanIP != "192.168.1.1" {
+		t.Errorf("network.json = %+v, %v", onDisk, err)
+	}
+	changes := mgr.StagedChanges()
+	if len(changes) != 1 || changes[0].Field != "lan_ip" || changes[0].New != "10.0.0.1" {
+		t.Errorf("the rejected edit should be pending again: %+v", changes)
+	}
+
+	// and it survives a restart
+	reloaded, err := NewManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.StagedChanges(); len(got) != 1 {
+		t.Errorf("after restart: %+v", got)
+	}
+}
+
+func TestRevertNetworkWithoutRestageLeavesNothingPending(t *testing.T) {
+	mgr, dir := newTestManager(t)
+	prev := validNet()
+	commitConfig(t, mgr, prev)
+	next := validNet()
+	next.LanIP = "10.0.0.1"
+	commitConfig(t, mgr, next)
+
+	if err := mgr.RevertNetwork(prev, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := mgr.NetworkConfig().LanIP; got != "192.168.1.1" {
+		t.Errorf("LanIP = %q", got)
+	}
+	if got := mgr.StagedChanges(); len(got) != 0 {
+		t.Errorf("nothing should be pending: %+v", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "network.json.staged")); !os.IsNotExist(err) {
+		t.Error("no stage file expected")
+	}
+}
+
+func TestRevertNetworkDropsALeftoverCandidateThatEqualsThePrevious(t *testing.T) {
+	mgr, dir := newTestManager(t)
+	prev := validNet()
+	commitConfig(t, mgr, prev)
+	if err := mgr.StageNetwork(func(c *NetworkConfig) error { c.LanIP = "10.9.9.1"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	same := prev.clone()
+	if err := mgr.RevertNetwork(prev, &same); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := mgr.StagedNetworkConfig(); has {
+		t.Error("a restaged candidate identical to the active config is not a pending change")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "network.json.staged")); !os.IsNotExist(err) {
+		t.Error("the stale stage file should be gone")
+	}
+}
+
+func TestRevertNetworkChangesNothingIfItCannotSave(t *testing.T) {
+	mgr, dir := newTestManager(t)
+	prev := validNet()
+	commitConfig(t, mgr, prev)
+	next := validNet()
+	next.LanIP = "10.0.0.1"
+	commitConfig(t, mgr, next)
+
+	readOnlyDir(t, dir)
+	if err := mgr.RevertNetwork(prev, nil); err == nil {
+		t.Fatal("expected a save failure")
+	}
+	if got := mgr.NetworkConfig().LanIP; got != "10.0.0.1" {
+		t.Errorf("memory moved although the save failed: %q", got)
+	}
+}
+
+func TestRevertNetworkHandsOutCopies(t *testing.T) {
+	mgr, _ := newTestManager(t)
+	prev := validNet()
+	commitConfig(t, mgr, prev)
+
+	if err := mgr.RevertNetwork(prev, nil); err != nil {
+		t.Fatal(err)
+	}
+	prev.LanInterfaces[0] = "mutated-by-caller"
+	prev.DHCP.RangeStart = "1.2.3.4"
+	if got := mgr.NetworkConfig(); got.LanInterfaces[0] != "eth1" || got.DHCP.RangeStart != "192.168.1.100" {
+		t.Errorf("the manager shares memory with the caller's value: %+v", got)
+	}
+}

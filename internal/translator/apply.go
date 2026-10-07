@@ -111,13 +111,30 @@ type Step struct {
 	Error  string `json:"error,omitempty"`
 }
 
-// Result is the outcome of an Apply.
+// FileBackup is one file as it was before an apply.
+type FileBackup struct {
+	Path    string      `json:"path"`
+	Existed bool        `json:"existed"`
+	Content []byte      `json:"content,omitempty"`
+	Mode    os.FileMode `json:"mode,omitempty"`
+}
+
+// Snapshot is everything needed to put the system back the way it was before an apply: the
+// previous files and the service actions to re-run afterwards. It is plain data, so it can be
+// saved to disk and survive a restart.
+type Snapshot struct {
+	Files   []FileBackup `json:"files"`
+	Actions []Action     `json:"actions"`
+}
+
+// Result is the outcome of an Apply or a Restore.
 type Result struct {
-	OK         bool     `json:"ok"`
-	Error      string   `json:"error,omitempty"`
-	Steps      []Step   `json:"steps"`
-	RolledBack bool     `json:"rolled_back,omitempty"`
-	Problems   []string `json:"rollback_problems,omitempty"` // things that went wrong while undoing
+	OK         bool      `json:"ok"`
+	Error      string    `json:"error,omitempty"`
+	Steps      []Step    `json:"steps"`
+	RolledBack bool      `json:"rolled_back,omitempty"`
+	Problems   []string  `json:"rollback_problems,omitempty"` // things that went wrong while undoing
+	Snapshot   *Snapshot `json:"-"`                           // set on success: how to undo this apply
 }
 
 // Applier puts a Plan on the system. Applies are serialised: two never run at once.
@@ -156,12 +173,6 @@ var serviceCommands = map[string]command{
 	SvcDnsmasq:    {"systemctl", []string{"restart", "dnsmasq"}},
 }
 
-type fileBackup struct {
-	existed bool
-	content []byte
-	mode    os.FileMode
-}
-
 // Apply writes the plan's files, validates them, then restarts the affected services. Any
 // failure restores the previous files and brings the services back to the previous configuration.
 func (a *Applier) Apply(ctx context.Context, desired Desired, plan Plan) Result {
@@ -183,26 +194,27 @@ func (a *Applier) Apply(ctx context.Context, desired Desired, plan Plan) Result 
 		artifacts[art.Path] = art
 	}
 
-	// Remember what is there now, so every failure can put it back
-	backups := map[string]fileBackup{}
+	// Remember what is there now, so every failure (and a later revert) can put it back
+	snap := Snapshot{Actions: append([]Action(nil), plan.Actions...)}
 	for _, f := range plan.Files {
-		b := fileBackup{}
+		b := FileBackup{Path: f.Path}
 		content, err := a.FS.ReadFile(f.Path)
 		switch {
 		case err == nil:
-			b.existed, b.content = true, content
-			b.mode, _ = a.FS.FileMode(f.Path)
+			b.Existed, b.Content = true, content
+			b.Mode, _ = a.FS.FileMode(f.Path)
 		case os.IsNotExist(err):
 		default:
 			res.Error = fmt.Sprintf("cannot read %s to back it up: %v", f.Path, err)
 			return res
 		}
-		backups[f.Path] = b
+		snap.Files = append(snap.Files, b)
 	}
 
 	fail := func(err error) Result {
 		res.Error = err.Error()
-		a.rollback(ctx, plan, backups, &res)
+		res.RolledBack = true
+		res.Problems = a.undo(ctx, snap)
 		return res
 	}
 
@@ -263,6 +275,28 @@ func (a *Applier) Apply(ctx context.Context, desired Desired, plan Plan) Result 
 	}
 
 	res.OK = true
+	res.Snapshot = &snap
+	return res
+}
+
+// Restore puts the system back to a Snapshot taken by an earlier successful Apply: the previous
+// files are written back and the service actions re-run. Used to revert an unconfirmed change.
+func (a *Applier) Restore(ctx context.Context, snap Snapshot) Result {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	res := Result{RolledBack: true}
+	res.Problems = a.undo(ctx, snap)
+	res.OK = len(res.Problems) == 0
+	if !res.OK {
+		res.Error = "the previous configuration could not be fully restored"
+	}
+	for _, f := range snap.Files {
+		res.Steps = append(res.Steps, Step{Name: "restore " + f.Path, OK: true})
+	}
+	for _, act := range snap.Actions {
+		res.Steps = append(res.Steps, Step{Name: fmt.Sprintf("%s %s again", act.Verb, act.Service), OK: true})
+	}
 	return res
 }
 
@@ -272,34 +306,33 @@ func (a *Applier) exec(ctx context.Context, timeout time.Duration, c command) (s
 	return a.Run.Run(ctx, c.name, c.args...)
 }
 
-// rollback restores the previous files and re-runs the service actions so the system is running
-// the configuration it had before. Problems are recorded, never swallowed.
-func (a *Applier) rollback(ctx context.Context, plan Plan, backups map[string]fileBackup, res *Result) {
-	res.RolledBack = true
-	problem := func(format string, args ...any) { res.Problems = append(res.Problems, fmt.Sprintf(format, args...)) }
+// undo restores a snapshot's files and re-runs its service actions so the system is running the
+// configuration it had before. It returns the problems it ran into, never swallowing them.
+func (a *Applier) undo(ctx context.Context, snap Snapshot) []string {
+	var problems []string
+	problem := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
 
 	// Undo in reverse order of the writes
-	for i := len(plan.Files) - 1; i >= 0; i-- {
-		path := plan.Files[i].Path
-		b := backups[path]
+	for i := len(snap.Files) - 1; i >= 0; i-- {
+		b := snap.Files[i]
 		var err error
-		if b.existed {
-			mode := b.mode
+		if b.Existed {
+			mode := b.Mode
 			if mode == 0 {
 				mode = 0644
 			}
-			err = a.FS.WriteFile(path, b.content, mode)
+			err = a.FS.WriteFile(b.Path, b.Content, mode)
 		} else {
-			err = a.FS.RemoveFile(path)
+			err = a.FS.RemoveFile(b.Path)
 		}
 		if err != nil {
-			problem("could not restore %s: %v", path, err)
+			problem("could not restore %s: %v", b.Path, err)
 		}
 	}
 
 	// A fresh context: the one passed in may be the reason we are here
 	rbCtx := context.WithoutCancel(ctx)
-	for _, act := range plan.Actions {
+	for _, act := range snap.Actions {
 		cmd := serviceCommands[act.Service]
 		timeout := serviceTimeout
 		if act.Service == SvcNetworking {
@@ -309,6 +342,7 @@ func (a *Applier) rollback(ctx context.Context, plan Plan, backups map[string]fi
 			problem("could not bring %s back to the previous configuration: %s", act.Service, firstLine(out, err))
 		}
 	}
+	return problems
 }
 
 func firstLine(output string, err error) string {

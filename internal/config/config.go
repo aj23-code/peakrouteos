@@ -507,6 +507,37 @@ func (m *Manager) StageNetwork(fn func(cfg *NetworkConfig) error) error {
 	return nil
 }
 
+// RevertNetwork makes prev the active network configuration again (saving network.json) and, if
+// restage is not nil, puts that configuration back as the pending candidate so a rejected or
+// unconfirmed edit is not lost. It is how a failed or reverted commit is undone. If the save
+// fails nothing changes.
+func (m *Manager) RevertNetwork(prev NetworkConfig, restage *NetworkConfig) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	active := prev.clone()
+	if err := SaveNetworkConfig(m.path(networkFile), &active); err != nil {
+		return fmt.Errorf("failed to restore the previous network config: %w", err)
+	}
+
+	if restage != nil {
+		candidate := restage.clone()
+		if len(DiffNetwork(active, candidate)) > 0 {
+			if err := SaveNetworkConfig(m.path(stagedNetFile), &candidate); err != nil {
+				return fmt.Errorf("failed to keep the rejected change as a candidate: %w", err)
+			}
+			m.network, m.staged, m.hasStaged = active, candidate, true
+			return nil
+		}
+	}
+
+	m.network, m.staged, m.hasStaged = active, active.clone(), false
+	if err := os.Remove(m.path(stagedNetFile)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // DiscardNetwork clears candidate changes and restores active state
 func (m *Manager) DiscardNetwork() error {
 	m.mu.Lock()

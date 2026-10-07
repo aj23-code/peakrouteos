@@ -2,6 +2,7 @@ package translator
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -585,5 +586,163 @@ func TestRollbackStillRunsWhenTheApplyIsCancelledMidway(t *testing.T) {
 	}
 	if restarts != 2 {
 		t.Errorf("networking restarted %d times, want 2 (the cancelled one and the rollback)", restarts)
+	}
+}
+
+// --- snapshots and restore (the basis of revert) ---
+
+func TestASuccessfulApplyReturnsASnapshotOfThePreviousState(t *testing.T) {
+	ap, root, _ := newApplier(t)
+	d, plan := planFor(t, root, routerCfg())
+	if res := ap.Apply(context.Background(), d, plan); !res.OK || res.Snapshot == nil {
+		t.Fatalf("first apply: %+v", res)
+	}
+
+	next := routerCfg()
+	next.DHCP.LeaseTime = "1d"
+	oldDHCP := read(t, root, PathDnsmasqDHCP)
+	d, plan = planFor(t, root, next)
+	res := ap.Apply(context.Background(), d, plan)
+	if !res.OK || res.Snapshot == nil {
+		t.Fatalf("apply: %+v", res)
+	}
+
+	if len(res.Snapshot.Files) != 1 || res.Snapshot.Files[0].Path != PathDnsmasqDHCP ||
+		!res.Snapshot.Files[0].Existed || string(res.Snapshot.Files[0].Content) != oldDHCP {
+		t.Errorf("snapshot files = %+v, want the previous dnsmasq file", res.Snapshot.Files)
+	}
+	if len(res.Snapshot.Actions) != 1 || res.Snapshot.Actions[0].Service != SvcDnsmasq {
+		t.Errorf("snapshot actions = %+v", res.Snapshot.Actions)
+	}
+}
+
+func TestAFailedApplyHasNoSnapshot(t *testing.T) {
+	ap, root, run := newApplier(t)
+	run.fail["dnsmasq --test"] = "bad"
+	d, plan := planFor(t, root, routerCfg())
+	if res := ap.Apply(context.Background(), d, plan); res.OK || res.Snapshot != nil {
+		t.Errorf("a failed apply must not offer a snapshot: %+v", res)
+	}
+}
+
+func TestRestoreReturnsTheSystemToTheSnapshot(t *testing.T) {
+	ap, root, run := newApplier(t)
+	d, plan := planFor(t, root, routerCfg())
+	ap.Apply(context.Background(), d, plan)
+	original := map[string]string{PathInterfaces: read(t, root, PathInterfaces), PathNftables: read(t, root, PathNftables), PathDnsmasqDHCP: read(t, root, PathDnsmasqDHCP)}
+	run.reset()
+
+	next := routerCfg()
+	next.WanInterface = "eth5"
+	d, plan = planFor(t, root, next)
+	applied := ap.Apply(context.Background(), d, plan)
+	if !applied.OK {
+		t.Fatal(applied.Error)
+	}
+	for p, content := range original {
+		if read(t, root, p) == content && p != PathDnsmasqDHCP {
+			t.Fatalf("%s was not changed by the apply", p)
+		}
+	}
+	run.reset()
+
+	res := ap.Restore(context.Background(), *applied.Snapshot)
+	if !res.OK || len(res.Problems) != 0 {
+		t.Fatalf("restore: %+v", res)
+	}
+	for p, content := range original {
+		if got := read(t, root, p); got != content {
+			t.Errorf("%s was not restored", p)
+		}
+	}
+	// the services are re-run so they pick the old files up again
+	if got := strings.Join(run.log(), "|"); got != "systemctl restart networking|systemctl reload nftables|systemctl restart dnsmasq" {
+		t.Errorf("restore commands = %q", got)
+	}
+}
+
+// A revert after a daemon restart works from a snapshot read back from disk
+func TestASnapshotSurvivesBeingSavedAsJSON(t *testing.T) {
+	ap, root, _ := newApplier(t)
+	d, plan := planFor(t, root, routerCfg())
+	ap.Apply(context.Background(), d, plan)
+	before := read(t, root, PathInterfaces)
+
+	next := routerCfg()
+	next.WanInterface = "eth5"
+	d, plan = planFor(t, root, next)
+	applied := ap.Apply(context.Background(), d, plan)
+
+	data, err := json.Marshal(applied.Snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var loaded Snapshot
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		t.Fatal(err)
+	}
+
+	if res := ap.Restore(context.Background(), loaded); !res.OK {
+		t.Fatalf("restore from a reloaded snapshot: %+v", res)
+	}
+	if got := read(t, root, PathInterfaces); got != before {
+		t.Error("the interfaces file was not restored from the reloaded snapshot")
+	}
+}
+
+func TestRestoreRemovesFilesTheApplyCreatedAndRestoresModes(t *testing.T) {
+	ap, root, _ := newApplier(t)
+	d, plan := planFor(t, root, routerCfg()) // everything is new on an empty system
+	applied := ap.Apply(context.Background(), d, plan)
+	if !applied.OK {
+		t.Fatal(applied.Error)
+	}
+
+	if res := ap.Restore(context.Background(), *applied.Snapshot); !res.OK {
+		t.Fatalf("restore: %+v", res)
+	}
+	for _, p := range []string{PathSysctl, PathInterfaces, PathNftables, PathDnsmasqDHCP} {
+		if exists(root, p) {
+			t.Errorf("%s was created by the apply and must be gone after the restore", p)
+		}
+	}
+}
+
+func TestRestorePreservesTheOriginalFileMode(t *testing.T) {
+	ap, root, _ := newApplier(t)
+	if err := root.WriteFile(PathNftables, []byte("old rules\n"), 0750); err != nil {
+		t.Fatal(err)
+	}
+	d, plan := planFor(t, root, routerCfg())
+	applied := ap.Apply(context.Background(), d, plan)
+	if !applied.OK {
+		t.Fatal(applied.Error)
+	}
+	if mode, _ := root.FileMode(PathNftables); mode != 0755 {
+		t.Fatalf("applied mode = %o", mode)
+	}
+
+	ap.Restore(context.Background(), *applied.Snapshot)
+	if mode, _ := root.FileMode(PathNftables); mode != 0750 {
+		t.Errorf("restored mode = %o, want the original 0750", mode)
+	}
+	if got := read(t, root, PathNftables); got != "old rules\n" {
+		t.Errorf("restored content = %q", got)
+	}
+}
+
+func TestRestoreReportsWhatItCouldNotUndo(t *testing.T) {
+	ap, root, run := newApplier(t)
+	d, plan := planFor(t, root, routerCfg())
+	ap.Apply(context.Background(), d, plan)
+	next := routerCfg()
+	next.DHCP.LeaseTime = "1d"
+	d, plan = planFor(t, root, next)
+	applied := ap.Apply(context.Background(), d, plan)
+
+	run.fail["systemctl restart dnsmasq"] = "dnsmasq: failed to start"
+	res := ap.Restore(context.Background(), *applied.Snapshot)
+	if res.OK || len(res.Problems) == 0 || res.Error == "" {
+		t.Errorf("a restore that cannot restart the service must say so: %+v", res)
 	}
 }
