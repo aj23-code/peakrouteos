@@ -2,10 +2,10 @@ package network
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"peakroute/internal/config"
+	"peakroute/internal/fsutil"
 )
 
 const DefaultInterfacesPath = "/etc/network/interfaces"
@@ -91,14 +91,7 @@ func ApplyNetworkConfig(cfg *config.NetworkConfig, targetPath string) error {
 		targetPath = DefaultInterfacesPath
 	}
 
-	content := GenerateInterfaces(cfg)
-	tmpPath := targetPath + ".tmp"
-
-	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write temporary interface file: %w", err)
-	}
-
-	if err := os.Rename(tmpPath, targetPath); err != nil {
+	if err := fsutil.WriteFileAtomic(targetPath, []byte(GenerateInterfaces(cfg)), 0644); err != nil {
 		return fmt.Errorf("failed to atomically update network interface file: %w", err)
 	}
 

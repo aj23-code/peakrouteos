@@ -21,6 +21,7 @@ import (
 	"peakroute/internal/auth"
 	"peakroute/internal/cert"
 	"peakroute/internal/config"
+	"peakroute/internal/fsutil"
 	"peakroute/internal/network"
 	"peakroute/internal/system"
 )
@@ -398,7 +399,8 @@ func handleApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.WriteFile(flagPath, []byte("1"), 0644); err != nil {
+	// Durable on purpose: if this flag were lost in a power cut, the box would offer first-run setup again
+	if err := fsutil.WriteFileAtomic(flagPath, []byte("1"), 0644); err != nil {
 		log.Printf("[-] Failed to write configured flag: %v", err)
 		http.Error(w, "Failed to finish setup", http.StatusInternalServerError)
 		return

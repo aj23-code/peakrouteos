@@ -14,6 +14,8 @@ import (
 	"time"
 	"io"
 	"net/http"
+
+	"peakroute/internal/fsutil"
 )
 
 var (
@@ -191,25 +193,27 @@ func HandleUploadCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Stage both files next to their targets, then rename into place so a failed write
+	// Stage and flush both files first, then swap them in back to back, so a failed write
 	// can't leave a half-written or mismatched cert/key behind
-	certTmp, keyTmp := CertPath+".new", KeyPath+".new"
-	defer os.Remove(certTmp)
-	defer os.Remove(keyTmp)
-
-	if err := os.WriteFile(certTmp, certBytes, 0644); err != nil {
+	stagedCert, err := fsutil.StageFile(CertPath, certBytes, 0644)
+	if err != nil {
 		http.Error(w, "Failed to write certificate to disk", http.StatusInternalServerError)
 		return
 	}
-	if err := os.WriteFile(keyTmp, keyBytes, 0600); err != nil {
+	defer os.Remove(stagedCert) // no-op once committed
+
+	stagedKey, err := fsutil.StageFile(KeyPath, keyBytes, 0600)
+	if err != nil {
 		http.Error(w, "Failed to write private key to disk", http.StatusInternalServerError)
 		return
 	}
-	if err := os.Rename(keyTmp, KeyPath); err != nil {
+	defer os.Remove(stagedKey)
+
+	if err := fsutil.CommitFile(stagedKey, KeyPath); err != nil {
 		http.Error(w, "Failed to install private key", http.StatusInternalServerError)
 		return
 	}
-	if err := os.Rename(certTmp, CertPath); err != nil {
+	if err := fsutil.CommitFile(stagedCert, CertPath); err != nil {
 		http.Error(w, "Failed to install certificate", http.StatusInternalServerError)
 		return
 	}

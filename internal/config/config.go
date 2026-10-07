@@ -11,6 +11,8 @@ import (
 	"sync"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"peakroute/internal/fsutil"
 )
 
 // Default directory paths for config files
@@ -339,20 +341,12 @@ func (m *Manager) OnSysChange() <-chan *SysConfig         { return m.onSysCh }
 
 // --- File I/O Helpers ---
 
-func writeAtomic(filepath string, data []byte, perm os.FileMode) error {
-	tmpPath := filepath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, perm); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, filepath)
-}
-
 func SaveAuthConfig(filepath string, cfg *AuthConfig) error {
 	data, err := json.MarshalIndent(cfg, "", " ")
 	if err != nil {
 		return err
 	}
-	return writeAtomic(filepath, data, 0600)
+	return fsutil.WriteFileAtomic(filepath, data, 0600)
 }
 
 func LoadAuthConfig(filepath string) (*AuthConfig, error) {
@@ -372,7 +366,7 @@ func SaveNetworkConfig(filepath string, cfg *NetworkConfig) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomic(filepath, data, 0644)
+	return fsutil.WriteFileAtomic(filepath, data, 0644)
 }
 
 func LoadNetworkConfig(filepath string) (*NetworkConfig, error) {
@@ -405,7 +399,7 @@ func SaveSysConfig(filepath string, cfg *SysConfig) error {
 		return fmt.Errorf("failed to marshal sysconfig to json: %w", err)
 	}
 
-	err = writeAtomic(filepath, data, 0644)
+	err = fsutil.WriteFileAtomic(filepath, data, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write config file %s: %w", filepath, err)
 	}
