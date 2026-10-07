@@ -327,10 +327,15 @@ func (m *Manager) ReloadAll() error {
 		m.network = NetworkConfig{}
 	}
 
-	// Staged network, if a candidate file exists
-	if stagedCfg, err := LoadNetworkConfig(m.path(stagedNetFile)); err == nil {
+	// Staged network, if a candidate file exists. One that matches the active config (an edit
+	// that was reverted, or left over from an interrupted run) is not a pending change: drop it.
+	if stagedCfg, err := LoadNetworkConfig(m.path(stagedNetFile)); err == nil && len(DiffNetwork(m.network, *stagedCfg)) > 0 {
 		m.staged = stagedCfg.clone()
 		m.hasStaged = true
+	} else if err == nil {
+		_ = os.Remove(m.path(stagedNetFile))
+		m.staged = m.network.clone()
+		m.hasStaged = false
 	} else {
 		warnUnlessMissing(stagedNetFile, err)
 		m.staged = m.network.clone()
@@ -420,6 +425,17 @@ func (m *Manager) StageNetwork(fn func(cfg *NetworkConfig) error) error {
 
 	if err := fn(&next); err != nil {
 		return err
+	}
+
+	// An edit that puts everything back to the active values leaves nothing to commit, so the
+	// candidate disappears instead of lingering as an empty "pending change"
+	if len(DiffNetwork(m.network, next)) == 0 {
+		m.staged = m.network.clone()
+		m.hasStaged = false
+		if err := os.Remove(m.path(stagedNetFile)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
 	}
 
 	if err := SaveNetworkConfig(m.path(stagedNetFile), &next); err != nil {

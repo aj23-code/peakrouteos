@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -129,12 +131,119 @@ func TestStagedChangesComparesCandidateWithActive(t *testing.T) {
 		t.Errorf("StagedChanges() = %+v", got)
 	}
 
-	// Staging the very same values again leaves a candidate file but nothing to commit
+}
+
+// Stage files come and go with real changes: reverting an edit removes the candidate
+func TestRevertingAnEditRemovesTheStageFile(t *testing.T) {
+	mgr, dir := newTestManager(t)
+	stagedPath := filepath.Join(dir, "network.json.staged")
+
+	if err := mgr.StageNetwork(func(c *NetworkConfig) error { *c = validNet(); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.CommitNetwork(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := mgr.StageNetwork(func(c *NetworkConfig) error { c.LanIP = "192.168.50.1"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stagedPath); err != nil {
+		t.Fatalf("a real change should leave a stage file: %v", err)
+	}
+	if _, has := mgr.StagedNetworkConfig(); !has {
+		t.Fatal("StagedNetworkConfig reports no pending change")
+	}
+
+	// Put the value back: nothing is pending any more
 	if err := mgr.StageNetwork(func(c *NetworkConfig) error { c.LanIP = "192.168.1.1"; return nil }); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(stagedPath); !os.IsNotExist(err) {
+		t.Error("the stage file should be gone once the edit is reverted")
+	}
+	if _, has := mgr.StagedNetworkConfig(); has {
+		t.Error("StagedNetworkConfig still reports a pending change")
+	}
 	if got := mgr.StagedChanges(); len(got) != 0 {
-		t.Errorf("a candidate identical to the active config should show no changes, got %+v", got)
+		t.Errorf("StagedChanges() = %+v, want none", got)
+	}
+
+	// and a later edit starts from the active config again
+	if err := mgr.StageNetwork(func(c *NetworkConfig) error { c.LanIP = "10.9.8.1"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if got := mgr.StagedChanges(); len(got) != 1 || got[0].New != "10.9.8.1" {
+		t.Errorf("StagedChanges() = %+v", got)
+	}
+}
+
+func TestStageFileThatMatchesTheActiveConfigIsCleanedUpAtStartup(t *testing.T) {
+	mgr, dir := newTestManager(t)
+	if err := mgr.StageNetwork(func(c *NetworkConfig) error { *c = validNet(); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.CommitNetwork(); err != nil {
+		t.Fatal(err)
+	}
+
+	// A leftover candidate identical to the active config (e.g. from an interrupted run)
+	stagedPath := filepath.Join(dir, "network.json.staged")
+	active := mgr.NetworkConfig()
+	if err := SaveNetworkConfig(stagedPath, &active); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := NewManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, has := reloaded.StagedNetworkConfig(); has {
+		t.Error("a no-op stage file was treated as a pending change")
+	}
+	if _, err := os.Stat(stagedPath); !os.IsNotExist(err) {
+		t.Error("the no-op stage file should have been removed")
+	}
+}
+
+func TestRealPendingChangeSurvivesARestart(t *testing.T) {
+	mgr, dir := newTestManager(t)
+	if err := mgr.StageNetwork(func(c *NetworkConfig) error { *c = validNet(); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.CommitNetwork(); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.StageNetwork(func(c *NetworkConfig) error { c.LanIP = "192.168.77.1"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := NewManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.StagedChanges(); len(got) != 1 || got[0].New != "192.168.77.1" {
+		t.Errorf("after restart StagedChanges() = %+v", got)
+	}
+}
+
+func TestDetectedHardwareAloneNeverCreatesAStageFile(t *testing.T) {
+	mgr, dir := newTestManager(t)
+	if err := mgr.StageNetwork(func(c *NetworkConfig) error { *c = validNet(); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.CommitNetwork(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := mgr.StageNetwork(func(c *NetworkConfig) error {
+		c.Interfaces = []SystemInterface{{Name: "eth9", State: "up"}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "network.json.staged")); !os.IsNotExist(err) {
+		t.Error("a hardware-inventory refresh must not look like a pending change")
 	}
 }
 
