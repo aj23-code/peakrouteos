@@ -22,6 +22,7 @@ import (
 	"peakroute/internal/cert"
 	"peakroute/internal/config"
 	"peakroute/internal/network"
+	"peakroute/internal/pipeline"
 	"peakroute/internal/system"
 	"peakroute/internal/translator"
 )
@@ -36,6 +37,7 @@ var (
 	listenPort   string
 	tmpl         *template.Template
 	cfgMgr       *config.Manager
+	configSvc    *pipeline.Service
 	sessionMgr   *auth.SessionManager
 	loginLimiter *auth.RateLimiter
 )
@@ -105,6 +107,23 @@ func main() {
 		log.Printf("Warning: could not adopt existing network settings: %v", err)
 	}
 
+	// The commit/confirm/revert workflow for network changes. On the appliance it writes the real
+	// system files and runs real commands; in -dev it works on the sandbox root and only logs the
+	// commands, so a developer's own machine is never reconfigured.
+	var runner translator.Runner = translator.ExecRunner{}
+	if devMode {
+		runner = &translator.LogRunner{}
+	}
+	configSvc = pipeline.New(pipeline.Options{
+		Manager:  cfgMgr,
+		FS:       translator.RootFS(systemRoot),
+		Runner:   runner,
+		StateDir: configDir,
+	})
+	if err := configSvc.Resume(); err != nil {
+		log.Printf("Warning: could not resume a pending configuration change: %v", err)
+	}
+
 	// Initialize session tracking and rate limiting
 	sessionMgr = auth.NewSessionManager(cfgMgr)
 	loginLimiter = auth.NewRateLimiter(5, 2*time.Minute)
@@ -169,6 +188,14 @@ func main() {
 
 	// Physical Devices Endpoint
 	mux.HandleFunc("/api/v1/system/devices", requireAuth(network.HandleGetDevices))
+
+	// Staged network changes: review, commit, confirm, revert, discard
+	mux.HandleFunc("/api/v1/config/status", requireAuth(configSvc.HandleStatus))
+	mux.HandleFunc("/api/v1/config/staged", requireAuth(configSvc.HandleStaged))
+	mux.HandleFunc("/api/v1/config/commit", requireAuth(configSvc.HandleCommit))
+	mux.HandleFunc("/api/v1/config/confirm", requireAuth(configSvc.HandleConfirm))
+	mux.HandleFunc("/api/v1/config/revert", requireAuth(configSvc.HandleRevert))
+	mux.HandleFunc("/api/v1/config/discard", requireAuth(configSvc.HandleDiscard))
 
 	// System DHCP List Endpoint
 	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.HandleDHCPLeases))
@@ -280,6 +307,9 @@ func main() {
 
 	// Stop background polling loop
 	cancelPoller()
+
+	// An open confirm window stays on disk, so the next start resumes (or reverts) it
+	configSvc.Close()
 
 	// Shutdown server gracefully
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)

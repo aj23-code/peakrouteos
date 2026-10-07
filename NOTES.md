@@ -146,7 +146,7 @@ Built so far:
     restarts a managed dnsmasq (it drops the LAN address dnsmasq is bound to).
   - A `nil` DHCP section leaves the existing dnsmasq file alone and adds a note to the plan.
 
-- **9c, `internal/pipeline.Service`** (built; HTTP endpoints still to come) runs the workflow:
+- **9c, `internal/pipeline.Service`** (built, with the endpoints in section 8) runs the workflow:
   - `Review()`: changes, per-field validation errors, the plan, notes, whether confirmation is needed.
   - `Commit()`: refuses if busy or nothing is staged, validates, renders and plans, makes the staged config
     active (`network.json`), then applies **in the background** (so the HTTP response is sent before
@@ -166,6 +166,11 @@ Built so far:
     `Close()` stops timers but leaves the record for the next start.
   - `Status()` is what the banner polls: `has_changes` follows real differences, never a file's existence.
   - Time and timers are injectable, so the 60 seconds are tested without waiting.
+
+Verified end to end against a real dev server (real login and CSRF): review, commit (403 without the
+token, 202 with), the countdown, confirm; and a **SIGKILL in the middle of the 60 seconds**: after the
+restart the countdown continued (46 s left, not 60) and the deadline reverted the sandbox files,
+`network.json`, and put the edit back in the pending changes.
 
 Decisions for the remaining steps (9c to 9e):
 
@@ -192,7 +197,10 @@ Decisions for the remaining steps (9c to 9e):
   commands with a fixed `PATH` and no inherited environment, output capped, per-command timeouts;
   `LogRunner` only logs and is what `-dev` uses). The HTTP layer will run applies after the response is
   sent (networking restarts drop connections).
-- **Dev mode** uses a sandbox root plus a logging runner and never runs real commands.
+- **Dev mode** uses a sandbox root plus a logging runner and never runs real commands (built and verified:
+  the dry-run runner logs `[dry-run] would run: ...` and the sandbox files appear under
+  `dev-data/sysroot/`). To exercise the flow before the editor page exists, put a candidate in
+  `dev-data/network.json.staged` (and the active config in `network.json`) before starting the daemon.
 - **Revert survives a daemon restart:** the pending confirm is persisted (`confirm.json`, mode 0600: deadline,
   previous config, the rejected candidate and a file snapshot).
 - First editor page: LAN settings (LAN IP/netmask and DHCP range, lease, on/off). DHCP-only is the
@@ -212,6 +220,12 @@ Decisions for the remaining steps (9c to 9e):
 | `GET /api/v1/system/devices` | session | physical NICs |
 | `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage |
 | `POST /api/v1/cert/upload` | session + `X-CSRF-Token` | multipart `cert` and `key` |
+| `GET /api/v1/config/status` | session | `state` (idle, applying, awaiting_confirm), `has_changes`, `change_count`, `confirm.seconds_left`, `last` outcome; polled by the banner |
+| `GET /api/v1/config/staged` | session | the review: `changes`, `valid`, per-field `errors`, `plan` (files and service actions), `notes`, `needs_confirm`, `confirm_seconds` |
+| `POST /api/v1/config/commit` | session + CSRF | 202 once applying has started (poll status); 400 with per-field `errors`; 409 if busy or nothing staged |
+| `POST /api/v1/config/confirm` | session + CSRF | keep the change; 409 if nothing is waiting |
+| `POST /api/v1/config/revert` | session + CSRF | undo the change waiting for confirmation now (202) |
+| `POST /api/v1/config/discard` | session + CSRF | drop the staged changes; 409 while applying or awaiting confirmation |
 
 ## 9. Decisions log
 
