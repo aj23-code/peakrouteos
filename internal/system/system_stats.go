@@ -71,6 +71,7 @@ type ifaceSample struct {
 	rxBytes   uint64
 	txBytes   uint64
 	timestamp time.Time
+	physical  bool // cached on first sight: real hardware, not a bridge/veth/VLAN
 }
 
 // sampleRecorder receives one throughput sample per interface per poll (implemented by *TrafficDB)
@@ -82,6 +83,7 @@ type sampleRecorder interface {
 type ifaceSnapshot struct {
 	rxBytes, rxPackets, rxBytesSec uint64
 	txBytes, txPackets, txBytesSec uint64
+	physical                       bool
 }
 
 // Sampling state. PollSystemSample is the only writer; GetSystemStats only reads.
@@ -93,6 +95,9 @@ var (
 	haveLastCPU     bool
 	latestCPUPct    float64
 	globalTrafficDB sampleRecorder
+
+	// isPhysical decides which interfaces are tracked in history; replaced in tests
+	isPhysical = isPhysicalHardware
 )
 
 // SetTrafficDB registers the database instance so stats poller can record history
@@ -131,23 +136,38 @@ func PollSystemSample() error {
 	for iface, cur := range raw {
 		snap := cur
 
-		// Only record when there is a valid previous reading; a first sample or a counter
-		// reset would otherwise store a bogus zero rate
-		if prev, ok := lastIfaceStats[iface]; ok {
+		prev, seen := lastIfaceStats[iface]
+		physical := prev.physical
+		if !seen {
+			physical = isPhysical(iface)
+		}
+		snap.physical = physical
+
+		if seen {
 			dt := now.Sub(prev.timestamp).Seconds()
 			rx, rxOK := bytesPerSec(prev.rxBytes, cur.rxBytes, dt)
 			tx, txOK := bytesPerSec(prev.txBytes, cur.txBytes, dt)
 			snap.rxBytesSec, snap.txBytesSec = rx, tx
 
-			if rxOK && txOK && globalTrafficDB != nil {
+			// History is kept for physical interfaces only (that is all the UI charts), and only
+			// with a valid previous reading; a first sample or a counter reset would otherwise
+			// store a bogus zero rate
+			if physical && rxOK && txOK && globalTrafficDB != nil {
 				globalTrafficDB.RecordSample(iface, int64(rx), int64(tx))
 			}
 		}
 
-		lastIfaceStats[iface] = ifaceSample{rxBytes: cur.rxBytes, txBytes: cur.txBytes, timestamp: now}
+		lastIfaceStats[iface] = ifaceSample{rxBytes: cur.rxBytes, txBytes: cur.txBytes, timestamp: now, physical: physical}
 		next[iface] = snap
 	}
 	latestIfaces = next
+
+	// Forget interfaces that have disappeared so a returning one starts from a fresh reading
+	for iface := range lastIfaceStats {
+		if _, ok := raw[iface]; !ok {
+			delete(lastIfaceStats, iface)
+		}
+	}
 
 	if cpuErr == nil {
 		if haveLastCPU {
@@ -499,7 +519,7 @@ func fillInterfaceStats(stats *SystemStats, snapshot map[string]ifaceSnapshot, n
 			TxBytes:    snap.txBytes,
 			TxPackets:  snap.txPackets,
 			TxBytesSec: snap.txBytesSec,
-			IsPhysical: isPhysicalHardware(iface),
+			IsPhysical: snap.physical,
 			Role:       role,
 		}
 	}

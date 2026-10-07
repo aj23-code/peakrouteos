@@ -12,11 +12,16 @@ import (
 type countingRecorder struct {
 	mu      sync.Mutex
 	samples int
+	ifaces  map[string]int
 }
 
 func (c *countingRecorder) RecordSample(iface string, rxBytes, txBytes int64) {
 	c.mu.Lock()
 	c.samples++
+	if c.ifaces == nil {
+		c.ifaces = make(map[string]int)
+	}
+	c.ifaces[iface]++
 	c.mu.Unlock()
 }
 
@@ -26,11 +31,20 @@ func (c *countingRecorder) count() int {
 	return c.samples
 }
 
-// resetSamplerState gives a test a clean sampler and restores the globals afterwards
+func (c *countingRecorder) recorded(iface string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.ifaces[iface]
+}
+
+// resetSamplerState gives a test a clean sampler (every interface counts as physical unless
+// the test overrides isPhysical) and restores the globals afterwards
 func resetSamplerState(t *testing.T) *countingRecorder {
 	t.Helper()
 
 	rec := &countingRecorder{}
+	origIsPhysical := isPhysical
+	isPhysical = func(string) bool { return true }
 
 	sampleMu.Lock()
 	lastIfaceStats = make(map[string]ifaceSample)
@@ -47,6 +61,7 @@ func resetSamplerState(t *testing.T) *countingRecorder {
 		haveLastCPU = false
 		latestCPUPct = 0
 		globalTrafficDB = nil
+		isPhysical = origIsPhysical
 		sampleMu.Unlock()
 	})
 
@@ -163,5 +178,74 @@ func TestStatsRequestBeforeFirstPollStillWorks(t *testing.T) {
 	}
 	if n := rec.count(); n != 0 {
 		t.Errorf("fallback sample recorded %d history samples, want 0", n)
+	}
+}
+
+func TestPollRecordsOnlyPhysicalInterfaces(t *testing.T) {
+	rec := resetSamplerState(t)
+	isPhysical = func(name string) bool { return name != "lo" }
+
+	if err := PollSystemSample(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if err := PollSystemSample(); err != nil {
+		t.Fatal(err)
+	}
+
+	sampleMu.Lock()
+	physical := 0
+	for name := range latestIfaces {
+		if name != "lo" {
+			physical++
+		}
+	}
+	sampleMu.Unlock()
+
+	if physical == 0 {
+		t.Skip("no non-loopback interfaces found in /proc/net/dev")
+	}
+	if n := rec.recorded("lo"); n != 0 {
+		t.Errorf("loopback was recorded %d times, want 0", n)
+	}
+	if n := rec.count(); n != physical {
+		t.Errorf("recorded %d samples, want %d (one per physical interface)", n, physical)
+	}
+}
+
+func TestFillInterfaceStatsReportsCachedPhysicalFlag(t *testing.T) {
+	snapshot := map[string]ifaceSnapshot{
+		"eth0": {rxBytes: 10, physical: true},
+		"br0":  {rxBytes: 20, physical: false},
+	}
+	stats := &SystemStats{Interfaces: make(map[string]InterfaceStats)}
+	netCfg := &config.NetworkConfig{WanInterface: "eth0", LanInterfaces: []string{"br0"}}
+
+	fillInterfaceStats(stats, snapshot, netCfg)
+
+	if got := stats.Interfaces["eth0"]; !got.IsPhysical || got.Role != "wan" || got.RxBytes != 10 {
+		t.Errorf("eth0 = %+v, want physical wan with 10 rx bytes", got)
+	}
+	if got := stats.Interfaces["br0"]; got.IsPhysical || got.Role != "lan" || got.RxBytes != 20 {
+		t.Errorf("br0 = %+v, want non-physical lan with 20 rx bytes", got)
+	}
+}
+
+func TestVanishedInterfaceIsForgotten(t *testing.T) {
+	resetSamplerState(t)
+
+	sampleMu.Lock()
+	lastIfaceStats["gone0"] = ifaceSample{rxBytes: 1, timestamp: time.Now().Add(-time.Hour)}
+	sampleMu.Unlock()
+
+	if err := PollSystemSample(); err != nil {
+		t.Fatal(err)
+	}
+
+	sampleMu.Lock()
+	_, stillTracked := lastIfaceStats["gone0"]
+	sampleMu.Unlock()
+	if stillTracked {
+		t.Error("an interface missing from /proc/net/dev should be dropped from the tracking state")
 	}
 }

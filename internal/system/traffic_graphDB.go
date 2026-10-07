@@ -3,14 +3,23 @@ package system
 import (
 	"context"
 	"database/sql"
-	"fmt"
-	"net/http"
 	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"sync"
+	"time"
 
 	_ "modernc.org/sqlite" // Pure Go SQLite driver (CGO_ENABLED=0 friendly)
-"log"
-"sync"
-"time"
+)
+
+const (
+	// Samples are buffered in RAM and written in a single transaction at this interval.
+	// Fewer, larger writes mean far less flash wear; a power loss costs at most this much history.
+	defaultFlushInterval = 60 * time.Second
+
+	retentionDays          = 30
+	retentionCheckInterval = 24 * time.Hour
 )
 
 type MetricSample struct {
@@ -27,16 +36,22 @@ type TrafficHistoryResponse struct {
 }
 
 type TrafficDB struct {
-	db       *sql.DB
-	sampleCh chan MetricSample
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
+	db            *sql.DB
+	sampleCh      chan MetricSample
+	flushInterval time.Duration
+	cancel        context.CancelFunc
+	wg            sync.WaitGroup
 }
 
 // NewTrafficDB initializes the SQLite database and starts background workers.
 func NewTrafficDB(dbPath string) (*TrafficDB, error) {
-	// Open SQLite with Write-Ahead Logging (WAL) for high-performance concurrent reads/writes
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)")
+	return newTrafficDB(dbPath, defaultFlushInterval)
+}
+
+func newTrafficDB(dbPath string, flushInterval time.Duration) (*TrafficDB, error) {
+	// Open SQLite with Write-Ahead Logging (WAL) for concurrent reads/writes. auto_vacuum=2
+	// (incremental) lets the daily purge actually return freed pages to the filesystem.
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=auto_vacuum(2)")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite database: %w", err)
 	}
@@ -49,42 +64,69 @@ func NewTrafficDB(dbPath string) (*TrafficDB, error) {
 		rx_bytes INTEGER NOT NULL,
 		tx_bytes INTEGER NOT NULL,
 		PRIMARY KEY (iface, timestamp)
-		);
-		CREATE INDEX IF NOT EXISTS idx_iface_ts ON interface_metrics (iface, timestamp);
-		`
+	);
+	CREATE INDEX IF NOT EXISTS idx_iface_ts ON interface_metrics (iface, timestamp);
+	`
 
-		if _, err := db.Exec(schema); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("failed to run database migration: %w", err)
-		}
+	if _, err := db.Exec(schema); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to run database migration: %w", err)
+	}
 
-		ctx, cancel := context.WithCancel(context.Background())
+	if err := ensureIncrementalVacuum(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 
-		tdb := &TrafficDB{
-			db:       db,
-			sampleCh: make(chan MetricSample, 2000), // Non-blocking buffer
-			cancel:   cancel,
-		}
+	ctx, cancel := context.WithCancel(context.Background())
 
-		// Launch background workers
-		tdb.wg.Add(2)
-		go tdb.startFlusher(ctx)
-		go tdb.startRetentionCleaner(ctx)
+	tdb := &TrafficDB{
+		db:            db,
+		sampleCh:      make(chan MetricSample, 2000), // Non-blocking buffer
+		flushInterval: flushInterval,
+		cancel:        cancel,
+	}
 
-		return tdb, nil
+	// Drop expired history now, not only after a day of uptime, so devices that reboot often still prune
+	tdb.purgeOld()
+
+	// Launch background workers
+	tdb.wg.Add(2)
+	go tdb.startFlusher(ctx)
+	go tdb.startRetentionCleaner(ctx)
+
+	return tdb, nil
+}
+
+// ensureIncrementalVacuum converts a database created before auto_vacuum was enabled.
+// The setting only applies to new files, so existing ones need a one-time VACUUM.
+func ensureIncrementalVacuum(db *sql.DB) error {
+	var mode int
+	if err := db.QueryRow("PRAGMA auto_vacuum").Scan(&mode); err != nil {
+		return fmt.Errorf("failed to read auto_vacuum mode: %w", err)
+	}
+	if mode == 2 {
+		return nil
+	}
+
+	log.Printf("[TrafficDB] Converting existing database to incremental auto_vacuum")
+	if _, err := db.Exec("VACUUM"); err != nil {
+		return fmt.Errorf("failed to enable incremental auto_vacuum: %w", err)
+	}
+	return nil
 }
 
 // RecordSample non-blockingly queues a 1-second interface sample for disk batching.
 func (tdb *TrafficDB) RecordSample(iface string, rxBytes, txBytes int64) {
 	select {
-		case tdb.sampleCh <- MetricSample{
-			Iface:     iface,
-			Timestamp: time.Now().Unix(),
-			RxBytes:   rxBytes,
-			TxBytes:   txBytes,
-		}:
-		default:
-			log.Printf("[TrafficDB] Warning: sample channel buffer full, dropping tick for interface %s", iface)
+	case tdb.sampleCh <- MetricSample{
+		Iface:     iface,
+		Timestamp: time.Now().Unix(),
+		RxBytes:   rxBytes,
+		TxBytes:   txBytes,
+	}:
+	default:
+		log.Printf("[TrafficDB] Warning: sample channel buffer full, dropping tick for interface %s", iface)
 	}
 }
 
@@ -95,15 +137,15 @@ func (tdb *TrafficDB) GetHistory(iface string, timeRange string) (*TrafficHistor
 	var bucketSeconds int64
 
 	switch timeRange {
-		case "24h":
-			startTime = now - (24 * 3600)
-			bucketSeconds = 900 // 15-minute aggregate buckets
-		case "30d":
-			startTime = now - (30 * 86400)
-			bucketSeconds = 3600 // 1-hour aggregate buckets
-		default: // "1h" or fallback
-			startTime = now - 3600
-			bucketSeconds = 60 // 1-minute aggregate buckets
+	case "24h":
+		startTime = now - (24 * 3600)
+		bucketSeconds = 900 // 15-minute aggregate buckets
+	case "30d":
+		startTime = now - (30 * 86400)
+		bucketSeconds = 3600 // 1-hour aggregate buckets
+	default: // "1h" or fallback
+		startTime = now - 3600
+		bucketSeconds = 60 // 1-minute aggregate buckets
 	}
 
 	// Dynamic SQL query downsamples telemetry using bucket integer division
@@ -143,29 +185,36 @@ func (tdb *TrafficDB) GetHistory(iface string, timeRange string) (*TrafficHistor
 	return resp, nil
 }
 
-// startFlusher drains the RAM buffer to SQLite in single transactions every 10 seconds.
+// startFlusher drains the RAM buffer to SQLite in single transactions every flushInterval.
 func (tdb *TrafficDB) startFlusher(ctx context.Context) {
 	defer tdb.wg.Done()
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(tdb.flushInterval)
 	defer ticker.Stop()
 
 	var buffer []MetricSample
 
 	for {
 		select {
-			case <-ctx.Done():
-				// Flush remaining items on shutdown
-				tdb.flush(buffer)
-				return
-
-			case sample := <-tdb.sampleCh:
-				buffer = append(buffer, sample)
-
-			case <-ticker.C:
-				if len(buffer) > 0 {
+		case <-ctx.Done():
+			// Pick up anything still queued in the channel, then flush everything on shutdown
+			for {
+				select {
+				case sample := <-tdb.sampleCh:
+					buffer = append(buffer, sample)
+				default:
 					tdb.flush(buffer)
-					buffer = nil // Reset buffer slice
+					return
 				}
+			}
+
+		case sample := <-tdb.sampleCh:
+			buffer = append(buffer, sample)
+
+		case <-ticker.C:
+			if len(buffer) > 0 {
+				tdb.flush(buffer)
+				buffer = nil // Reset buffer slice
+			}
 		}
 	}
 }
@@ -203,23 +252,28 @@ func (tdb *TrafficDB) flush(samples []MetricSample) {
 	}
 }
 
-// startRetentionCleaner runs once daily to delete metrics older than 30 days.
+// purgeOld deletes metrics past the retention window and returns the freed pages to the filesystem.
+func (tdb *TrafficDB) purgeOld() {
+	cutoff := time.Now().AddDate(0, 0, -retentionDays).Unix()
+	if _, err := tdb.db.Exec("DELETE FROM interface_metrics WHERE timestamp < ?", cutoff); err != nil {
+		log.Printf("[TrafficDB] Retention purge error: %v", err)
+		return
+	}
+	_, _ = tdb.db.Exec("PRAGMA incremental_vacuum")
+}
+
+// startRetentionCleaner purges expired metrics once a day (the first purge runs at startup).
 func (tdb *TrafficDB) startRetentionCleaner(ctx context.Context) {
 	defer tdb.wg.Done()
-	ticker := time.NewTicker(24 * time.Hour)
+	ticker := time.NewTicker(retentionCheckInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				cutoff := time.Now().AddDate(0, 0, -30).Unix()
-				if _, err := tdb.db.Exec("DELETE FROM interface_metrics WHERE timestamp < ?", cutoff); err != nil {
-					log.Printf("[TrafficDB] Retention purge error: %v", err)
-				} else {
-					_, _ = tdb.db.Exec("PRAGMA incremental_vacuum;")
-				}
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			tdb.purgeOld()
 		}
 	}
 }
