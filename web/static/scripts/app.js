@@ -6,11 +6,24 @@
  */
 async function apiFetch(url, options = {}) {
     try {
+        // State-changing requests must carry this session's CSRF token (see the page's <meta>)
+        const method = (options.method || 'GET').toUpperCase();
+        if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+            const token = document.querySelector('meta[name="csrf-token"]');
+            const headers = new Headers(options.headers || {});
+            if (token) headers.set('X-CSRF-Token', token.content);
+            options = { ...options, headers };
+        }
+
         const res = await fetch(url, options);
 
         if (res.status === 401) {
             window.location.href = '/login';
             return null;
+        }
+
+        if (res.status === 403) {
+            console.warn(`[API] ${method} ${url} was rejected (403): missing or invalid CSRF token. Reload the page.`);
         }
 
         return res;

@@ -333,10 +333,20 @@ input:focus {
     color: var(--text-main);
 }
 
+.logout-form {
+    margin: 0;
+}
+
 .btn-logout {
     color: var(--text-muted);
     text-decoration: none;
     transition: color 0.15s ease;
+    /* it is a form button now (logout is a POST): look like the old link */
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
 }
 
 .btn-logout:hover {

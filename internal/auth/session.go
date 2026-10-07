@@ -15,7 +15,20 @@ const sessionCookieName = "peakroute_session"
 
 type Session struct {
 	Username  string
+	CSRFToken string // separate from the cookie so a script that can read it still can't steal the session
 	ExpiresAt time.Time
+}
+
+// SessionInfo is what a valid session tells a handler about its user.
+type SessionInfo struct {
+	Username  string
+	CSRFToken string
+}
+
+func randomToken() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 type SessionManager struct {
@@ -47,12 +60,11 @@ func (sm *SessionManager) CreateSession(username string, w http.ResponseWriter) 
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	bytes := make([]byte, 16)
-	_, _ = rand.Read(bytes)
-	token := hex.EncodeToString(bytes)
+	token := randomToken()
 
 	sm.sessions[token] = Session{
 		Username:  username,
+		CSRFToken: randomToken() + randomToken(),
 		ExpiresAt: sm.now().Add(timeout),
 	}
 
@@ -71,10 +83,18 @@ func (sm *SessionManager) CreateSession(username string, w http.ResponseWriter) 
 	return token
 }
 
+// ValidateSession reports who the request belongs to, extending the session on use.
 func (sm *SessionManager) ValidateSession(r *http.Request) (string, bool) {
+	info, ok := sm.Lookup(r)
+	return info.Username, ok
+}
+
+// Lookup validates the request's session (extending it on use) and returns its details,
+// including the CSRF token the page must send with state-changing requests.
+func (sm *SessionManager) Lookup(r *http.Request) (SessionInfo, bool) {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil {
-		return "", false
+		return SessionInfo{}, false
 	}
 
 	timeout := sm.timeout()
@@ -84,7 +104,7 @@ func (sm *SessionManager) ValidateSession(r *http.Request) (string, bool) {
 
 	session, exists := sm.sessions[cookie.Value]
 	if !exists {
-		return "", false
+		return SessionInfo{}, false
 	}
 
 	now := sm.now()
@@ -92,14 +112,14 @@ func (sm *SessionManager) ValidateSession(r *http.Request) (string, bool) {
 	// Check if session has expired
 	if now.After(session.ExpiresAt) {
 		delete(sm.sessions, cookie.Value)
-		return "", false
+		return SessionInfo{}, false
 	}
 
 	// ROLLING TIMEOUT: extend the session on active use
 	session.ExpiresAt = now.Add(timeout)
 	sm.sessions[cookie.Value] = session
 
-	return session.Username, true
+	return SessionInfo{Username: session.Username, CSRFToken: session.CSRFToken}, true
 }
 
 // DestroySession invalidates the active session in memory and clears the client cookie.

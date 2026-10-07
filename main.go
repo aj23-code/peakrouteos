@@ -207,7 +207,7 @@ func main() {
 		}
 
 		// Protected Dashboard
-		_, authenticated := sessionMgr.ValidateSession(r)
+		session, authenticated := sessionMgr.Lookup(r)
 		if !authenticated {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
@@ -223,8 +223,10 @@ func main() {
 
 			data := struct {
 				SystemMode string
+				CSRFToken  string
 			}{
 				SystemMode: sysMode,
+				CSRFToken:  session.CSRFToken,
 			}
 
 			if err := tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {
@@ -279,18 +281,10 @@ func main() {
 	}
 }
 
-// requireAuth rejects requests without a valid session with a JSON 401 before calling next.
+// requireAuth wraps an API handler: a valid session is required (401) and, for requests that
+// change state, that session's CSRF token (403).
 func requireAuth(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if _, authenticated := sessionMgr.ValidateSession(r); !authenticated {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"unauthorized"}`))
-			return
-		}
-
-		next(w, r)
-	}
+	return auth.RequireAuth(sessionMgr, next)
 }
 
 func startBackgroundNetworkPoller(ctx context.Context) {
@@ -390,6 +384,17 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleLogout(w http.ResponseWriter, r *http.Request) {
+	// Logging out changes state, so it is POST-only and needs the session's CSRF token
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if info, ok := sessionMgr.Lookup(r); ok && !auth.CheckCSRFForm(w, r, info.CSRFToken) {
+		http.Error(w, "Missing or invalid CSRF token", http.StatusForbidden)
+		return
+	}
+
 	sessionMgr.DestroySession(w, r)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
