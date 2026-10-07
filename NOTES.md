@@ -146,6 +146,27 @@ Built so far:
     restarts a managed dnsmasq (it drops the LAN address dnsmasq is bound to).
   - A `nil` DHCP section leaves the existing dnsmasq file alone and adds a note to the plan.
 
+- **9c, `internal/pipeline.Service`** (built; HTTP endpoints still to come) runs the workflow:
+  - `Review()`: changes, per-field validation errors, the plan, notes, whether confirmation is needed.
+  - `Commit()`: refuses if busy or nothing is staged, validates, renders and plans, makes the staged config
+    active (`network.json`), then applies **in the background** (so the HTTP response is sent before
+    networking restarts). A commit whose plan matches the system just saves.
+  - **Confirmation is only demanded when the plan touches networking or nftables** (the changes that can lock
+    the admin out). A DHCP-only change applies and is done. For the others the service waits in
+    `awaiting_confirm`, saves `confirm.json`, and arms a 60 s timer.
+  - `Confirm()` stops the countdown and removes the record (and refuses, leaving the countdown running, if the
+    record cannot be removed, since a restart would otherwise revert a change the user accepted).
+  - Deadline or `Revert()`: restores the **snapshot of the exact previous files** (not a re-render of the
+    previous JSON), restores the previous `network.json`, puts the rejected edit back as the pending
+    candidate, and removes the record only after the revert was attempted.
+  - **Failure paths:** a failed apply rolls back files and services, restores the previous config and keeps the
+    edit pending; if the safety net cannot be armed (the record cannot be saved) the change is undone at once;
+    a timer from an earlier window can never revert a later one (ids).
+  - `Resume()` at startup: an expired window reverts immediately, a live one continues for the time left.
+    `Close()` stops timers but leaves the record for the next start.
+  - `Status()` is what the banner polls: `has_changes` follows real differences, never a file's existence.
+  - Time and timers are injectable, so the 60 seconds are tested without waiting.
+
 Decisions for the remaining steps (9c to 9e):
 
 - **Default LAN in router mode: 192.168.1.1/24**, DHCP enabled `.100` to `.200`, lease 12h. Done
@@ -172,7 +193,8 @@ Decisions for the remaining steps (9c to 9e):
   `LogRunner` only logs and is what `-dev` uses). The HTTP layer will run applies after the response is
   sent (networking restarts drop connections).
 - **Dev mode** uses a sandbox root plus a logging runner and never runs real commands.
-- **Revert survives a daemon restart:** the pending confirm (previous config + deadline) is persisted.
+- **Revert survives a daemon restart:** the pending confirm is persisted (`confirm.json`, mode 0600: deadline,
+  previous config, the rejected candidate and a file snapshot).
 - First editor page: LAN settings (LAN IP/netmask and DHCP range, lease, on/off). DHCP-only is the
   safer first slice (a dnsmasq restart cannot lock you out); to be confirmed.
 
@@ -208,6 +230,9 @@ Decisions for the remaining steps (9c to 9e):
 | 2026-10-06 | CSRF token per session, header for the API, POST-only logout | commit/discard are the first write endpoints |
 | 2026-10-06 | Dev mode works on a sandbox root and never touches the host's /etc | developers run `-dev` on their own machines |
 | 2026-10-06 | Check new config before touching services; roll back files and services on any failure | a bad config must never leave a router half-configured |
+| 2026-10-06 | Revert from a snapshot of the real previous files, persisted for the confirm window | works even if the previous config cannot be rendered, and survives a power cut |
+| 2026-10-06 | Only networking/firewall changes need the 60 s confirmation | a DHCP-only change cannot lock the admin out |
+| 2026-10-06 | A failed or reverted change keeps the user's edit as the pending candidate | fix it instead of retyping it |
 
 ## 10. How things are tested (worth documenting)
 
@@ -234,6 +259,9 @@ Decisions for the remaining steps (9c to 9e):
   which hung the daemon at startup (unit tests missed it because their callbacks never touched the
   Manager; a live run found it). It now runs the callback with no lock held and refuses to save if the
   config changed meanwhile (`ErrConfigChanged`). Always smoke-test startup against a real run.
+- Test helpers that dereference a result (`info.Mode()`) must check the error first: a nil dereference panics
+  the whole test binary and hides every other failure (found while mutation-testing the pipeline).
+- A mutant that does not compile proves nothing: when a mutation test prints a build failure, redo it.
 - For POST/PUT/DELETE from the browser use `apiFetch` (it adds the CSRF header), never bare `fetch`.
 
 ## 12. Documentation to write later
