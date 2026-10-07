@@ -148,9 +148,17 @@ Built so far:
 
 Decisions for the remaining steps (9c to 9e):
 
-- **Default LAN in router mode: 192.168.1.1/24**, DHCP enabled `.100` to `.200`, lease 12h. Applied by
-  the daemon only where the JSON leaves values blank. An existing dnsmasq range (wizard installs) is
-  imported instead of overwritten. The installer/wizard will be revisited later.
+- **Default LAN in router mode: 192.168.1.1/24**, DHCP enabled `.100` to `.200`, lease 12h. Done
+  (`translator.AdoptExisting`, run once at startup through `Manager.AdoptNetwork`): it only fills what the
+  JSON leaves blank and never overwrites. A DHCP section that is missing is imported from an existing
+  `peakroute-dhcp.conf` (so a wizard box keeps its real range, verified end to end: after adoption the
+  translator's plan for a wizard box is empty); with no file it defaults (only for a /24, where `.100`-`.200`
+  fits); a file that cannot be understood (several ranges, tags, a range outside the LAN, a bad lease,
+  unreadable) leaves DHCP unmanaged rather than guessing. AP mode is untouched. Adoption writes
+  `network.json` only if something changed, is not a commit (nothing is applied) and never shows up as an
+  uncommitted change. The installer/wizard will be revisited later; the daemon does not depend on it.
+- **Dev mode system root:** `systemRoot` is `""` on the appliance and `./dev-data/sysroot` in `-dev`, so a
+  dev instance reads (and, once apply exists, writes) a sandbox instead of the host's real `/etc`.
 - **Applying** runs after the HTTP response (networking restarts drop connections), through an
   injectable command runner and filesystem so tests need no root. Config files are written
   atomically, checked (`nft -c`, `dnsmasq --test`) before any service is touched, and rolled back if a
@@ -188,7 +196,9 @@ Decisions for the remaining steps (9c to 9e):
 | 2026-10-06 | Staged changes keyed off the diff, stage file removed when reverted | the banner must reflect real changes |
 | 2026-10-06 | Translator must match the wizard byte for byte | first commit on an existing box must change nothing |
 | 2026-10-06 | 60-second commit-confirm with auto-revert | protection against locking out the admin |
-| 2026-10-06 | Router default LAN 192.168.1.1/24 | installer setup will be revisited later |
+| 2026-10-06 | Router default LAN 192.168.1.1/24, adopted at startup | installer setup will be revisited later; wizard boxes keep their real DHCP range |
+| 2026-10-06 | CSRF token per session, header for the API, POST-only logout | commit/discard are the first write endpoints |
+| 2026-10-06 | Dev mode works on a sandbox root and never touches the host's /etc | developers run `-dev` on their own machines |
 
 ## 10. How things are tested (worth documenting)
 
@@ -210,6 +220,12 @@ Decisions for the remaining steps (9c to 9e):
 - Interface names are not stable across hardware: the CPU temperature code must not assume
   `thermal_zone0` (on the dev laptop it is a fixed 25 C `acpitz` placeholder; TODO #24).
 - Session cookies are per host, so after the LAN IP changes the admin must log in again at the new address.
+- **Do not call a locking `Manager` method while holding the Manager's lock.** Go mutexes are not
+  re-entrant: `AdoptNetwork` originally ran its callback under the lock and the callback read the Manager,
+  which hung the daemon at startup (unit tests missed it because their callbacks never touched the
+  Manager; a live run found it). It now runs the callback with no lock held and refuses to save if the
+  config changed meanwhile (`ErrConfigChanged`). Always smoke-test startup against a real run.
+- For POST/PUT/DELETE from the browser use `apiFetch` (it adds the CSRF header), never bare `fetch`.
 
 ## 12. Documentation to write later
 

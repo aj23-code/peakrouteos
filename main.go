@@ -23,6 +23,7 @@ import (
 	"peakroute/internal/config"
 	"peakroute/internal/network"
 	"peakroute/internal/system"
+	"peakroute/internal/translator"
 )
 
 //go:embed web/templates/* web/static/*
@@ -31,6 +32,7 @@ var embeddedFiles embed.FS
 var (
 	devMode      bool
 	configDir    string
+	systemRoot   string // "" on the appliance; a sandbox directory in -dev so dev never touches the host's /etc
 	listenPort   string
 	tmpl         *template.Template
 	cfgMgr       *config.Manager
@@ -57,6 +59,10 @@ func initAppConfig() {
 			log.Fatalf("[-] Failed to create dev data directory: %v", err)
 		}
 		cert.EnableDevPaths(filepath.Join(configDir, "certs"))
+
+		// Dev runs on a developer's own machine: system files are read from and (later) written to
+		// a sandbox under dev-data, never the host's real /etc
+		systemRoot = filepath.Join(configDir, "sysroot")
 
 		if listenPort == "" {
 			listenPort = ":8443"
@@ -88,6 +94,15 @@ func main() {
 	// Record this build's version/arch/kernel in sys.json (only writes if it changed)
 	if err := cfgMgr.SyncBuildMetadata(); err != nil {
 		log.Printf("Warning: failed to save sys.json: %v", err)
+	}
+
+	// Router mode: fill in what network.json leaves blank (LAN defaults to 192.168.1.1/24) and
+	// import an existing DHCP range from dnsmasq so a wizard-configured box keeps it. This changes
+	// network.json only; nothing is applied to the system.
+	if err := cfgMgr.AdoptNetwork(func(cfg *config.NetworkConfig) bool {
+		return translator.AdoptExisting(cfg, translator.RootFS(systemRoot), cfgMgr.SysConfig().OperationMode)
+	}); err != nil {
+		log.Printf("Warning: could not adopt existing network settings: %v", err)
 	}
 
 	// Initialize session tracking and rate limiting

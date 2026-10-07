@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -406,6 +407,65 @@ func (m *Manager) SyncBuildMetadata() error {
 		return err
 	}
 	m.sys = next
+	return nil
+}
+
+// ErrConfigChanged is returned by AdoptNetwork when the configuration changed while it was
+// working out its edit; nothing is written and the caller can simply try again.
+var ErrConfigChanged = errors.New("network configuration changed while adopting settings")
+
+// AdoptNetwork lets the daemon fill in or import settings on the *active* configuration at
+// startup (router defaults, an existing DHCP range). fn edits a copy and reports whether it
+// changed anything; only then is network.json rewritten. This is not a commit: no translator
+// run is triggered, and nothing is written when nothing changed. A pending candidate gets the
+// same edit, so the adoption never appears as a user change.
+//
+// fn runs without the Manager's lock held, so it may freely call the Manager's own accessors
+// (calling them under the lock would deadlock). If the configuration changes while fn runs, the
+// result is discarded and ErrConfigChanged is returned.
+func (m *Manager) AdoptNetwork(fn func(cfg *NetworkConfig) bool) error {
+	m.mu.RLock()
+	baseActive := m.network.clone()
+	baseStaged, hadStaged := m.staged.clone(), m.hasStaged
+	m.mu.RUnlock()
+
+	nextActive := baseActive.clone()
+	activeChanged := fn(&nextActive)
+
+	nextStaged := baseStaged.clone()
+	stagedChanged := false
+	if hadStaged {
+		stagedChanged = fn(&nextStaged)
+	}
+
+	if !activeChanged && !stagedChanged {
+		return nil
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.hasStaged != hadStaged ||
+		!reflect.DeepEqual(m.network.clone(), baseActive) ||
+		(hadStaged && !reflect.DeepEqual(m.staged.clone(), baseStaged)) {
+		return ErrConfigChanged
+	}
+
+	if activeChanged {
+		if err := SaveNetworkConfig(m.path(networkFile), &nextActive); err != nil {
+			return fmt.Errorf("failed to save adopted network config: %w", err)
+		}
+		m.network = nextActive
+	}
+	if stagedChanged {
+		if err := SaveNetworkConfig(m.path(stagedNetFile), &nextStaged); err != nil {
+			return fmt.Errorf("failed to save adopted staged config: %w", err)
+		}
+		m.staged = nextStaged
+	}
+	if !m.hasStaged {
+		m.staged = m.network.clone()
+	}
 	return nil
 }
 
