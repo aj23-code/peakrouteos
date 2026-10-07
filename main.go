@@ -134,6 +134,9 @@ func main() {
 	defer cancelPoller()
 	go startBackgroundNetworkPoller(pollerCtx)
 
+	// Drop timed-out web sessions in the background
+	sessionMgr.StartJanitor(pollerCtx, time.Minute)
+
 	// Bootstrap self-signed TLS cert if missing
 	if err := cert.EnsureTLSCert(); err != nil {
 		log.Fatalf("[-] TLS initialization error: %v", err)

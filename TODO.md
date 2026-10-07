@@ -68,7 +68,7 @@ Effort: S = under an hour, M = one session, L = multi-session.
 
 - [x] 16. Constant-time login. Done 2026-10-06: `auth.Authenticate` always performs exactly one bcrypt comparison (against a same-cost dummy hash when the user doesn't exist) and visits every user without stopping early. Measured on a live server: unknown username 3.5 ms vs wrong password 65 ms before (a 62 ms leak), 66 ms vs 67 ms after.
 - [x] 17. Remove `SanitizeString` from usernames. Done 2026-10-06: deleted the function (it protected nothing and could silently alter a valid name); login now only trims surrounding whitespace.
-- [ ] 18. Use `SessionTimeoutMinutes` from config. Add an expired-session janitor. (S)
+- [x] 18. Session timeout from config plus an expired-session janitor. Done 2026-10-06: the idle timeout comes from `session_timeout_minutes` in `auth.json` (default 15, clamped to 1 minute..24 h, via `Manager.SessionTimeout`), and a janitor drops timed-out sessions every minute. Also fixed a latent bug: the session cookie had a fixed `Expires`, so browsers deleted it 15 minutes after login however active you were; it is now a browser-session cookie and the sliding timeout is enforced server-side. There is no UI/API to change the timeout yet (it needs a write endpoint, see #9).
 - [ ] 19. Make logout POST-only and add CSRF tokens (before write endpoints ship). (M)
 - [ ] 20. Drop `'unsafe-inline'` from the CSP, which means moving the `onclick=` handlers into JS. (M)
 - [ ] 21. Run the daemon as a dedicated user with `AmbientCapabilities=`, plus a small privileged helper. Do this after #9 shows which privileged operations are needed. (L)

@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -22,6 +23,13 @@ const (
 	DefaultNetworkFile   = "/etc/peakroute/network.json"
 	DefaultStagedNetFile = "/etc/peakroute/network.json.staged"
 	DefaultSysFile       = "/etc/peakroute/sys.json"
+)
+
+// Idle time before a web session expires, and the bounds applied to a configured value
+const (
+	DefaultSessionTimeoutMinutes = 15
+	MinSessionTimeoutMinutes     = 1
+	MaxSessionTimeoutMinutes     = 24 * 60
 )
 
 // --- Struct Definitions ---
@@ -198,7 +206,7 @@ func (m *Manager) ReloadAll() error {
 	if authCfg, err := LoadAuthConfig(authPath); err == nil {
 		m.Auth = *authCfg
 	} else {
-		m.Auth = AuthConfig{SessionTimeoutMinutes: 15, Users: []User{}}
+		m.Auth = AuthConfig{SessionTimeoutMinutes: DefaultSessionTimeoutMinutes, Users: []User{}}
 	}
 
 	// Load Live Network
@@ -332,6 +340,24 @@ func (m *Manager) UpdateSys(fn func(cfg *SysConfig) error) error {
 	}
 
 	return nil
+}
+
+// SessionTimeout returns the idle time before a web session expires: the configured value
+// (session_timeout_minutes in auth.json) clamped to a sane range, or the default if unset.
+func (m *Manager) SessionTimeout() time.Duration {
+	m.mu.RLock()
+	minutes := m.Auth.SessionTimeoutMinutes
+	m.mu.RUnlock()
+
+	switch {
+	case minutes <= 0:
+		minutes = DefaultSessionTimeoutMinutes
+	case minutes < MinSessionTimeoutMinutes:
+		minutes = MinSessionTimeoutMinutes
+	case minutes > MaxSessionTimeoutMinutes:
+		minutes = MaxSessionTimeoutMinutes
+	}
+	return time.Duration(minutes) * time.Minute
 }
 
 // Event notification channels for reactive engines

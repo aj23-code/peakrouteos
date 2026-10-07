@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 func listDir(t *testing.T, dir string) []string {
@@ -140,5 +141,45 @@ func TestStagedNetworkChangesSurviveCommit(t *testing.T) {
 		if filepath.Ext(name) == ".tmp" {
 			t.Errorf("temp file left behind: %s", name)
 		}
+	}
+}
+
+func TestSessionTimeout(t *testing.T) {
+	cases := []struct {
+		name    string
+		minutes int
+		want    time.Duration
+	}{
+		{"unset uses the default", 0, 15 * time.Minute},
+		{"negative uses the default", -5, 15 * time.Minute},
+		{"configured value is used", 45, 45 * time.Minute},
+		{"minimum is allowed", 1, time.Minute},
+		{"maximum is allowed", 24 * 60, 24 * time.Hour},
+		{"huge values are capped at 24h", 100000, 24 * time.Hour},
+	}
+	for _, c := range cases {
+		mgr, err := NewManager(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		mgr.Auth.SessionTimeoutMinutes = c.minutes
+		if got := mgr.SessionTimeout(); got != c.want {
+			t.Errorf("%s: SessionTimeout() = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestSessionTimeoutIsPickedUpFromAuthJSON(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveAuthConfig(filepath.Join(dir, "auth.json"), &AuthConfig{SessionTimeoutMinutes: 120}); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr, err := NewManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := mgr.SessionTimeout(); got != 2*time.Hour {
+		t.Errorf("SessionTimeout() = %v, want 2h from auth.json", got)
 	}
 }
