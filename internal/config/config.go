@@ -2,7 +2,9 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -54,7 +56,7 @@ type SystemInterface struct {
 	Driver string `json:"driver"` // e.g., "igb", "e1000e"
 }
 
-//Unused for now until OS can run on a managed switch
+// Unused for now until OS can run on a managed switch
 type SwitchPortConfig struct {
 	Port   int    `json:"port"`
 	VLAN   int    `json:"vlan"`
@@ -63,7 +65,7 @@ type SwitchPortConfig struct {
 	Status string `json:"status"`
 }
 
-//Also unused for the same reason
+// Also unused for the same reason
 type ManagedSwitchConfig struct {
 	SwitchID string             `json:"switch_id"`
 	Ports    []SwitchPortConfig `json:"ports"`
@@ -93,17 +95,35 @@ type SysConfig struct {
 }
 
 // --- Combined State Manager ---
+
+// Files managed inside the config directory
+const (
+	authFile        = "auth.json"
+	networkFile     = "network.json"
+	stagedNetFile   = "network.json.staged"
+	sysFile         = "sys.json"
+	configuredFlag  = "configured" // exists once first-run setup has completed
+	hostnameDefault = "peakroute-gateway"
+)
+
+// ErrAlreadyConfigured is returned by SetupAdmin once first-run setup has completed.
+var ErrAlreadyConfigured = errors.New("system is already configured")
+
+// Manager is the single owner of the daemon's configuration. The state lives in memory,
+// is read through accessors that return copies, and changes only through methods that save to
+// disk first and update memory second, so memory and disk never disagree after a failed write.
 type Manager struct {
-	mu               sync.RWMutex
-	baseDir          string
-	Auth             AuthConfig
-	Network          NetworkConfig // Active Live State
-	StagedNetwork    NetworkConfig // Candidate Staged State
-	HasStagedNetwork bool          // Uncommitted Changes Flag
-	Sys              SysConfig
-	onNetworkCh      chan *NetworkConfig // Emits ONLY on Commit
-	onAuthCh         chan *AuthConfig
-	onSysCh          chan *SysConfig
+	mu          sync.RWMutex
+	baseDir     string
+	auth        AuthConfig
+	network     NetworkConfig // active live state
+	staged      NetworkConfig // candidate state
+	hasStaged   bool          // uncommitted changes exist
+	sys         SysConfig
+	configured  bool
+	onNetworkCh chan *NetworkConfig // emits ONLY on commit
+	onAuthCh    chan *AuthConfig
+	onSysCh     chan *SysConfig
 }
 
 func NewManager(baseDir string) (*Manager, error) {
@@ -129,6 +149,74 @@ func NewManager(baseDir string) (*Manager, error) {
 	return m, nil
 }
 
+func (m *Manager) path(name string) string { return filepath.Join(m.baseDir, name) }
+
+// --- Copies: callers must never share slices with the live state ---
+
+func (c AuthConfig) clone() AuthConfig {
+	c.Users = append([]User(nil), c.Users...)
+	return c
+}
+
+func (c NetworkConfig) clone() NetworkConfig {
+	c.WanDNS = append([]string(nil), c.WanDNS...)
+	c.LanInterfaces = append([]string(nil), c.LanInterfaces...)
+	c.Interfaces = append([]SystemInterface(nil), c.Interfaces...)
+
+	if len(c.ManagedSwitches) > 0 {
+		switches := make([]ManagedSwitchConfig, len(c.ManagedSwitches))
+		for i, sw := range c.ManagedSwitches {
+			sw.Ports = append([]SwitchPortConfig(nil), sw.Ports...)
+			switches[i] = sw
+		}
+		c.ManagedSwitches = switches
+	} else {
+		c.ManagedSwitches = nil
+	}
+	return c
+}
+
+// --- Read accessors (all return copies) ---
+
+// Users returns the configured accounts.
+func (m *Manager) Users() []User {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.auth.clone().Users
+}
+
+// SysConfig returns the system settings (hostname, operation mode, build info).
+func (m *Manager) SysConfig() SysConfig {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.sys
+}
+
+// NetworkConfig returns the active (committed) network configuration.
+func (m *Manager) NetworkConfig() NetworkConfig {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.network.clone()
+}
+
+// StagedNetworkConfig returns the candidate network configuration and whether it has
+// uncommitted changes. Without staged changes it is a copy of the active configuration.
+func (m *Manager) StagedNetworkConfig() (NetworkConfig, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if !m.hasStaged {
+		return m.network.clone(), false
+	}
+	return m.staged.clone(), true
+}
+
+// IsConfigured reports whether first-run setup has completed.
+func (m *Manager) IsConfigured() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.configured
+}
+
 // Default fallback version if not set via go build -ldflags
 var BuildVersion = "v0.1.0-dev"
 
@@ -150,10 +238,10 @@ func GetBinaryVersion() string {
 	var modified bool
 	for _, setting := range info.Settings {
 		switch setting.Key {
-			case "vcs.revision":
-				rev = setting.Value
-			case "vcs.modified":
-				modified = setting.Value == "true"
+		case "vcs.revision":
+			rev = setting.Value
+		case "vcs.modified":
+			modified = setting.Value == "true"
 		}
 	}
 
@@ -192,68 +280,140 @@ func (s *SysConfig) PopulateBuildMetadata() {
 	s.Kernel = GetKernelRelease()
 }
 
-// ReloadAll reads all separate config files into memory
+func defaultSysConfig() SysConfig {
+	return SysConfig{Hostname: hostnameDefault, OperationMode: "ROUTER"}
+}
+
+// warnUnlessMissing logs a load failure that isn't simply "file not there yet"
+func warnUnlessMissing(name string, err error) {
+	if err != nil && !os.IsNotExist(err) {
+		log.Printf("[config] could not read %s, using defaults: %v", name, err)
+	}
+}
+
+// ReloadAll reads all config files from disk into memory, replacing the current state.
 func (m *Manager) ReloadAll() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	authPath := filepath.Join(m.baseDir, "auth.json")
-	netPath := filepath.Join(m.baseDir, "network.json")
-	stagedNetPath := filepath.Join(m.baseDir, "network.json.staged")
-	sysPath := filepath.Join(m.baseDir, "sys.json")
-
-	// Load Auth
-	if authCfg, err := LoadAuthConfig(authPath); err == nil {
-		m.Auth = *authCfg
+	// Auth
+	if authCfg, err := LoadAuthConfig(m.path(authFile)); err == nil {
+		m.auth = authCfg.clone()
 	} else {
-		m.Auth = AuthConfig{SessionTimeoutMinutes: DefaultSessionTimeoutMinutes, Users: []User{}}
+		warnUnlessMissing(authFile, err)
+		m.auth = AuthConfig{SessionTimeoutMinutes: DefaultSessionTimeoutMinutes, Users: []User{}}
 	}
 
-	// Load Live Network
-	if netCfg, err := LoadNetworkConfig(netPath); err == nil {
-		m.Network = *netCfg
+	// Live network
+	if netCfg, err := LoadNetworkConfig(m.path(networkFile)); err == nil {
+		m.network = netCfg.clone()
 	} else {
-		m.Network = NetworkConfig{}
+		warnUnlessMissing(networkFile, err)
+		m.network = NetworkConfig{}
 	}
 
-	// Load Staged Network if candidate file exists
-	if stagedCfg, err := LoadNetworkConfig(stagedNetPath); err == nil {
-		m.StagedNetwork = *stagedCfg
-		m.HasStagedNetwork = true
+	// Staged network, if a candidate file exists
+	if stagedCfg, err := LoadNetworkConfig(m.path(stagedNetFile)); err == nil {
+		m.staged = stagedCfg.clone()
+		m.hasStaged = true
 	} else {
-		m.StagedNetwork = m.Network
-		m.HasStagedNetwork = false
+		warnUnlessMissing(stagedNetFile, err)
+		m.staged = m.network.clone()
+		m.hasStaged = false
 	}
 
-	// Load Sys
-	if sysCfg, err := LoadSysConfig(sysPath); err == nil {
-		m.Sys = *sysCfg
+	// Sys
+	if sysCfg, err := LoadSysConfig(m.path(sysFile)); err == nil {
+		m.sys = *sysCfg
 	} else {
-		m.Sys = SysConfig{OperationMode: "ROUTER", Configured: false}
+		warnUnlessMissing(sysFile, err)
+		m.sys = defaultSysConfig()
 	}
 
+	// First-run flag
+	_, err := os.Stat(m.path(configuredFlag))
+	m.configured = err == nil
+
+	return nil
+}
+
+// SetupAdmin completes first-run setup: it stores the initial admin account and marks the
+// system configured, atomically with respect to other callers. Only the first caller succeeds;
+// later (or concurrent) attempts get ErrAlreadyConfigured and change nothing.
+func (m *Manager) SetupAdmin(user User) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.configured {
+		return ErrAlreadyConfigured
+	}
+
+	next := m.auth.clone()
+	next.Users = []User{user}
+	if err := SaveAuthConfig(m.path(authFile), &next); err != nil {
+		return fmt.Errorf("failed to save auth config: %w", err)
+	}
+
+	// The flag is the commit point: it is written last, and durably, so a power cut can never
+	// leave a box that has an admin account but offers first-run setup again
+	if err := fsutil.WriteFileAtomic(m.path(configuredFlag), []byte("1"), 0644); err != nil {
+		return fmt.Errorf("failed to write configured flag: %w", err)
+	}
+
+	m.auth = next
+	m.configured = true
+	notifyAuth(m.onAuthCh, next)
+	return nil
+}
+
+// SyncBuildMetadata records the running binary's version, architecture and kernel in sys.json.
+// It writes only when something changed (or the file is missing) so a restart doesn't rewrite
+// the file for no reason.
+func (m *Manager) SyncBuildMetadata() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	next := m.sys
+	next.PopulateBuildMetadata()
+
+	path := m.path(sysFile)
+	_, statErr := os.Stat(path)
+	if next == m.sys && statErr == nil {
+		return nil
+	}
+
+	if err := SaveSysConfig(path, &next); err != nil {
+		return err
+	}
+	m.sys = next
 	return nil
 }
 
 // --- Staging & Commit Handlers ---
 
-// StageNetwork modifies candidate network settings without affecting live operations
+// StageNetwork modifies candidate network settings without affecting live operations. If fn
+// fails, or the candidate can't be saved, the previous candidate is left untouched.
 func (m *Manager) StageNetwork(fn func(cfg *NetworkConfig) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// If no staged changes exist yet, base candidate on active network state
-	if !m.HasStagedNetwork {
-		m.StagedNetwork = m.Network
+	// Edit a copy: the first change starts from the active state, later ones from the candidate
+	next := m.network.clone()
+	if m.hasStaged {
+		next = m.staged.clone()
 	}
 
-	if err := fn(&m.StagedNetwork); err != nil {
+	if err := fn(&next); err != nil {
 		return err
 	}
 
-	m.HasStagedNetwork = true
-	stagedPath := filepath.Join(m.baseDir, "network.json.staged")
-	return SaveNetworkConfig(stagedPath, &m.StagedNetwork)
+	if err := SaveNetworkConfig(m.path(stagedNetFile), &next); err != nil {
+		return err
+	}
+
+	m.staged = next
+	m.hasStaged = true
+	return nil
 }
 
 // DiscardNetwork clears candidate changes and restores active state
@@ -261,92 +421,101 @@ func (m *Manager) DiscardNetwork() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.StagedNetwork = m.Network
-	m.HasStagedNetwork = false
+	m.staged = m.network.clone()
+	m.hasStaged = false
 
-	stagedPath := filepath.Join(m.baseDir, "network.json.staged")
-	_ = os.Remove(stagedPath)
+	_ = os.Remove(m.path(stagedNetFile))
 	return nil
 }
 
-// CommitNetwork applies candidate state to live network state, flushes network.json, and triggers generator
+// CommitNetwork applies the candidate state to the live network state, saves network.json and
+// notifies listeners. If the save fails, nothing changes in memory or on disk.
 func (m *Manager) CommitNetwork() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if !m.HasStagedNetwork {
+	if !m.hasStaged {
 		return nil // Nothing to commit
 	}
 
-	// Promote Staged to Active
-	m.Network = m.StagedNetwork
-	m.HasStagedNetwork = false
-
-	netPath := filepath.Join(m.baseDir, "network.json")
-	if err := SaveNetworkConfig(netPath, &m.Network); err != nil {
+	next := m.staged.clone()
+	if err := SaveNetworkConfig(m.path(networkFile), &next); err != nil {
 		return fmt.Errorf("failed to save live network config: %w", err)
 	}
 
-	// Remove staged candidate file
-	stagedPath := filepath.Join(m.baseDir, "network.json.staged")
-	_ = os.Remove(stagedPath)
+	// Promote staged to active and drop the candidate file
+	m.network = next
+	m.hasStaged = false
+	m.staged = m.network.clone()
+	_ = os.Remove(m.path(stagedNetFile))
 
-	// Emit change event to reactive listeners
-	select {
-		case m.onNetworkCh <- &m.Network:
-		default:
-	}
-
+	notifyNetwork(m.onNetworkCh, m.network.clone())
 	return nil
 }
 
+// UpdateAuth changes the auth settings. If fn fails or the save fails, nothing changes.
 func (m *Manager) UpdateAuth(fn func(cfg *AuthConfig) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if err := fn(&m.Auth); err != nil {
+	next := m.auth.clone()
+	if err := fn(&next); err != nil {
 		return err
 	}
 
-	authPath := filepath.Join(m.baseDir, "auth.json")
-	if err := SaveAuthConfig(authPath, &m.Auth); err != nil {
+	if err := SaveAuthConfig(m.path(authFile), &next); err != nil {
 		return err
 	}
 
-	select {
-		case m.onAuthCh <- &m.Auth:
-		default:
-	}
-
+	m.auth = next
+	notifyAuth(m.onAuthCh, next)
 	return nil
 }
 
+// UpdateSys changes the system settings. If fn fails or the save fails, nothing changes.
 func (m *Manager) UpdateSys(fn func(cfg *SysConfig) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if err := fn(&m.Sys); err != nil {
+	next := m.sys
+	if err := fn(&next); err != nil {
 		return err
 	}
 
-	sysPath := filepath.Join(m.baseDir, "sys.json")
-	if err := SaveSysConfig(sysPath, &m.Sys); err != nil {
+	if err := SaveSysConfig(m.path(sysFile), &next); err != nil {
 		return err
 	}
 
+	m.sys = next
+	snapshot := next
 	select {
-		case m.onSysCh <- &m.Sys:
-		default:
+	case m.onSysCh <- &snapshot:
+	default:
 	}
-
 	return nil
+}
+
+// Change notifications carry a private copy, never a pointer into the Manager's own state
+func notifyNetwork(ch chan *NetworkConfig, cfg NetworkConfig) {
+	select {
+	case ch <- &cfg:
+	default:
+	}
+}
+
+func notifyAuth(ch chan *AuthConfig, cfg AuthConfig) {
+	c := cfg.clone()
+	select {
+	case ch <- &c:
+	default:
+	}
 }
 
 // SessionTimeout returns the idle time before a web session expires: the configured value
 // (session_timeout_minutes in auth.json) clamped to a sane range, or the default if unset.
 func (m *Manager) SessionTimeout() time.Duration {
 	m.mu.RLock()
-	minutes := m.Auth.SessionTimeoutMinutes
+	minutes := m.auth.SessionTimeoutMinutes
 	m.mu.RUnlock()
 
 	switch {
@@ -442,9 +611,4 @@ func HashPassword(password string) (string, error) {
 func CheckPasswordHash(password, hash string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil
-}
-
-func IsConfigured(basePath string) bool {
-	_, err := os.Stat(filepath.Join(basePath, "configured"))
-	return !os.IsNotExist(err)
 }
