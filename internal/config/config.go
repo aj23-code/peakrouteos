@@ -71,6 +71,16 @@ type ManagedSwitchConfig struct {
 	Ports    []SwitchPortConfig `json:"ports"`
 }
 
+// DHCPConfig is the LAN DHCP server's settings. A nil *DHCPConfig on NetworkConfig means the
+// JSON doesn't manage DHCP yet (older installs configured it outside the JSON), which is
+// different from "disabled".
+type DHCPConfig struct {
+	Enabled    bool   `json:"enabled"`
+	RangeStart string `json:"range_start,omitempty"`
+	RangeEnd   string `json:"range_end,omitempty"`
+	LeaseTime  string `json:"lease_time,omitempty"` // dnsmasq format, e.g. "12h", "30m", "1d"
+}
+
 type NetworkConfig struct {
 	WanInterface    string                `json:"wan_interface,omitempty"`
 	WanMode         string                `json:"wan_mode,omitempty"` // "dhcp" or "static"
@@ -81,6 +91,7 @@ type NetworkConfig struct {
 	LanInterfaces   []string              `json:"lan_interfaces,omitempty"`
 	LanIP           string                `json:"lan_ip,omitempty"`
 	LanSubnet       string                `json:"lan_subnet,omitempty"`
+	DHCP            *DHCPConfig           `json:"dhcp,omitempty"`
 	Interfaces      []SystemInterface     `json:"interfaces,omitempty"`
 	ManagedSwitches []ManagedSwitchConfig `json:"managed_switches,omitempty"`
 }
@@ -159,6 +170,10 @@ func (c AuthConfig) clone() AuthConfig {
 }
 
 func (c NetworkConfig) clone() NetworkConfig {
+	if c.DHCP != nil {
+		d := *c.DHCP
+		c.DHCP = &d
+	}
 	c.WanDNS = append([]string(nil), c.WanDNS...)
 	c.LanInterfaces = append([]string(nil), c.LanInterfaces...)
 	c.Interfaces = append([]SystemInterface(nil), c.Interfaces...)
