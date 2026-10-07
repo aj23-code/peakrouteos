@@ -21,7 +21,6 @@ import (
 	"peakroute/internal/auth"
 	"peakroute/internal/cert"
 	"peakroute/internal/config"
-	"peakroute/internal/fsutil"
 	"peakroute/internal/network"
 	"peakroute/internal/system"
 )
@@ -30,17 +29,13 @@ import (
 var embeddedFiles embed.FS
 
 var (
-	devMode       bool
-	configDir     string
-	authPath      string
-	networkPath   string
-	sysConfigPath string
-	flagPath      string
-	listenPort    string
-	tmpl          *template.Template
-	cfgMgr        *config.Manager
-	sessionMgr    *auth.SessionManager
-	loginLimiter  *auth.RateLimiter
+	devMode      bool
+	configDir    string
+	listenPort   string
+	tmpl         *template.Template
+	cfgMgr       *config.Manager
+	sessionMgr   *auth.SessionManager
+	loginLimiter *auth.RateLimiter
 )
 
 func initAppConfig() {
@@ -61,10 +56,6 @@ func initAppConfig() {
 		if err := os.MkdirAll(configDir, 0700); err != nil {
 			log.Fatalf("[-] Failed to create dev data directory: %v", err)
 		}
-		authPath = filepath.Join(configDir, "auth.json")
-		networkPath = filepath.Join(configDir, "network.json")
-		sysConfigPath = filepath.Join(configDir, "sys.json")
-		flagPath = filepath.Join(configDir, "configured")
 		cert.EnableDevPaths(filepath.Join(configDir, "certs"))
 
 		if listenPort == "" {
@@ -74,34 +65,11 @@ func initAppConfig() {
 
 	} else {
 		configDir = "/etc/peakroute"
-		authPath = "/etc/peakroute/auth.json"
-		networkPath = "/etc/peakroute/network.json"
-		flagPath = "/etc/peakroute/configured"
-		sysConfigPath = "/etc/peakroute/sys.json"
 
 		if listenPort == "" {
 			listenPort = ":443"
 		}
 		fmt.Println("[+] Running in PRODUCTION mode (HTTPS)")
-	}
-
-	// Load existing config from disk (or return defaults on error)
-	cfg, err := config.LoadSysConfig(sysConfigPath)
-	if err != nil {
-		log.Println("No existing sys.json found, creating defaults...")
-		cfg = &config.SysConfig{
-			Hostname:      "peakroute-gateway",
-			OperationMode: "ROUTER",
-			Configured:    false,
-		}
-	}
-
-	// Populate/refresh build metadata from Go binary, runtime arch, and kernel
-	cfg.PopulateBuildMetadata()
-
-	// Save updated metadata back to sys.json
-	if err := config.SaveSysConfig(sysConfigPath, cfg); err != nil {
-		log.Printf("Warning: failed to save sys.json: %v", err)
 	}
 }
 
@@ -110,10 +78,16 @@ func main() {
 
 	var err error
 
-	// Initialize config manager using the resolved configDir
+	// The config manager is the single owner of auth, network and system settings: it loads
+	// them from configDir once and everything else reads them from memory
 	cfgMgr, err = config.NewManager(configDir)
 	if err != nil {
 		log.Fatalf("[-] Failed to initialize config manager: %v", err)
+	}
+
+	// Record this build's version/arch/kernel in sys.json (only writes if it changed)
+	if err := cfgMgr.SyncBuildMetadata(); err != nil {
+		log.Printf("Warning: failed to save sys.json: %v", err)
 	}
 
 	// Initialize session tracking and rate limiting
@@ -162,7 +136,7 @@ func main() {
 
 	// System Stats Telemetry Endpoint
 	mux.HandleFunc("/api/v1/system/stats", requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		system.HandleSystemStats(w, r, sysConfigPath)
+		system.HandleSystemStats(w, r, cfgMgr)
 	}))
 
 	// Historical Traffic Graph Data Endpoint
@@ -186,11 +160,8 @@ func main() {
 
 	// Main application routing logic
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		_, err := os.Stat(flagPath)
-		isConfigured := !os.IsNotExist(err)
-
 		// Unconfigured state
-		if !isConfigured {
+		if !cfgMgr.IsConfigured() {
 			if r.URL.Path == "/first_run" || r.URL.Path == "/first-run" {
 				renderFirstRun(w, http.StatusOK, "admin", "")
 				return
@@ -245,9 +216,9 @@ func main() {
 		if r.URL.Path == "/" || r.URL.Path == "/dashboard" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-			sysMode := "ROUTER"
-			if sysCfg, err := config.LoadSysConfig(sysConfigPath); err == nil && sysCfg.OperationMode != "" {
-				sysMode = sysCfg.OperationMode
+			sysMode := cfgMgr.SysConfig().OperationMode
+			if sysMode == "" {
+				sysMode = "ROUTER"
 			}
 
 			data := struct {
@@ -331,10 +302,10 @@ func startBackgroundNetworkPoller(ctx context.Context) {
 
 	for {
 		select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				_ = system.PollSystemSample()
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_ = system.PollSystemSample()
 		}
 	}
 }
@@ -382,30 +353,19 @@ func handleApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authCfg := &config.AuthConfig{
-		Users: []config.User{
-			{
-				Username:     username,
-				PasswordHash: hashedPassword,
-				Role:         "admin",
-			},
-		},
-	}
-
-	if err := os.MkdirAll(configDir, 0700); err != nil {
-		log.Printf("[-] Failed to create config directory: %v", err)
-	}
-
-	if err := config.SaveAuthConfig(authPath, authCfg); err != nil {
-		log.Printf("[-] Failed to save auth config: %v", err)
-		http.Error(w, "Failed to save authentication configuration", http.StatusInternalServerError)
+	// SetupAdmin is atomic: if two setup requests race, only the first creates the account
+	err = cfgMgr.SetupAdmin(config.User{
+		Username:     username,
+		PasswordHash: hashedPassword,
+		Role:         "admin",
+	})
+	if errors.Is(err, config.ErrAlreadyConfigured) {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-
-	// Durable on purpose: if this flag were lost in a power cut, the box would offer first-run setup again
-	if err := fsutil.WriteFileAtomic(flagPath, []byte("1"), 0644); err != nil {
-		log.Printf("[-] Failed to write configured flag: %v", err)
-		http.Error(w, "Failed to finish setup", http.StatusInternalServerError)
+	if err != nil {
+		log.Printf("[-] Setup failed: %v", err)
+		http.Error(w, "Failed to save authentication configuration", http.StatusInternalServerError)
 		return
 	}
 
@@ -418,13 +378,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
 
-	authCfg, err := config.LoadAuthConfig(authPath)
-	if err != nil {
-		http.Error(w, "Failed to load authentication configuration", http.StatusInternalServerError)
-		return
-	}
-
-	if !auth.Authenticate(authCfg.Users, username, password) {
+	if !auth.Authenticate(cfgMgr.Users(), username, password) {
 		tmpl.ExecuteTemplate(w, "login.html", map[string]string{
 			"Error": "Invalid username or password",
 		})

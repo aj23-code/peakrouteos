@@ -1,13 +1,21 @@
 package system
 
 import (
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"peakroute/internal/config"
 )
+
+// fakeConfig is an in-memory ConfigSource: building stats must not need any file on disk
+type fakeConfig struct {
+	sys config.SysConfig
+	net config.NetworkConfig
+}
+
+func (f fakeConfig) SysConfig() config.SysConfig         { return f.sys }
+func (f fakeConfig) NetworkConfig() config.NetworkConfig { return f.net }
 
 type countingRecorder struct {
 	mu      sync.Mutex
@@ -132,10 +140,7 @@ func TestPollRecordsOneSamplePerInterface(t *testing.T) {
 func TestReadingStatsDoesNotRecordSamples(t *testing.T) {
 	rec := resetSamplerState(t)
 
-	sysPath := filepath.Join(t.TempDir(), "sys.json")
-	if err := config.SaveSysConfig(sysPath, &config.SysConfig{Hostname: "test", OperationMode: "ROUTER"}); err != nil {
-		t.Fatalf("SaveSysConfig: %v", err)
-	}
+	cfg := fakeConfig{sys: config.SysConfig{Hostname: "test", OperationMode: "ROUTER"}}
 
 	if err := PollSystemSample(); err != nil {
 		t.Fatal(err)
@@ -147,7 +152,7 @@ func TestReadingStatsDoesNotRecordSamples(t *testing.T) {
 	recordedByPoller := rec.count()
 
 	for i := 0; i < 10; i++ {
-		stats, err := GetSystemStats(sysPath)
+		stats, err := GetSystemStats(cfg)
 		if err != nil {
 			t.Fatalf("GetSystemStats: %v", err)
 		}
@@ -164,12 +169,9 @@ func TestReadingStatsDoesNotRecordSamples(t *testing.T) {
 func TestStatsRequestBeforeFirstPollStillWorks(t *testing.T) {
 	rec := resetSamplerState(t)
 
-	sysPath := filepath.Join(t.TempDir(), "sys.json")
-	if err := config.SaveSysConfig(sysPath, &config.SysConfig{Hostname: "test", OperationMode: "ROUTER"}); err != nil {
-		t.Fatalf("SaveSysConfig: %v", err)
-	}
+	cfg := fakeConfig{sys: config.SysConfig{Hostname: "test", OperationMode: "ROUTER"}}
 
-	stats, err := GetSystemStats(sysPath)
+	stats, err := GetSystemStats(cfg)
 	if err != nil {
 		t.Fatalf("GetSystemStats before any poll: %v", err)
 	}
@@ -247,5 +249,40 @@ func TestVanishedInterfaceIsForgotten(t *testing.T) {
 	sampleMu.Unlock()
 	if stillTracked {
 		t.Error("an interface missing from /proc/net/dev should be dropped from the tracking state")
+	}
+}
+
+func TestStatsUseConfiguredHostnameAndInterfaceRoles(t *testing.T) {
+	resetSamplerState(t)
+
+	// Find a real interface to assign a role to
+	if err := PollSystemSample(); err != nil {
+		t.Fatal(err)
+	}
+	sampleMu.Lock()
+	var iface string
+	for name := range latestIfaces {
+		iface = name
+		break
+	}
+	sampleMu.Unlock()
+	if iface == "" {
+		t.Skip("no interfaces in /proc/net/dev")
+	}
+
+	cfg := fakeConfig{
+		sys: config.SysConfig{Hostname: "edge-router", PeakRouteBuild: "v9.9.9", Arch: "amd64", Kernel: "Linux test"},
+		net: config.NetworkConfig{WanInterface: iface},
+	}
+	stats, err := GetSystemStats(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if stats.Hostname != "edge-router" || stats.PeakRouteBuild != "v9.9.9" || stats.Arch != "amd64" || stats.Kernel != "Linux test" {
+		t.Errorf("system info not taken from the config source: %+v", stats)
+	}
+	if got := stats.Interfaces[iface].Role; got != "wan" {
+		t.Errorf("role of %s = %q, want wan", iface, got)
 	}
 }

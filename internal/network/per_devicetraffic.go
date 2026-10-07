@@ -32,8 +32,8 @@ func htons(i uint16) uint16 {
 // InitTrafficTracker initializes and starts the background traffic monitoring engine
 func InitTrafficTracker(mgr *config.Manager, ifaceName string) {
 	if ifaceName == "" {
-		if netCfg, err := config.LoadNetworkConfig("/etc/peakroute/network.json"); err == nil && len(netCfg.LanInterfaces) > 0 {
-			ifaceName = netCfg.LanInterfaces[0]
+		if lans := mgr.NetworkConfig().LanInterfaces; len(lans) > 0 {
+			ifaceName = lans[0]
 		}
 	}
 

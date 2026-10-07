@@ -197,26 +197,28 @@ func latestSample() (map[string]ifaceSnapshot, float64) {
 	return ifaces, cpu
 }
 
+// ConfigSource supplies the daemon's configuration from memory (satisfied by *config.Manager),
+// so building stats never reads config files from disk.
+type ConfigSource interface {
+	SysConfig() config.SysConfig
+	NetworkConfig() config.NetworkConfig
+}
+
 // GetSystemStats gathers live CPU, Memory, Swap, Uptime, Storage, State Table, and Network metrics
-func GetSystemStats(configPath string) (SystemStats, error) {
+func GetSystemStats(src ConfigSource) (SystemStats, error) {
 	var stats SystemStats
 	stats.Interfaces = make(map[string]InterfaceStats)
 
-	sysCfg, err := config.LoadSysConfig(configPath)
-	if err != nil {
-		return stats, fmt.Errorf("failed to load sys config: %w", err)
-	}
+	sysCfg := src.SysConfig()
+	netCfg := src.NetworkConfig()
 
 	stats.Hostname = sysCfg.Hostname
 	stats.PeakRouteBuild = sysCfg.PeakRouteBuild
 	stats.Arch = sysCfg.Arch
 	stats.Kernel = sysCfg.Kernel
 
-	netConfigPath := filepath.Join(filepath.Dir(configPath), "network.json")
-	netCfg, _ := config.LoadNetworkConfig(netConfigPath)
-
-	stats.CPUModel = getCPUModel()
-	stats.KernelVersion = getKernelVersion()
+	stats.CPUModel = cachedCPUModel()
+	stats.KernelVersion = cachedKernelVersion()
 
 	if uptimeBytes, err := os.ReadFile("/proc/uptime"); err == nil {
 		fields := strings.Fields(string(uptimeBytes))
@@ -242,9 +244,27 @@ func GetSystemStats(configPath string) (SystemStats, error) {
 	stats.StateTable = getStateTableSize()
 	stats.DNSServers = getDNSServers()
 
-	fillInterfaceStats(&stats, snapshot, netCfg)
+	fillInterfaceStats(&stats, snapshot, &netCfg)
 
 	return stats, nil
+}
+
+// The CPU model and running kernel never change while the daemon runs, so read them once
+var (
+	cpuModelOnce      sync.Once
+	cpuModelValue     string
+	kernelVersionOnce sync.Once
+	kernelVersionVal  string
+)
+
+func cachedCPUModel() string {
+	cpuModelOnce.Do(func() { cpuModelValue = getCPUModel() })
+	return cpuModelValue
+}
+
+func cachedKernelVersion() string {
+	kernelVersionOnce.Do(func() { kernelVersionVal = getKernelVersion() })
+	return kernelVersionVal
 }
 
 func getCPUModel() string {
@@ -525,19 +545,13 @@ func fillInterfaceStats(stats *SystemStats, snapshot map[string]ifaceSnapshot, n
 	}
 }
 
-func RegisterStatsRoutes(mux *http.ServeMux, configPath string) {
-	mux.HandleFunc("/api/v1/system/stats", func(w http.ResponseWriter, r *http.Request) {
-		HandleSystemStats(w, r, configPath)
-	})
-}
-
-func HandleSystemStats(w http.ResponseWriter, r *http.Request, configPath string) {
+func HandleSystemStats(w http.ResponseWriter, r *http.Request, src ConfigSource) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	stats, err := GetSystemStats(configPath)
+	stats, err := GetSystemStats(src)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to retrieve system metrics: %v", err), http.StatusInternalServerError)
 		return
