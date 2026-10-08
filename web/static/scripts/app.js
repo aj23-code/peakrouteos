@@ -115,6 +115,11 @@ function loadView(viewName) {
     const targetSection = document.getElementById(`view-${viewName}`);
     if (targetSection) {
         targetSection.classList.remove('hidden');
+
+        // On narrow screens the top bar names the page you are on
+        const title = targetSection.querySelector('h1');
+        const appbarTitle = document.getElementById('appbar-title');
+        if (title && appbarTitle) appbarTitle.textContent = title.textContent;
     }
 
     // Trigger view initialization module
@@ -142,6 +147,51 @@ function loadView(viewName) {
         default:
             console.warn(`No view module configured for: ${viewName}`);
     }
+}
+
+/**
+ * The slide-out menu used on narrow screens (the stylesheet decides when it is a drawer; on a wide
+ * screen these controls are hidden and the sidebar is always visible).
+ */
+const NARROW_SCREEN = window.matchMedia('(max-width: 900px)');
+
+function setMobileNav(open) {
+    const toggle = document.getElementById('nav-toggle');
+    const sidebar = document.getElementById('sidebar');
+    if (!toggle || !sidebar) return;
+
+    const wasOpen = document.body.classList.contains('nav-open');
+    document.body.classList.toggle('nav-open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+
+    // Keyboard users land in the menu when it opens and back on the button when it closes
+    if (open && !wasOpen) sidebar.focus();
+    if (!open && wasOpen) toggle.focus();
+}
+
+function closeMobileNav() {
+    if (NARROW_SCREEN.matches) setMobileNav(false);
+}
+
+function initMobileNav() {
+    const toggle = document.getElementById('nav-toggle');
+    if (!toggle) return;
+
+    toggle.addEventListener('click', () => setMobileNav(!document.body.classList.contains('nav-open')));
+    document.getElementById('nav-close').addEventListener('click', () => setMobileNav(false));
+    document.getElementById('nav-backdrop').addEventListener('click', () => setMobileNav(false));
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && document.body.classList.contains('nav-open')) setMobileNav(false);
+    });
+
+    // Growing the window past the breakpoint shows the normal sidebar: drop the open state
+    NARROW_SCREEN.addEventListener('change', (e) => {
+        if (!e.matches) {
+            document.body.classList.remove('nav-open');
+            toggle.setAttribute('aria-expanded', 'false');
+        }
+    });
 }
 
 /**
@@ -214,6 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             const view = navLink.getAttribute('data-view');
             loadView(view);
+            closeMobileNav();
         });
 
         // Accordion behavior: when a person opens a group, close the others. Only clicks on a group
@@ -236,6 +287,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         initNavSearch(sidebarNav);
     }
+
+    initMobileNav();
 
     // Load default initial view
     loadView('overview');

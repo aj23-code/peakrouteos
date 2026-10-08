@@ -10,6 +10,7 @@
     --accent-blue-bg: rgba(56, 189, 248, 0.12);
     --error-color: #ef4444;
     --accent-amber: #f59e0b;
+    --appbar-h: 3.25rem;
 }
 
 * {
@@ -899,6 +900,11 @@ height: 260px;
     background-color: #059669;
 }
 
+.traffic-canvas {
+    display: block;
+    max-width: 100%;
+}
+
 .traffic-chart-container {
     position: relative;
     width: 100%;
@@ -1184,18 +1190,159 @@ height: 260px;
 .config-review-warning { background: rgba(245, 158, 11, 0.12); border: 1px solid var(--accent-amber); }
 .config-review-result  { background: rgba(239, 68, 68, 0.12); border: 1px solid var(--error-color); }
 
-/* Narrow screens: the dashboard has a fixed-width sidebar, which would squeeze the banner into a
-   sliver. Pin it across the whole viewport instead, and push the page down by its height
-   (config_banner.js keeps --config-banner-h up to date). */
-@media (max-width: 720px) {
-    .config-banner {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
+
+/* ==========================================================================
+ *  Responsive layout: one site that adapts to the screen
+ *
+ *  Wider than 900px: the sidebar sits beside the content (desktop).
+ *  900px and narrower (tablet and phone): the sidebar becomes a slide-out menu opened from a
+ *  slim top bar, the page uses the full width, spacing tightens and touch targets grow.
+ *  ========================================================================== */
+
+/* These three only exist on narrow screens */
+.appbar,
+.nav-backdrop,
+.nav-close {
+    display: none;
+}
+
+/* Grids never force a column wider than the screen */
+.metrics-grid { grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); }
+.sys-info-bar { grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); }
+
+@media (max-width: 900px) {
+    .dashboard-layout {
+        display: block;
+        min-height: 100vh;
     }
 
-    body { padding-top: var(--config-banner-h, 0px); }
+    .content-column {
+        min-height: 100vh;
+    }
 
+    /* Top bar: menu button and the current page's name, pinned while scrolling */
+    .appbar {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        position: sticky;
+        top: 0;
+        z-index: 60;
+        height: var(--appbar-h);
+        padding: 0 0.5rem;
+        background: #020617;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .appbar-menu {
+        min-width: 44px;
+        min-height: 44px;
+        font-size: 1.4rem;
+        line-height: 1;
+        color: var(--text-main);
+        background: none;
+        border: 0;
+        border-radius: 8px;
+        cursor: pointer;
+    }
+
+    .appbar-menu:hover { background: rgba(255, 255, 255, 0.06); }
+
+    .appbar-title {
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+    /* The banner sits right under the top bar */
+    .config-banner { top: var(--appbar-h); }
     .config-bar { padding: 0.75rem 1rem; }
+
+    /* The sidebar becomes a drawer: off screen until opened, and unreachable by keyboard while closed */
+    .sidebar {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 90;
+        width: min(18rem, 86vw);
+        height: 100vh;
+        height: 100dvh;
+        overflow-y: auto;
+        gap: 1.5rem;
+        transform: translateX(-100%);
+        visibility: hidden;
+        transition: transform 0.2s ease, visibility 0s linear 0.2s;
+    }
+
+    body.nav-open .sidebar {
+        transform: none;
+        visibility: visible;
+        transition: transform 0.2s ease, visibility 0s;
+    }
+
+    .brand { position: relative; padding-right: 2.75rem; }
+
+    .nav-close {
+        display: block;
+        position: absolute;
+        top: 50%;
+        right: 0;
+        transform: translateY(-50%);
+        min-width: 44px;
+        min-height: 44px;
+        font-size: 1.6rem;
+        line-height: 1;
+        color: var(--text-muted);
+        background: none;
+        border: 0;
+        border-radius: 8px;
+        cursor: pointer;
+    }
+
+    .nav-close:hover { color: var(--text-main); background: rgba(255, 255, 255, 0.06); }
+
+    .nav-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 85;
+        background: rgba(2, 6, 23, 0.65);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+    }
+
+    body.nav-open .nav-backdrop {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    body.nav-open { overflow: hidden; }
+
+    /* Bigger touch targets in the menu */
+    .nav-item { padding-top: 0.6rem; padding-bottom: 0.6rem; }
+    .nav-search input { padding: 0.65rem 0.75rem; font-size: 1rem; }
+
+    /* Content: full width, tighter spacing */
+    .main-content { padding: 1rem; gap: 1rem; }
+    .metrics-grid { gap: 12px; }
+    .card { padding: 16px; }
+    .card-nopadding { padding: 0; }
+    .dash-header { flex-wrap: wrap; gap: 0.5rem; }
+    .data-table th, .data-table td { padding: 10px 14px; }
+    .traffic-card-header { flex-wrap: wrap; gap: 0.5rem; }
+    .traffic-card-meta,
+    .traffic-stats-group { flex-wrap: wrap; gap: 0.5rem 0.9rem; }
+    .traffic-interface-card { padding: 1rem; }
+}
+
+/* Phones */
+@media (max-width: 520px) {
+    .main-content { padding: 0.75rem; }
+    .dash-header h1 { font-size: 1.25rem; }
+    .config-bar-actions { width: 100%; }
+    .config-bar-actions .cfg-btn { flex: 1; min-height: 44px; }
+    .config-dialog-body { padding: 1.1rem 1rem 0.5rem; }
+    .config-dialog-actions { padding: 0.75rem 1rem 1rem; }
+    .config-dialog-actions .cfg-btn { min-height: 44px; }
 }

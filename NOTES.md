@@ -256,7 +256,7 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 - **Planned pages are listed but greyed out and not clickable** (a `<span class="nav-item nav-soon">`, no
   `data-view`), because the whole product will be built before it is used. To hide them instead, add
   `.nav-soon { display: none; }` to the stylesheet (the groups then only show real pages).
-- **Names are provisional** and live only in `dashboard.html`: friendly (Internet, Networks, Ports, Clients)
+- **Names are confirmed** (friendly, not technical) and live only in `dashboard.html`: friendly (Internet, Networks, Ports, Clients)
   rather than technical (WAN, Interfaces, Devices, DHCP). The view ids behind them did not change.
 - **Quick search** filters entries (a group's own name matches all its pages), opens matching groups, shows
   "No matches", and on clearing opens the group of the page you are on. **Accordion:** opening a group by
@@ -265,6 +265,33 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 - **Networks** is the first editor page (9e): one card per network (router address, ports, DHCP), so VLANs
   later are just more cards.
 - Pending changes are not a menu entry: the banner and review dialog cover them.
+
+## 7c. Responsive layout (decided 2026-10-08)
+
+One site, not separate desktop and mobile sites: the same HTML5 page adapts with CSS media queries, so
+every future page works on every screen automatically.
+
+- **Wider than 900 px (desktop):** the sidebar sits beside the content, unchanged.
+- **900 px and narrower (tablet, phone):** a slim top bar (menu button and the current page's name) pinned
+  to the top; the sidebar becomes a slide-out drawer (`body.nav-open`) with a dimmed backdrop. It closes on
+  the backdrop, the close button, Escape, or choosing a page, and growing the window past the breakpoint
+  drops the open state. The page uses the full width with tighter spacing.
+- **Accessibility:** the menu button carries `aria-controls`, `aria-expanded` and a label that flips between
+  "Open menu" and "Close menu"; focus moves into the drawer on open and back to the button on close; the
+  closed drawer is `visibility: hidden`, so keyboards cannot reach it; menu entries, banner buttons and dialog
+  buttons are at least 44 px tall on phones.
+- **The banner** sticks right under the top bar (`top: var(--appbar-h)`); the earlier fixed-position
+  workaround and its height-publishing script were removed.
+- **Under 520 px (phones):** banner buttons stack full width and the review dialog tightens.
+- Tables already scroll inside their card (`.table-container`); the stat grids use `min(260px, 100%)` so a
+  column never exceeds the screen.
+- **Charts:** a chart is only drawn when its container has a width, and all charts are redrawn when the
+  Traffic view is shown. Previously a chart drawn while its view was hidden measured 0 wide and fell back to a
+  hard-coded 800 px (for instance after the window was resized on another page), leaving it too wide until
+  the next 10 s refresh. The canvas also has `max-width: 100%`.
+- Verified in a real browser at desktop, tablet (768) and phone (375) widths: every view fits without sideways
+  scrolling, all four ways of closing the drawer, navigation, the pinned banner, the Traffic charts and the
+  review dialog.
 
 ## 8. HTTP endpoints (current)
 
@@ -310,6 +337,8 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 | 2026-10-06 | The banner and review dialog do not depend on any page or sidebar layout | the user had not yet decided the sidebar/settings organization |
 | 2026-10-08 | Sidebar: OPNsense-style grouping and search, UniFi-style object pages, two levels, planned pages greyed | prosumer/home/lab audience; sysadmin maintainer; clearest navigation |
 | 2026-10-08 | Stay in standalone scope; lean toward a future SDN controller only where free | the SDN controller is much later; do not build it now |
+| 2026-10-08 | Friendly menu names confirmed (Internet, Networks, Ports, Clients) | easier for a home or lab audience |
+| 2026-10-08 | One responsive site instead of separate desktop and mobile sites | one codebase; every new page works on every screen |
 | 2026-10-06 | Success messages show ~8 s; failures and reverts stay until dismissed | problems must not be missed, good news should not nag |
 
 ## 10. How things are tested (worth documenting)
@@ -344,8 +373,9 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
   `.main-content` has `overflow-y: auto` while the page itself scrolls, so a sticky element inside it never
   stuck (and sat 32 px low because sticky respects the container's padding). Put sticky things outside such
   containers. Found by measuring in a real browser, not by reading the CSS.
-- The dashboard is not responsive: the sidebar is a fixed 280 px column at every width, so on a phone the
-  content column is about 110 px wide. Only the banner has a narrow-screen fix so far.
+- The browser preview used for testing only advances CSS transitions and media-query events when it renders a
+  frame, so a measurement taken right after a resize or an animation can show a half-finished state. Take a
+  screenshot (it forces a frame) and measure again before concluding something is broken.
 - There is no JavaScript test runner in the repo (no Node available on the dev machine). Front-end behaviour was
   verified in a real browser: the banner's `describe()` logic with 20 assertions, every state, hostile text,
   scrolling, view switching, a phone width, and a stopped server. A runner would be worth adding later.
@@ -353,9 +383,6 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 
 ## 12. Open questions for the maintainer
 
-- Confirm the provisional menu names (Internet, Networks, Ports, Clients) or switch to technical ones.
-- Whether the dashboard should get a real responsive layout (sidebar collapsing on narrow screens); the banner
-  already copes with a phone width, the rest of the page does not.
 - 9e first slice: DHCP only (a dnsmasq restart cannot lock anyone out) or LAN address plus DHCP.
 - Where the Staged Changes page, if any, should live (the banner and dialog already cover the workflow).
 

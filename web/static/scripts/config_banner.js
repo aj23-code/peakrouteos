@@ -361,14 +361,6 @@ window.ConfigBanner = (function () {
             document.getElementById('config-review-cancel').addEventListener('click', () => dialog.close());
         }
 
-        // Tell the stylesheet how tall the banner is, so on narrow screens (where it is pinned across
-        // the viewport) the page content can be pushed down to clear it
-        const publishHeight = () => document.documentElement.style.setProperty(
-            '--config-banner-h', host.classList.contains('hidden') ? '0px' : host.offsetHeight + 'px');
-        if (window.ResizeObserver) new ResizeObserver(publishHeight).observe(host);
-        new MutationObserver(publishHeight).observe(host, { attributes: true, attributeFilter: ['class'] });
-        publishHeight();
-
         setInterval(tick, 250);
         refresh();
     }

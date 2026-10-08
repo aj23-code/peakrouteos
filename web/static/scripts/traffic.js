@@ -105,8 +105,11 @@ window.TrafficModule = (() => {
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
 
+        // A hidden view has no width to draw into; it is redrawn as soon as it is shown. (Drawing at a
+        // made-up width here left charts the wrong size after the window was resized elsewhere.)
         const parentRect = canvas.parentElement ? canvas.parentElement.getBoundingClientRect() : { width: 0 };
-        const displayWidth = parentRect.width || canvas.clientWidth || 800;
+        if (!parentRect.width) return;
+        const displayWidth = parentRect.width;
 
         canvas.width = displayWidth;
         canvas.height = 230;
@@ -541,6 +544,9 @@ window.TrafficModule = (() => {
     return {
         init: () => {
             pollStats();
+
+            // The view is visible now: bring charts drawn earlier (or while it was hidden) up to size
+            Object.keys(interfaceStates).forEach(iface => drawInterfaceChart(iface));
 
             statsTimerId = setInterval(pollStats, 1000);
             graphTimerId = setInterval(refreshAllGraphs, 10000);
