@@ -21,6 +21,7 @@ import (
 	"peakroute/internal/auth"
 	"peakroute/internal/cert"
 	"peakroute/internal/config"
+	"peakroute/internal/netapi"
 	"peakroute/internal/network"
 	"peakroute/internal/pipeline"
 	"peakroute/internal/system"
@@ -188,6 +189,13 @@ func main() {
 
 	// Physical Devices Endpoint
 	mux.HandleFunc("/api/v1/system/devices", requireAuth(network.HandleGetDevices))
+
+	// Editing the network: port roles and per-network settings. Saving stages a draft; edits are
+	// refused while a change is being applied or waits for confirmation.
+	netAPI := &netapi.API{Manager: cfgMgr, Ports: network.GetPhysicalInterfaces, Editable: configSvc.Idle}
+	mux.HandleFunc("/api/v1/ports", requireAuth(netAPI.HandlePorts))
+	mux.HandleFunc("/api/v1/networks", requireAuth(netAPI.HandleNetworks))
+	mux.HandleFunc("/api/v1/networks/{id}", requireAuth(netAPI.HandleNetwork))
 
 	// Staged network changes: review, commit, confirm, revert, discard
 	mux.HandleFunc("/api/v1/config/status", requireAuth(configSvc.HandleStatus))

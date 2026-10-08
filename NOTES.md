@@ -238,6 +238,27 @@ Decisions for the remaining steps (9c to 9e):
 - First editor page: LAN settings (LAN IP/netmask and DHCP range, lease, on/off). DHCP-only is the
   safer first slice (a dnsmasq restart cannot lock you out); to be confirmed.
 
+## 7a. Editing endpoints (ports and networks)
+
+`internal/netapi` serves the editors. Rules every editing endpoint follows:
+
+- **Saving only stages a draft.** Nothing touches the system until the draft is committed through the
+  pipeline (banner, review, commit, 60 s confirm). Saving values already in effect, or putting an edit back,
+  leaves no draft (the stage file disappears).
+- **Each endpoint validates only the fields it owns.** The Networks page checks the address, netmask and DHCP
+  fields; the Ports page checks the WAN and LAN port names. A half-configured box can therefore be edited a
+  page at a time, and the *whole* configuration is checked when the draft is committed (the review dialog
+  shows what is still wrong).
+- **Edits are refused with 409 while a change is being applied or waits for confirmation**
+  (`pipeline.Service.Idle`), since a revert would overwrite a newer draft.
+- **Object-style, generic names** in the API (`ip`, `netmask`, `dhcp.range_start`, `ports`), mapped from the
+  config file's names (`lan_ip`, `lan_subnet`, ...) in one table (`errorField`). Errors come back as
+  `{"error": "...", "errors": [{"field": "ip", "message": "..."}]}` so a form can mark the right input.
+- **Port roles are saved all at once**, so there is never an invalid in-between state (two WANs, no LAN). The
+  saved LAN port list follows the hardware order, not the order of the request. A configured port whose
+  hardware is missing is still listed (`present: false`) so it can be reassigned.
+- Requests must be `application/json`, at most 64 KB, with no unknown fields.
+
 ## 7b. Navigation (decided 2026-10-08)
 
 An OPNsense-style sidebar (grouped by function, quick search, clear two-level navigation) holding
@@ -313,6 +334,10 @@ every future page works on every screen automatically.
 | `POST /api/v1/config/confirm` | session + CSRF | keep the change; 409 if nothing is waiting |
 | `POST /api/v1/config/revert` | session + CSRF | undo the change waiting for confirmation now (202) |
 | `POST /api/v1/config/discard` | session + CSRF | drop the staged changes; 409 while applying or awaiting confirmation |
+| `GET /api/v1/ports` | session | physical ports with hardware details, `role` (wan, lan, unassigned) from the draft, `active_role`, `pending`, `present` (false: configured but the hardware is gone), `editable` |
+| `PUT /api/v1/ports` | session + CSRF | `{"assignments": {"eth0": "wan", "eth1": "lan", "eth2": "unassigned"}}` stages the roles as one atomic change; ports not mentioned keep their role; the result must have exactly one WAN and at least one LAN |
+| `GET /api/v1/networks`, `GET /api/v1/networks/{id}` | session | the networks (today one, id `lan`): `ip`, `netmask`, `ports`, `bridged`, `dhcp` (null if not managed yet), `pending` |
+| `PUT /api/v1/networks/{id}` | session + CSRF | `{"ip", "netmask", "dhcp": {"enabled", "range_start", "range_end", "lease_time"}}` stages the address and DHCP; `dhcp` omitted leaves DHCP unchanged |
 
 ## 9. Decisions log
 
@@ -339,6 +364,8 @@ every future page works on every screen automatically.
 | 2026-10-08 | Stay in standalone scope; lean toward a future SDN controller only where free | the SDN controller is much later; do not build it now |
 | 2026-10-08 | Friendly menu names confirmed (Internet, Networks, Ports, Clients) | easier for a home or lab audience |
 | 2026-10-08 | One responsive site instead of separate desktop and mobile sites | one codebase; every new page works on every screen |
+| 2026-10-08 | First editor slice is LAN address plus DHCP, with port roles (WAN, LAN, unassigned) on the Ports page | the address and DHCP mean little without saying which ports are which |
+| 2026-10-08 | Editing endpoints validate only their own fields and are refused while a change is applying | partial configuration stays editable; a revert must not overwrite a newer draft |
 | 2026-10-06 | Success messages show ~8 s; failures and reverts stay until dismissed | problems must not be missed, good news should not nag |
 
 ## 10. How things are tested (worth documenting)

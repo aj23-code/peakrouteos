@@ -469,6 +469,14 @@ func (s *Service) persist(pc *pendingConfirm) error {
 	return fsutil.WriteFileAtomic(s.confirmPath(), data, 0600)
 }
 
+// Idle reports whether nothing is being applied and nothing waits for confirmation. Configuration
+// edits are refused while it is false: a revert would otherwise overwrite a newer draft.
+func (s *Service) Idle() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state == StateIdle
+}
+
 // Wait blocks until background applies and reverts have finished (used by tests and shutdown).
 func (s *Service) Wait() { s.wg.Wait() }
 
