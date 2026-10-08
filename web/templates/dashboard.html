@@ -36,7 +36,7 @@
             </summary>
             <div class="folder-content">
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Internet</span>
-              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Networks</span>
+              <a href="#" class="nav-item" data-view="networks">Networks</a>
               <a href="#" class="nav-item" data-view="network-physical">Ports</a>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Routes</span>
             </div>
@@ -294,38 +294,109 @@
         <header class="dash-header">
           <div>
             <h1>Ports</h1>
-            <p class="subtitle">Hardware discovery and physical network interface parameters</p>
+            <p class="subtitle">Choose which port connects to the internet (WAN) and which belong to your LAN. Changes are saved as a draft until you commit them.</p>
           </div>
-          <button id="refresh-devices-btn" class="btn-refresh">
-            Refresh Hardware
-          </button>
+          <button type="button" id="ports-refresh" class="cfg-btn">Refresh</button>
         </header>
 
+        <div id="ports-message" class="form-message hidden" role="alert"></div>
+
         <section class="card card-nopadding">
-          <div class="card-header">
-            <div class="card-header-group">
-              <h2>Detected Network Hardware</h2>
-              <span class="card-subtitle">Hardware metrics queried live via Linux sysfs</span>
-            </div>
-          </div>
           <div class="table-container">
-            <table class="data-table" id="devices-table">
+            <table class="data-table" id="ports-table">
               <thead>
                 <tr>
-                  <th>Interface</th>
-                  <th>MAC Address</th>
-                  <th>State</th>
+                  <th>Port</th>
+                  <th>Role</th>
+                  <th>Link</th>
                   <th>Speed</th>
-                  <th>MTU</th>
+                  <th>MAC address</th>
                   <th>Driver</th>
                 </tr>
               </thead>
-              <tbody id="devices-list">
+              <tbody id="ports-list">
                 <tr>
-                  <td colspan="6" class="table-placeholder">Discovering physical network hardware...</td>
+                  <td colspan="6" class="table-placeholder">Discovering network ports...</td>
                 </tr>
               </tbody>
             </table>
+          </div>
+        </section>
+
+        <div class="form-actions">
+          <span id="ports-hint" class="form-hint"></span>
+          <button type="button" id="ports-reset" class="cfg-btn cfg-btn--ghost" disabled>Reset</button>
+          <button type="button" id="ports-save" class="cfg-btn cfg-btn--primary" disabled>Save roles</button>
+        </div>
+
+        <p class="form-note">You are probably connected through a LAN port. If you change which ports are the LAN, you will lose
+          your connection when you commit: plug into one of the new LAN ports, open this page, and confirm within 60 seconds,
+          or the change is reverted automatically.</p>
+      </div>
+
+      <!-- View: Networks -->
+      <div id="view-networks" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Networks</h1>
+            <p class="subtitle">Each network has its own address and DHCP server. Changes are saved as a draft until you commit them.</p>
+          </div>
+        </header>
+
+        <div id="net-message" class="form-message hidden" role="alert"></div>
+
+        <section class="card" id="net-card">
+          <div class="net-card-head">
+            <h2 id="net-name">LAN</h2>
+            <span class="tag tag-ok">default</span>
+            <span id="net-draft" class="tag tag-draft hidden">Draft</span>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-field" data-field="ip">
+              <label for="net-ip">Router address</label>
+              <input type="text" id="net-ip" inputmode="decimal" autocomplete="off" placeholder="192.168.1.1" spellcheck="false">
+              <p class="field-error hidden" data-error="ip"></p>
+            </div>
+            <div class="form-field" data-field="netmask">
+              <label for="net-netmask">Netmask</label>
+              <input type="text" id="net-netmask" inputmode="decimal" autocomplete="off" placeholder="255.255.255.0" spellcheck="false">
+              <p class="field-error hidden" data-error="netmask"></p>
+            </div>
+            <div class="form-field form-field--wide" data-field="ports">
+              <span class="form-label">Ports</span>
+              <div id="net-ports" class="chips"></div>
+              <p class="form-hint">Which ports belong to this network is set on the <a href="#" data-goto="network-physical">Ports</a> page.</p>
+            </div>
+          </div>
+
+          <h3 class="form-section">DHCP server</h3>
+          <label class="toggle"><input type="checkbox" id="net-dhcp-enabled"> Give addresses to devices on this network</label>
+          <p id="net-dhcp-note" class="form-hint hidden">The DHCP server is not managed by this configuration yet. Turn it on and fill in a range to start managing it here.</p>
+
+          <div class="form-grid" id="net-dhcp-fields">
+            <div class="form-field" data-field="dhcp.range_start">
+              <label for="net-dhcp-start">First address</label>
+              <input type="text" id="net-dhcp-start" inputmode="decimal" autocomplete="off" placeholder="192.168.1.100" spellcheck="false">
+              <p class="field-error hidden" data-error="dhcp.range_start"></p>
+            </div>
+            <div class="form-field" data-field="dhcp.range_end">
+              <label for="net-dhcp-end">Last address</label>
+              <input type="text" id="net-dhcp-end" inputmode="decimal" autocomplete="off" placeholder="192.168.1.200" spellcheck="false">
+              <p class="field-error hidden" data-error="dhcp.range_end"></p>
+            </div>
+            <div class="form-field" data-field="dhcp.lease_time">
+              <label for="net-dhcp-lease">Lease time</label>
+              <input type="text" id="net-dhcp-lease" list="net-lease-options" autocomplete="off" placeholder="12h" spellcheck="false">
+              <datalist id="net-lease-options"><option value="30m"><option value="1h"><option value="6h"><option value="12h"><option value="1d"><option value="7d"></datalist>
+              <p class="field-error hidden" data-error="dhcp.lease_time"></p>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <span id="net-hint" class="form-hint"></span>
+            <button type="button" id="net-reset" class="cfg-btn cfg-btn--ghost" disabled>Reset</button>
+            <button type="button" id="net-save" class="cfg-btn cfg-btn--primary" disabled>Save to draft</button>
           </div>
         </section>
       </div>
@@ -409,7 +480,8 @@
   <script src="/static/scripts/config_banner.js"></script>
   <script src="/static/scripts/telemetry.js"></script>
   <script src="/static/scripts/traffic.js"></script>
-  <script src="/static/scripts/devices.js"></script>
+  <script src="/static/scripts/ports.js"></script>
+  <script src="/static/scripts/networks.js"></script>
   <script src="/static/scripts/leases.js"></script>
   <script src="/static/scripts/syslogs.js"></script>
 </body>

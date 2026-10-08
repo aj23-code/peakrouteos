@@ -279,8 +279,12 @@ window.ConfigBanner = (function () {
             const reconnect = ip
                 ? ` Because the router's LAN address changes, you will need to open <strong>https://${esc(ip.new)}</strong> and log in again to confirm.`
                 : '';
+            const portsChanged = rev.changes.some((c) => c.field === 'lan_interfaces' || c.field === 'wan_interface');
+            const replug = portsChanged
+                ? ' Because ports change roles, the cable you are connected through may stop working: plug into a LAN port to confirm.'
+                : '';
             parts.push(`<p class="config-review-warning" role="note"><strong>You will have ${esc(rev.confirm_seconds)} seconds to confirm.</strong>
-                This change affects the network or firewall, so if you do not confirm it is reverted automatically.${reconnect}</p>`);
+                This change affects the network or firewall, so if you do not confirm it is reverted automatically.${reconnect}${replug}</p>`);
         }
 
         parts.push('<p class="config-review-result hidden" id="config-review-result" role="alert"></p>');

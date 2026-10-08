@@ -269,7 +269,7 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 | Overview | system health, interface counters, top clients | yes (`overview`) |
 | Clients | DHCP leases and per-client usage | yes (`dhcp`) |
 | Traffic | per-port throughput history | yes (`traffic`) |
-| Network: Internet, **Networks**, Ports, Routes | WAN uplink; each network with its address range *and* DHCP; physical ports; static routes | Ports only (`network-physical`) |
+| Network: Internet, **Networks**, Ports, Routes | WAN uplink; each network with its address range *and* DHCP; physical ports; static routes | Networks (`networks`) and Ports (`network-physical`) |
 | Firewall: Rules, Port forwarding, Connections | | planned |
 | Services: DNS, VPN, Dynamic DNS | | planned |
 | System: Settings, Administrators, Certificates, Backup and restore, Updates, Logs, Diagnostics | | Logs only (`logs`) |
@@ -286,6 +286,27 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 - **Networks** is the first editor page (9e): one card per network (router address, ports, DHCP), so VLANs
   later are just more cards.
 - Pending changes are not a menu entry: the banner and review dialog cover them.
+
+### Editor pages (built 2026-10-08)
+
+- **Ports** (`ports.js`, view `network-physical`): one row per port with a Role select (Internet (WAN), LAN,
+  Unassigned), link state, speed, MAC and driver. The old read-only Devices table and its
+  `/api/v1/system/devices` endpoint are gone; this page replaces them. Choosing WAN on one port moves any
+  other WAN port to Unassigned (the server allows exactly one). The page applies the same rules as the server
+  (one WAN, at least one LAN) so Save is only enabled for a valid choice. Rows say `Unsaved (was X)` for
+  edits not yet sent and `Draft` for saved-but-uncommitted ones; a configured port whose hardware is gone
+  shows `Hardware missing`. One Save sends all roles (`PUT /api/v1/ports`).
+- **Networks** (`networks.js`): one card per network (today only `lan`): router address, netmask, the ports
+  (read-only chips that link to Ports through the generic `data-goto` handler in `app.js`), DHCP toggle, range
+  and lease time. Field errors from the API (`errors[].field`) are shown under the matching input; anything
+  without an input is shown in the message box. If the DHCP section is not managed by the config yet
+  (`dhcp: null`) and the person leaves it off and empty, the PUT omits `dhcp` so it stays unmanaged. Enter
+  in a text field saves.
+- **Both pages**: saving only writes the draft and then calls `ConfigBanner.refresh()` so the banner
+  updates at once. While a change is applying or awaiting confirmation (`editable: false`) every input is
+  disabled with an explanation. The Ports page polls every 5 s for link changes but never while the person
+  has unsaved edits (it would overwrite them). The review dialog's warning adds a line when port roles
+  change: the cable you are connected through may stop working, plug into a LAN port to confirm.
 
 ## 7c. Responsive layout (decided 2026-10-08)
 
@@ -325,7 +346,6 @@ every future page works on every screen automatically.
 | `GET /api/v1/system/stats` | session | from the poller snapshot, no disk reads |
 | `GET /api/v1/system/traffic?iface=&range=` | session | history; ranges `1h` (also used for 5m), `24h`, `30d` |
 | `GET /api/v1/system/logs?limit=` | session | systemd journal |
-| `GET /api/v1/system/devices` | session | physical NICs |
 | `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage |
 | `POST /api/v1/cert/upload` | session + `X-CSRF-Token` | multipart `cert` and `key` |
 | `GET /api/v1/config/status` | session | `state` (idle, applying, awaiting_confirm), `has_changes`, `change_count`, `confirm.seconds_left`, `last` outcome; polled by the banner |
@@ -366,6 +386,7 @@ every future page works on every screen automatically.
 | 2026-10-08 | One responsive site instead of separate desktop and mobile sites | one codebase; every new page works on every screen |
 | 2026-10-08 | First editor slice is LAN address plus DHCP, with port roles (WAN, LAN, unassigned) on the Ports page | the address and DHCP mean little without saying which ports are which |
 | 2026-10-08 | Editing endpoints validate only their own fields and are refused while a change is applying | partial configuration stays editable; a revert must not overwrite a newer draft |
+| 2026-10-08 | Ports and Networks pages replace the read-only Devices table; Save writes a draft only, never the system | one pipeline for every change; the banner is the single place to commit |
 | 2026-10-06 | Success messages show ~8 s; failures and reverts stay until dismissed | problems must not be missed, good news should not nag |
 
 ## 10. How things are tested (worth documenting)

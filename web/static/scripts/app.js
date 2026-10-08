@@ -144,6 +144,16 @@ function loadView(viewName) {
                 activeViewCleanup = window.DHCPModule.init();
             }
             break;
+        case 'network-physical':
+            if (window.PortsModule) {
+                activeViewCleanup = window.PortsModule.init();
+            }
+            break;
+        case 'networks':
+            if (window.NetworksModule) {
+                activeViewCleanup = window.NetworksModule.init();
+            }
+            break;
         default:
             console.warn(`No view module configured for: ${viewName}`);
     }
@@ -250,6 +260,14 @@ function initNavSearch(nav) {
         }
     });
 }
+
+// Links inside pages that jump to another page: <a href="#" data-goto="network-physical">
+document.addEventListener('click', (e) => {
+    const link = e.target.closest('[data-goto]');
+    if (!link) return;
+    e.preventDefault();
+    loadView(link.dataset.goto);
+});
 
 // App Shell Initialization
 document.addEventListener('DOMContentLoaded', () => {

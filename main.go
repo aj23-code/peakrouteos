@@ -187,9 +187,6 @@ func main() {
 	// System Logs Endpoint
 	mux.HandleFunc("/api/v1/system/logs", requireAuth(system.HandleGetLogs))
 
-	// Physical Devices Endpoint
-	mux.HandleFunc("/api/v1/system/devices", requireAuth(network.HandleGetDevices))
-
 	// Editing the network: port roles and per-network settings. Saving stages a draft; edits are
 	// refused while a change is being applied or waits for confirmation.
 	netAPI := &netapi.API{Manager: cfgMgr, Ports: network.GetPhysicalInterfaces, Editable: configSvc.Idle}
