@@ -256,45 +256,6 @@ input:focus {
     padding: 0.35rem 0.5rem 0.5rem 0.5rem;
 }
 
-.sub-folder {
-    margin-top: 0.2rem;
-}
-
-.sub-summary {
-    display: flex;
-    align-items: center;
-    padding: 0.4rem 0.6rem 0.4rem 0.8rem;
-    font-size: 0.825rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    border-radius: 4px;
-    transition: color 0.12s ease, background 0.12s ease;
-}
-
-.sub-summary::before {
-    content: '▸';
-    font-size: 0.7rem;
-    margin-right: 0.4rem;
-    color: var(--text-muted);
-    transition: transform 0.12s ease;
-}
-
-.sub-folder[open] > .sub-summary::before {
-    transform: rotate(90deg);
-    color: var(--accent-blue);
-}
-
-.sub-summary:hover {
-    color: #f1f5f9;
-    background: rgba(255, 255, 255, 0.04);
-}
-
-.sub-content {
-    padding-left: 0.75rem;
-    border-left: 1px dashed rgba(255, 255, 255, 0.08);
-    margin-left: 1.1rem;
-}
-
 /* Nav Leaf Links */
 .nav-item {
     display: block;
@@ -317,6 +278,70 @@ input:focus {
     color: var(--accent-blue);
     background: var(--accent-blue-bg);
     font-weight: 600;
+}
+
+/* Top-level single entries (Overview, Clients, Traffic) look like the group headers */
+.nav-item.nav-top {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0;
+    padding: 0.7rem 0.9rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.nav-item.nav-top:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.nav-item.nav-top.active {
+    color: var(--accent-blue);
+    background: rgba(56, 189, 248, 0.1);
+    border-color: rgba(56, 189, 248, 0.3);
+}
+
+/* Planned pages are listed but greyed out and not clickable. To hide them instead, add:
+   .nav-soon { display: none; } */
+.nav-item.nav-soon {
+    color: rgba(148, 163, 184, 0.42);
+    cursor: default;
+}
+
+.nav-item.nav-soon:hover {
+    color: rgba(148, 163, 184, 0.42);
+    background: none;
+}
+
+/* Quick search above the menu */
+.nav-search input {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    color: var(--text-main);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.nav-empty {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.nav-search input::placeholder {
+    color: var(--text-muted);
+}
+
+.nav-search input:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 1px;
 }
 
 /* Sidebar Footer */

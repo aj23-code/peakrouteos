@@ -18,142 +18,68 @@
           <span class="brand-title">PeakRoute OS</span>
         </div>
 
-        <nav class="nav-menu" id="sidebar-nav">
+        <nav class="nav-menu" id="sidebar-nav" aria-label="Main">
+          <div class="nav-search">
+            <input type="search" id="nav-search" placeholder="Search menu" aria-label="Search menu" autocomplete="off">
+          </div>
+          <div id="nav-empty" class="nav-empty hidden">No matches</div>
 
-          <!-- Banner: Dashboard -->
-          <details class="nav-banner-group" open>
-            <summary class="nav-banner">
-              <span class="banner-title"><span class="banner-icon">📊</span> Dashboard</span>
-              <span class="chevron">▸</span>
-            </summary>
-            <div class="folder-content">
-              <a href="#" class="nav-item active" data-view="overview">Overview</a>
-              <a href="#" class="nav-item" data-view="logs">System Logs</a>
-            </div>
-          </details>
+          <a href="#" class="nav-item nav-top active" data-view="overview"><span class="banner-icon">📊</span> Overview</a>
+          <a href="#" class="nav-item nav-top" data-view="dhcp"><span class="banner-icon">💻</span> Clients</a>
+          <a href="#" class="nav-item nav-top" data-view="traffic"><span class="banner-icon">📈</span> Traffic</a>
 
-          <!-- Banner: Network -->
           <details class="nav-banner-group">
             <summary class="nav-banner">
               <span class="banner-title"><span class="banner-icon">🌐</span> Network</span>
               <span class="chevron">▸</span>
             </summary>
             <div class="folder-content">
-              <details class="sub-folder" open>
-                <summary class="sub-summary">Interfaces</summary>
-                <div class="sub-content">
-                  <a href="#" class="nav-item" data-view="traffic">Interface Traffic</a>
-                  <a href="#" class="nav-item" data-view="network-physical">Devices</a>
-                  <a href="#" class="nav-item" data-view="network-vlans">Interfaces/VLANs</a>
-                </div>
-              </details>
-
-              <details class="sub-folder">
-                <summary class="sub-summary">Routing</summary>
-                <div class="sub-content">
-                  <a href="#" class="nav-item" data-view="routing-static">Static Routes</a>
-                  <a href="#" class="nav-item" data-view="routing-gateways">Gateway Monitor</a>
-                </div>
-              </details>
-
-              <details class="sub-folder">
-                <summary class="sub-summary">Wireless</summary>
-                <div class="sub-content">
-                  <a href="#" class="nav-item" data-view="wifi-settings">Radios & SSIDs</a>
-                  <a href="#" class="nav-item" data-view="wifi-clients">Wireless Clients</a>
-                </div>
-              </details>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Internet</span>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Networks</span>
+              <a href="#" class="nav-item" data-view="network-physical">Ports</a>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Routes</span>
             </div>
           </details>
 
-          <!-- Banner: Firewall & NAT -->
           <details class="nav-banner-group">
             <summary class="nav-banner">
-              <span class="banner-title"><span class="banner-icon">🛡️</span> Firewall & NAT</span>
+              <span class="banner-title"><span class="banner-icon">🛡️</span> Firewall</span>
               <span class="chevron">▸</span>
             </summary>
             <div class="folder-content">
-              <details class="sub-folder">
-                <summary class="sub-summary">Filter Rules</summary>
-                <div class="sub-content">
-                  <a href="#" class="nav-item" data-view="fw-wan">WAN Ingress</a>
-                  <a href="#" class="nav-item" data-view="fw-lan">LAN / Inter-VLAN</a>
-                </div>
-              </details>
-
-              <details class="sub-folder">
-                <summary class="sub-summary">NAT & Forwarding</summary>
-                <div class="sub-content">
-                  <a href="#" class="nav-item" data-view="nat-portforward">Port Forwarding</a>
-                  <a href="#" class="nav-item" data-view="nat-outbound">Outbound NAT</a>
-                </div>
-              </details>
-
-              <a href="#" class="nav-item" data-view="fw-conntrack">State Table</a>
-              <a href="#" class="nav-item" data-view="fw-logs">Firewall Logs</a>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Rules</span>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Port forwarding</span>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Connections</span>
             </div>
           </details>
 
-          <!-- Banner: Services -->
           <details class="nav-banner-group">
             <summary class="nav-banner">
               <span class="banner-title"><span class="banner-icon">🔌</span> Services</span>
               <span class="chevron">▸</span>
             </summary>
             <div class="folder-content">
-              <a href="#" class="nav-item" data-view="dhcp">DHCP & Clients</a>
-
-              <details class="sub-folder">
-                <summary class="sub-summary">DNS Resolver</summary>
-                <div class="sub-content">
-                  <a href="#" class="nav-item" data-view="dns-settings">General Settings</a>
-                  <a href="#" class="nav-item" data-view="dns-overrides">Host Overrides</a>
-                </div>
-              </details>
-
-              <details class="sub-folder">
-                <summary class="sub-summary">VPN & Tunnels</summary>
-                <div class="sub-content">
-                  <a href="#" class="nav-item" data-view="vpn-wireguard">WireGuard</a>
-                  <a href="#" class="nav-item" data-view="vpn-ipsec">IPsec</a>
-                </div>
-              </details>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">DNS</span>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">VPN</span>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Dynamic DNS</span>
             </div>
           </details>
 
-          <!-- Banner: System -->
           <details class="nav-banner-group">
             <summary class="nav-banner">
               <span class="banner-title"><span class="banner-icon">⚙️</span> System</span>
               <span class="chevron">▸</span>
             </summary>
             <div class="folder-content">
-              <details class="sub-folder">
-                <summary class="sub-summary">Administration</summary>
-                <div class="sub-content">
-                  <a href="#" class="nav-item" data-view="sys-general">General Settings</a>
-                  <a href="#" class="nav-item" data-view="sys-users">Users & Auth</a>
-                </div>
-              </details>
-
-              <details class="sub-folder">
-                <summary class="sub-summary">Configuration</summary>
-                <div class="sub-content">
-                  <a href="#" class="nav-item" data-view="sys-staged">Staged Changes</a>
-                  <a href="#" class="nav-item" data-view="sys-backup">Backup / Restore</a>
-                </div>
-              </details>
-
-              <details class="sub-folder">
-                <summary class="sub-summary">Diagnostics</summary>
-                <div class="sub-content">
-                  <a href="#" class="nav-item" data-view="diag-ping">Ping & Traceroute</a>
-                  <a href="#" class="nav-item" data-view="diag-pcap">Packet Capture</a>
-                </div>
-              </details>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Settings</span>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Administrators</span>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Certificates</span>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Backup and restore</span>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Updates</span>
+              <a href="#" class="nav-item" data-view="logs">Logs</a>
+              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Diagnostics</span>
             </div>
           </details>
-
         </nav>
       </div>
 
@@ -179,7 +105,7 @@
       <div id="view-overview" class="view-section">
         <header class="dash-header">
           <div>
-            <h1>Dashboard Overview</h1>
+            <h1>Overview</h1>
             <p class="subtitle"></p>
           </div>
           <div class="status-badge">
@@ -342,7 +268,7 @@
       <div id="view-traffic" class="view-section hidden">
         <header class="dash-header">
           <div>
-            <h1>Interface Traffic</h1>
+            <h1>Traffic</h1>
             <p class="subtitle">Historical and live bandwidth utilization across network interfaces</p>
           </div>
         </header>
@@ -357,7 +283,7 @@
       <div id="view-network-physical" class="view-section hidden">
         <header class="dash-header">
           <div>
-            <h1>Physical Devices</h1>
+            <h1>Ports</h1>
             <p class="subtitle">Hardware discovery and physical network interface parameters</p>
           </div>
           <button id="refresh-devices-btn" class="btn-refresh">
@@ -398,7 +324,7 @@
       <div id="view-logs" class="view-section hidden">
         <header class="dash-header">
           <div>
-            <h1>System Logs</h1>
+            <h1>Logs</h1>
             <p class="subtitle">Live systemd journal entries and kernel logs</p>
           </div>
           <div class="status-badge">
@@ -423,7 +349,7 @@
       <div id="view-dhcp" class="view-section hidden">
         <header class="dash-header">
           <div>
-            <h1>DHCP & Connected Clients</h1>
+            <h1>Clients</h1>
             <p class="subtitle">Complete active lease list, static assignments, and host resolution</p>
           </div>
         </header>

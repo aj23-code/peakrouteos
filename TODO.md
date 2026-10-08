@@ -84,7 +84,7 @@ Effort: S = under an hour, M = one session, L = multi-session.
 - [ ] 23. Cert and file hygiene: add SANs (hostname and LAN IP), fix the "Local CA" naming, renew while running. Also from #12: write the self-signed cert and key atomically with `fsutil` (`GenerateSelfSignedCert` still writes non-atomically), and sweep stale `.*.tmp` files that a crash mid-write can leave in `/etc/peakroute` and the cert directory (remove them at startup, e.g. anything matching `.*.tmp` older than a minute). (S)
 - [ ] 24. Use `MemAvailable` for memory. Fix the CPU temperature: `getCPUTemperature` reads `thermal_zone0`, which on many machines is `acpitz`, a constant placeholder (it reads a fixed 25 C on the Dell dev laptop). The real CPU sensor there is the `x86_pkg_temp` thermal zone or hwmon `coretemp` ("Package id 0"). Pick by zone `type` (`x86_pkg_temp`, `coretemp`, `k10temp`, `cpu_thermal`, `soc_thermal`) and fall back to the hottest plausible zone; report "unavailable" instead of 0 when there is no sensor. (S)
 - [ ] 25. Make sure journald logs persist across reboots. (S)
-- [ ] 26. Hide or disable sidebar entries that have no pages yet. (S)
+- [x] 26. Sidebar: no dead menu entries. Done 2026-10-08: the menu was reorganized (OPNsense-style groups, two levels, quick search, friendly names) and planned pages are listed greyed out and not clickable; see NOTES.md section 7b. Still open: a responsive layout for the rest of the dashboard, and the planned pages themselves.
 - [ ] 27. Add tests (generator, config manager, limiter, session expiry) and CI running `go vet` and `go test`. (M)
 
 ## Suggested batches

@@ -19,6 +19,18 @@ records what the system does, why it is built that way, and what was learned on 
 - **Daemon:** one static Go binary (`peakroute`) serving the web UI over HTTPS (443; 8443 in dev),
   with embedded templates and static files.
 
+## 1b. Scope and direction
+
+- **Now: standalone mode.** One PeakRoute box, administered through its own web UI. Anything controller-related
+  (an SDN controller that adopts and manages many boxes, machine API tokens, device adoption, fleet config
+  push) is explicitly **out of scope** until much later. Do not build it, and do not add TODO items for it.
+- **Lean toward it where it costs nothing.** Rules of thumb that keep a future controller simple:
+  config stays a set of declarative JSON documents (`network.json`, ...) that the device reconciles to;
+  the user-facing model is made of objects (a **Network** with its address range and DHCP together, rather
+  than separate "LAN" and "DHCP" screens); operations stay API-shaped (review, commit, confirm, revert are
+  plain endpoints, not UI-only logic); and browser-only concerns (cookies, CSRF) stay at the HTTP edge so
+  another way to authenticate can be added later without touching the pipeline.
+
 ## 2. Repository layout
 
 | Path | Purpose |
@@ -226,6 +238,34 @@ Decisions for the remaining steps (9c to 9e):
 - First editor page: LAN settings (LAN IP/netmask and DHCP range, lease, on/off). DHCP-only is the
   safer first slice (a dnsmasq restart cannot lock you out); to be confirmed.
 
+## 7b. Navigation (decided 2026-10-08)
+
+An OPNsense-style sidebar (grouped by function, quick search, clear two-level navigation) holding
+UniFi-style object pages. At most two levels: top-level entries, and groups with pages in them.
+
+| Entry | Page | Built |
+|---|---|---|
+| Overview | system health, interface counters, top clients | yes (`overview`) |
+| Clients | DHCP leases and per-client usage | yes (`dhcp`) |
+| Traffic | per-port throughput history | yes (`traffic`) |
+| Network: Internet, **Networks**, Ports, Routes | WAN uplink; each network with its address range *and* DHCP; physical ports; static routes | Ports only (`network-physical`) |
+| Firewall: Rules, Port forwarding, Connections | | planned |
+| Services: DNS, VPN, Dynamic DNS | | planned |
+| System: Settings, Administrators, Certificates, Backup and restore, Updates, Logs, Diagnostics | | Logs only (`logs`) |
+
+- **Planned pages are listed but greyed out and not clickable** (a `<span class="nav-item nav-soon">`, no
+  `data-view`), because the whole product will be built before it is used. To hide them instead, add
+  `.nav-soon { display: none; }` to the stylesheet (the groups then only show real pages).
+- **Names are provisional** and live only in `dashboard.html`: friendly (Internet, Networks, Ports, Clients)
+  rather than technical (WAN, Interfaces, Devices, DHCP). The view ids behind them did not change.
+- **Quick search** filters entries (a group's own name matches all its pages), opens matching groups, shows
+  "No matches", and on clearing opens the group of the page you are on. **Accordion:** opening a group by
+  clicking closes the others; groups the page opens itself (navigation, search) are handled separately so the
+  two do not fight.
+- **Networks** is the first editor page (9e): one card per network (router address, ports, DHCP), so VLANs
+  later are just more cards.
+- Pending changes are not a menu entry: the banner and review dialog cover them.
+
 ## 8. HTTP endpoints (current)
 
 | Method and path | Auth | Notes |
@@ -267,7 +307,9 @@ Decisions for the remaining steps (9c to 9e):
 | 2026-10-06 | Revert from a snapshot of the real previous files, persisted for the confirm window | works even if the previous config cannot be rendered, and survives a power cut |
 | 2026-10-06 | Only networking/firewall changes need the 60 s confirmation | a DHCP-only change cannot lock the admin out |
 | 2026-10-06 | A failed or reverted change keeps the user's edit as the pending candidate | fix it instead of retyping it |
-| 2026-10-06 | The banner and review dialog do not depend on any page or sidebar layout | the user has not yet decided the sidebar/settings organization |
+| 2026-10-06 | The banner and review dialog do not depend on any page or sidebar layout | the user had not yet decided the sidebar/settings organization |
+| 2026-10-08 | Sidebar: OPNsense-style grouping and search, UniFi-style object pages, two levels, planned pages greyed | prosumer/home/lab audience; sysadmin maintainer; clearest navigation |
+| 2026-10-08 | Stay in standalone scope; lean toward a future SDN controller only where free | the SDN controller is much later; do not build it now |
 | 2026-10-06 | Success messages show ~8 s; failures and reverts stay until dismissed | problems must not be missed, good news should not nag |
 
 ## 10. How things are tested (worth documenting)
@@ -311,8 +353,9 @@ Decisions for the remaining steps (9c to 9e):
 
 ## 12. Open questions for the maintainer
 
-- Sidebar layout and how settings are organized (needed before the first editor page, 9e).
-- Whether the dashboard should get a real responsive layout (sidebar collapsing on narrow screens).
+- Confirm the provisional menu names (Internet, Networks, Ports, Clients) or switch to technical ones.
+- Whether the dashboard should get a real responsive layout (sidebar collapsing on narrow screens); the banner
+  already copes with a phone width, the rest of the page does not.
 - 9e first slice: DHCP only (a dnsmasq restart cannot lock anyone out) or LAN address plus DHCP.
 - Where the Staged Changes page, if any, should live (the banner and dialog already cover the workflow).
 

@@ -94,8 +94,14 @@ function loadView(viewName) {
     if (activeNav) {
         activeNav.classList.add('active');
 
-        // Automatically expand parent banners & sub-folders when navigated to programmatically
-        let ancestor = activeNav.closest('details');
+        // Open the group the page belongs to; close the other groups, except while a search is
+        // showing several matching groups at once
+        const group = activeNav.closest('details');
+        const searchBox = document.getElementById('nav-search');
+        if (group && !(searchBox && searchBox.value.trim())) {
+            document.querySelectorAll('.nav-banner-group[open]').forEach(g => { if (g !== group) g.open = false; });
+        }
+        let ancestor = group;
         while (ancestor) {
             ancestor.open = true;
             ancestor = ancestor.parentElement ? ancestor.parentElement.closest('details') : null;
@@ -138,6 +144,63 @@ function loadView(viewName) {
     }
 }
 
+/**
+ * Quick search above the menu: filters the entries (a group's own name matches all of its pages),
+ * opens the groups that have matches, and puts the menu back the way it was when the box is cleared.
+ */
+function initNavSearch(nav) {
+    const input = document.getElementById('nav-search');
+    if (!input) return;
+
+    let openBefore = null; // which groups were open before the search started
+
+    function apply() {
+        const term = input.value.trim().toLowerCase();
+        const groups = [...nav.querySelectorAll('.nav-banner-group')];
+
+        if (term && openBefore === null) openBefore = groups.map(g => g.open);
+
+        nav.querySelectorAll(':scope > .nav-item').forEach(item => {
+            item.classList.toggle('hidden', !!term && !item.textContent.toLowerCase().includes(term));
+        });
+
+        groups.forEach(group => {
+            const titleHit = group.querySelector('.banner-title').textContent.toLowerCase().includes(term);
+            let anyVisible = false;
+            group.querySelectorAll('.nav-item').forEach(item => {
+                const hit = !term || titleHit || item.textContent.toLowerCase().includes(term);
+                item.classList.toggle('hidden', !hit);
+                anyVisible = anyVisible || hit;
+            });
+            group.classList.toggle('hidden', !!term && !anyVisible);
+            if (term && anyVisible) group.open = true;
+        });
+
+        // Nothing matched: say so instead of leaving an empty menu
+        const empty = document.getElementById('nav-empty');
+        if (empty) {
+            const anyShown = nav.querySelector(':scope > .nav-item:not(.hidden)') || nav.querySelector('.nav-banner-group:not(.hidden)');
+            empty.classList.toggle('hidden', !term || !!anyShown);
+        }
+
+        // Search cleared: show the group of the page you are on (you may have clicked a result),
+        // or, if you are on a top-level page, the groups that were open before the search
+        if (!term && openBefore !== null) {
+            const activeGroup = nav.querySelector('.nav-item.active')?.closest('.nav-banner-group');
+            groups.forEach((group, i) => { group.open = activeGroup ? group === activeGroup : openBefore[i]; });
+            openBefore = null;
+        }
+    }
+
+    input.addEventListener('input', apply);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            input.value = '';
+            apply();
+        }
+    });
+}
+
 // App Shell Initialization
 document.addEventListener('DOMContentLoaded', () => {
     const sidebarNav = document.getElementById('sidebar-nav');
@@ -153,8 +216,15 @@ document.addEventListener('DOMContentLoaded', () => {
             loadView(view);
         });
 
-        // Accordion behavior: auto-close other top-level banners when a new banner opens
+        // Accordion behavior: when a person opens a group, close the others. Only clicks on a group
+        // header count: groups the page opens by itself (the active view, a search) leave the rest alone.
+        let userToggled = false;
+        sidebarNav.addEventListener('click', (e) => {
+            if (e.target.closest('summary')) userToggled = true;
+        }, true);
         sidebarNav.addEventListener('toggle', (e) => {
+            if (!userToggled) return;
+            userToggled = false;
             if (!e.target.classList.contains('nav-banner-group') || !e.target.open) return;
 
             sidebarNav.querySelectorAll('.nav-banner-group[open]').forEach(banner => {
@@ -163,6 +233,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         }, true);
+
+        initNavSearch(sidebarNav);
     }
 
     // Load default initial view
