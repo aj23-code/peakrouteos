@@ -128,3 +128,51 @@ func UpstreamGateway(cfg config.NetworkConfig, read func(string) ([]byte, error)
 	}
 	return a, true
 }
+
+// KernelRoute is one entry of the kernel's IPv4 routing table.
+type KernelRoute struct {
+	Destination string // CIDR, "0.0.0.0/0" for the default route
+	Gateway     string // empty for a network the router is directly on
+	Interface   string
+	Metric      int
+}
+
+// ParseRoutingTable reads /proc/net/route text. The kernel prints addresses as host-order hex,
+// so on a little-endian machine 0100A8C0 is 192.168.0.1.
+func ParseRoutingTable(data []byte) []KernelRoute {
+	hexAddr := func(s string) (netip.Addr, bool) {
+		v, err := strconv.ParseUint(s, 16, 32)
+		if err != nil {
+			return netip.Addr{}, false
+		}
+		var b [4]byte
+		binary.LittleEndian.PutUint32(b[:], uint32(v))
+		return netip.AddrFrom4(b), true
+	}
+
+	var out []KernelRoute
+	for i, line := range strings.Split(string(data), "\n") {
+		f := strings.Fields(line)
+		if i == 0 || len(f) < 8 {
+			continue
+		}
+		dest, ok1 := hexAddr(f[1])
+		gw, ok2 := hexAddr(f[2])
+		mask, ok3 := hexAddr(f[7])
+		metric, err := strconv.Atoi(f[6])
+		if !ok1 || !ok2 || !ok3 || err != nil {
+			continue
+		}
+		m := mask.As4()
+		ones, bits := net.IPMask(m[:]).Size()
+		if bits == 0 { // not a contiguous mask
+			continue
+		}
+		r := KernelRoute{Destination: netip.PrefixFrom(dest, ones).String(), Interface: f[0], Metric: metric}
+		if !gw.IsUnspecified() {
+			r.Gateway = gw.String()
+		}
+		out = append(out, r)
+	}
+	return out
+}

@@ -360,6 +360,17 @@ A route's name is never written to any file, so a rename alone changes nothing o
 - **What the image provides** (`buildISO.sh`): `ifupdown` (the hooks and `networking.service`),
   `iproute2` (`ip`) and dash. The WAN DHCP client is `udhcpc`; there is no systemd-resolved or
   NetworkManager, so `/etc/resolv.conf` holds the provider's resolvers (what the WAN health check reads).
+- **API** (`netapi/routes.go`): GET returns the draft and the routing table in effect (`/proc/net/route`
+  parsed by `network.ParseRoutingTable`, classified and ordered by `netapi.ClassifyRoutes`); PUT replaces the
+  whole list atomically, like the Ports page (one save, one draft), validating only the routes (a half
+  set-up box can still have routes edited). `ownedErrors` now matches `routes[i].x` against the owned field
+  `routes`.
+- **Page** (`routes.js`): one bordered row per route (name, network, through, metric, an On switch and
+  Remove), Add route, Reset and Save to draft; rows that are completely empty are ignored on save, errors are
+  shown under the field they belong to (mapped back to the right row even when blank rows were skipped),
+  and editing a field clears its own error. Under it, a read-only **Routing table** card with Default,
+  Connected, Static and Other tags, refreshed every 10 s but never over what is being typed. On a phone
+  each route is a stacked card.
 - **Tested** with the real shell against temporary files (the check and apply commands, and the script
   being lenient for ifupdown and strict for the commit), plus 25 mutants of the validation, diff, render and apply code.
 
@@ -373,7 +384,7 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 | Overview | system health, interface counters, top clients | yes (`overview`) |
 | Clients | DHCP leases and per-client usage | yes (`dhcp`) |
 | Traffic | per-port throughput history | yes (`traffic`) |
-| Network: Internet, **Local Networks**, Ports, Routes | WAN uplink; each local network with its address range *and* DHCP; physical ports; static routes | Internet (`internet`), Local Networks (`networks`) and Ports (`network-physical`) |
+| Network: Internet, **Local Networks**, Ports, Routes | WAN uplink; each local network with its address range *and* DHCP; physical ports; static routes | Internet (`internet`), Local Networks (`networks`), Ports (`network-physical`) and Routes (`routes`) |
 | Firewall: Rules, Port forwarding, Connections | | planned |
 | Services: DNS, VPN, Dynamic DNS | | planned |
 | System: Settings, Administrators, Certificates, Backup and restore, Updates, Logs, Diagnostics | | Logs only (`logs`) |
@@ -476,6 +487,8 @@ every future page works on every screen automatically.
 | `GET /`, `/dashboard` | session | server-rendered shell; embeds the CSRF token |
 | `GET /api/v1/system/stats` | session | from the poller snapshot, no disk reads |
 | `GET /api/v1/system/traffic?iface=&range=` | session | history; ranges `1h` (also used for 5m), `24h`, `30d` |
+| `GET /api/v1/routes` | session | `routes` (the draft: `name`, `destination`, `gateway`, `metric`, `enabled`), `pending`, `editable`, and `table`: the kernel's routing table in effect (`destination`, `gateway`, `interface`, `metric`, `kind`: default, connected, static (one of ours, matched against the *active* config) or via) |
+| `PUT /api/v1/routes` | session + CSRF | `{"routes": [...]}` replaces the whole list in the draft (`enabled` omitted means on); field errors come back as `routes[2].gateway` and so on |
 | `GET /api/v1/uplinks`, `GET /api/v1/uplinks/{id}` | session | the internet connection (today one, id `wan`): `port`, `mode` (dhcp or static), `ip`, `netmask`, `gateway`, `dns`, `pending`, and `live` (what is in effect: `up`, `address`, `gateway`, `dns`) |
 | `PUT /api/v1/uplinks/{id}` | session + CSRF | `{"mode": "dhcp"}` or `{"mode": "static", "ip", "netmask", "gateway", "dns": []}`; stages a draft. Switching to DHCP clears the static values. A static address also requires a gateway and one DNS server |
 | `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (the DNS series' `state`, `target`, `source`, `rtt_ms`, plus `method`, `gateway` (the same fields for the gateway) and a `diagnosis` sentence), `availability` (`uptime_24h`, `uptime_30d` in percent or null, `outage_count`, `outages`: newest first, at most 20, each `start` ms, `seconds`, `ongoing`; independent of the charted range), and two series, `dns` and `gateway`, each with `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
@@ -525,6 +538,7 @@ every future page works on every screen automatically.
 | 2026-10-08 | The gateway is measured as a second series, only with real pings | tells ISP problems from local ones; a DNS query to a gateway is not a valid test |
 | 2026-10-08 | Uptime is a share of observed minutes, and an outage is whole minutes of total loss on the DNS series | missing data (daemon down) must not read as downtime, and a gateway that ignores pings must not read as an outage |
 | 2026-10-08 | "Networks" renamed "Local Networks" (menu, page title, Overview card); all WAN facts live in the Overview's Internet card | the Network group also holds Internet, so "Networks" was ambiguous; each card should lead to the page about its subject |
+| 2026-10-08 | Static routes are applied by an if-up.d script tagged proto 77 rather than lines in /etc/network/interfaces, and still need the 60 s confirmation | no networking restart for a route change, routes survive reboots and restarts, only our own routes are ever removed; a wrong route can still lock out an admin on another network |
 | 2026-10-08 | Overview: one device card first (hostname and a vertical list of specs, no DNS), then Internet and Network cards; the interfaces table is gone | the landing page should say what this box is, then whether it is working and what is connected |
 | 2026-10-08 | WAN usage reuses the stats and traffic endpoints instead of a new one | the data is already collected and served; one less thing to keep in step |
 | 2026-10-08 | Static WAN needs a gateway and a DNS server in the editor, though the shared validation allows them empty | an address alone cannot reach the internet, and the health chart needs a DNS server to measure |

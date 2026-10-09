@@ -232,6 +232,14 @@ func main() {
 			}
 			return live
 		}}
+	netAPI.RoutingTable = func() []netapi.LiveRoute {
+		data, err := os.ReadFile("/proc/net/route")
+		if err != nil {
+			return nil
+		}
+		return netapi.ClassifyRoutes(network.ParseRoutingTable(data))
+	}
+	mux.HandleFunc("/api/v1/routes", requireAuth(netAPI.HandleRoutes))
 	mux.HandleFunc("/api/v1/uplinks", requireAuth(netAPI.HandleUplinks))
 	mux.HandleFunc("/api/v1/uplinks/{id}", requireAuth(netAPI.HandleUplink))
 	mux.HandleFunc("/api/v1/uplinks/{id}/health", requireAuth(func(w http.ResponseWriter, r *http.Request) {

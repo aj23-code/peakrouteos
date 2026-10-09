@@ -179,6 +179,11 @@ function loadView(viewName) {
                 activeViewCleanup = window.PortsModule.init();
             }
             break;
+        case 'routes':
+            if (window.RoutesModule) {
+                activeViewCleanup = window.RoutesModule.init();
+            }
+            break;
         case 'networks':
             if (window.NetworksModule) {
                 activeViewCleanup = window.NetworksModule.init();

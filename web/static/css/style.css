@@ -1498,3 +1498,19 @@ height: 260px;
 @media (max-width: 520px) {
     .ov-specs > div { grid-template-columns: 7rem minmax(0, 1fr); }
 }
+
+/* ---------- Routes page ---------- */
+.routes-list { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem; }
+.route-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.75rem 1rem; padding: 0.9rem 1rem; border: 1px solid var(--border-color); border-radius: 0.6rem; background: rgba(15, 23, 42, 0.35); }
+.route-row--off .route-fields { opacity: 0.55; }
+.route-fields { flex: 1 1 36rem; display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 1.3fr) minmax(10rem, 1.3fr) minmax(5.5rem, 0.6fr); gap: 0.75rem; min-width: 0; }
+.route-controls { display: flex; align-items: center; gap: 0.75rem; padding-top: 1.35rem; }
+.route-controls .toggle { min-height: 2.5rem; }
+@media (max-width: 700px) {
+    .route-fields { grid-template-columns: 1fr 1fr; flex-basis: 100%; }
+    .route-controls { padding-top: 0; width: 100%; justify-content: space-between; }
+    .route-remove { min-height: 44px; }
+}
+@media (max-width: 420px) {
+    .route-fields { grid-template-columns: 1fr; }
+}

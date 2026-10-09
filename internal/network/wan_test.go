@@ -137,3 +137,32 @@ func TestUpstreamGateway(t *testing.T) {
 		t.Fatal("junk gateway accepted")
 	}
 }
+
+func TestParseRoutingTable(t *testing.T) {
+	route := "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n" +
+		"eth0\t00000000\t0100A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n" +
+		"eth0\t0000A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0\n" +
+		"eth1\t0000140A\t3201A8C0\t0003\t0\t0\t50\t0000FFFF\t0\t0\t0\n" +
+		"eth1\t0000FEA9\t00000000\t0001\t0\t0\t1000\t0000FFFF\t0\t0\t0\n" +
+		"junk line\n" +
+		"eth2\tZZZZZZZZ\t00000000\t0001\t0\t0\t1\t00FFFFFF\t0\t0\t0\n" +
+		"eth3\t0000A8C0\t00000000\t0001\t0\t0\t1\t00FF00FF\t0\t0\t0\n" // a mask with a hole
+	got := ParseRoutingTable([]byte(route))
+	want := []KernelRoute{
+		{"0.0.0.0/0", "192.168.0.1", "eth0", 100},
+		{"192.168.0.0/24", "", "eth0", 100},
+		{"10.20.0.0/16", "192.168.1.50", "eth1", 50},
+		{"169.254.0.0/16", "", "eth1", 1000},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("%+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("route %d: %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	if len(ParseRoutingTable(nil)) != 0 || len(ParseRoutingTable([]byte("Iface\tDestination\n"))) != 0 {
+		t.Error("an empty table should give nothing")
+	}
+}

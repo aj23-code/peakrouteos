@@ -38,7 +38,7 @@
               <a href="#" class="nav-item" data-view="internet">Internet</a>
               <a href="#" class="nav-item" data-view="networks">Local Networks</a>
               <a href="#" class="nav-item" data-view="network-physical">Ports</a>
-              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Routes</span>
+              <a href="#" class="nav-item" data-view="routes">Routes</a>
             </div>
           </details>
 
@@ -432,6 +432,52 @@
         </section>
       </div>
 
+      <!-- View: Routes -->
+      <div id="view-routes" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Routes</h1>
+            <p class="subtitle">Send traffic for another network through a router on your network. Changes are saved as a draft until you commit them.</p>
+          </div>
+        </header>
+
+        <div id="routes-message" class="form-message hidden" role="alert"></div>
+
+        <section class="card" id="routes-card">
+          <div class="net-card-head">
+            <h2>Static routes</h2>
+            <span id="routes-draft" class="tag tag-draft hidden">Draft</span>
+          </div>
+          <p class="form-hint">Use this when a network is reached through another router, for example a lab or a VPN gateway on your LAN.
+            If two routes cover the same network, the one with the lower metric wins.</p>
+
+          <div id="routes-list" class="routes-list"></div>
+          <p id="routes-empty" class="form-hint hidden">No static routes yet.</p>
+
+          <div class="form-actions">
+            <button type="button" id="routes-add" class="cfg-btn">Add route</button>
+            <span id="routes-hint" class="form-hint"></span>
+            <button type="button" id="routes-reset" class="cfg-btn cfg-btn--ghost" disabled>Reset</button>
+            <button type="button" id="routes-save" class="cfg-btn cfg-btn--primary" disabled>Save to draft</button>
+          </div>
+        </section>
+
+        <section class="card card-nopadding">
+          <div class="card-header">
+            <div class="card-header-group">
+              <h2>Routing table</h2>
+              <span class="card-subtitle">What the router is using right now</span>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead><tr><th>Network</th><th>Through</th><th>Port</th><th>Metric</th><th>Type</th></tr></thead>
+              <tbody id="routes-table"><tr><td colspan="5" class="table-placeholder">Loading&hellip;</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
       <!-- View: Physical Devices -->
       <div id="view-network-physical" class="view-section hidden">
         <header class="dash-header">
@@ -627,6 +673,7 @@
   <script src="/static/scripts/internet.js"></script>
   <script src="/static/scripts/ports.js"></script>
   <script src="/static/scripts/networks.js"></script>
+  <script src="/static/scripts/routes.js"></script>
   <script src="/static/scripts/leases.js"></script>
   <script src="/static/scripts/syslogs.js"></script>
 </body>

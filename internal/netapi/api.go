@@ -30,6 +30,8 @@ type API struct {
 	// Live reports how the given port is connected right now (its address, gateway and DNS
 	// servers). Nil means it is not reported.
 	Live func(port string) *Live
+	// RoutingTable lists the routes the kernel is using now. Nil means it is not reported.
+	RoutingTable func() []LiveRoute
 }
 
 const maxBody = 64 << 10
@@ -110,9 +112,19 @@ func ownedErrors(err error, fields ...string) config.ValidationError {
 	for _, f := range fields {
 		own[f] = true
 	}
+	// "routes" owns "routes[3].gateway" and the like
+	owns := func(field string) bool {
+		if own[field] {
+			return true
+		}
+		if i := strings.IndexByte(field, '['); i > 0 {
+			return own[field[:i]]
+		}
+		return false
+	}
 	var out config.ValidationError
 	for _, e := range ve {
-		if own[e.Field] {
+		if owns(e.Field) {
 			name := errorField[e.Field]
 			if name == "" {
 				name = e.Field
