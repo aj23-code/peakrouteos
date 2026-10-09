@@ -315,6 +315,11 @@ the first IPv4 address, the default route in `/proc/net/route`, and the resolver
   for the last one, and only if it reaches the present. The gateway series never counts: a modem that
   ignores pings must not make outages. The result is cached for 20 s because the page asks every few
   seconds and a 30-day scan is wasted work.
+- **Usage card** (`internet.js`, no new endpoint): the port with role `wan` in `/api/v1/system/stats`
+  (polled every 2 s) gives the current download and upload rate; the 24 h and 30 d volumes come from
+  `/api/v1/system/traffic` (reloaded every minute and when the WAN port changes) as the sum of each
+  bucket's average rate times its length (900 s and 3600 s). Time the daemon was not running has no
+  buckets, so the totals are floors. Without a WAN port the card says to pick one on the Ports page.
 - **Chart** (`internet.js`): canvas, DNS average line with a best-to-worst band, a thinner gateway line,
   red columns for DNS loss, gaps
   where no probes ran, hover tooltip, drawn at device pixel ratio. It refreshes every 5 to 60 s depending
@@ -454,6 +459,7 @@ every future page works on every screen automatically.
 | 2026-10-08 | WAN health pings the upstream DNS server (ICMP, DNS query only as a fallback), per-minute history in its own SQLite file | what Meraki's appliance status shows; the resolver is what clients actually depend on; same flash-friendly storage as traffic |
 | 2026-10-08 | The gateway is measured as a second series, only with real pings | tells ISP problems from local ones; a DNS query to a gateway is not a valid test |
 | 2026-10-08 | Uptime is a share of observed minutes, and an outage is whole minutes of total loss on the DNS series | missing data (daemon down) must not read as downtime, and a gateway that ignores pings must not read as an outage |
+| 2026-10-08 | WAN usage reuses the stats and traffic endpoints instead of a new one | the data is already collected and served; one less thing to keep in step |
 | 2026-10-08 | Static WAN needs a gateway and a DNS server in the editor, though the shared validation allows them empty | an address alone cannot reach the internet, and the health chart needs a DNS server to measure |
 | 2026-10-06 | Success messages show ~8 s; failures and reverts stay until dismissed | problems must not be missed, good news should not nag |
 

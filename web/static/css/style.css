@@ -1473,3 +1473,11 @@ height: 260px;
 .inet-diagnosis { margin-top: 0.4rem; font-size: 0.85rem; color: var(--accent-amber); max-width: 46rem; }
 .inet-outages { margin-top: 1rem; }
 .inet-outages .table-container { margin-top: 0.75rem; }
+
+.inet-usage { margin-bottom: 1rem; }
+.inet-usage-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; }
+.inet-usage-table th, .inet-usage-table td { text-align: left; padding: 0.45rem 0.6rem 0.45rem 0; font-size: 0.95rem; }
+.inet-usage-table thead th { font-size: 0.75rem; font-weight: 500; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.inet-usage-table tbody th { font-weight: 600; white-space: nowrap; }
+.inet-usage-table tbody td { font-variant-numeric: tabular-nums; }
+.inet-usage-table tbody tr { border-top: 1px solid var(--border-color); }

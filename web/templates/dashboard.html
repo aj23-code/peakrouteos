@@ -318,6 +318,21 @@
           </dl>
         </section>
 
+        <section class="card inet-usage" aria-label="Traffic on the internet port">
+          <div class="net-card-head">
+            <h2>Usage</h2>
+            <span class="form-hint">Traffic on <span id="inet-usage-port" class="chip">&ndash;</span></span>
+          </div>
+          <table class="inet-usage-table">
+            <thead><tr><th></th><th>Now</th><th>Last 24 hours</th><th>Last 30 days</th></tr></thead>
+            <tbody>
+              <tr><th scope="row"><span class="traffic-dot rx"></span> Download</th><td id="inet-dl-now">&ndash;</td><td id="inet-dl-24">&ndash;</td><td id="inet-dl-30">&ndash;</td></tr>
+              <tr><th scope="row"><span class="traffic-dot tx"></span> Upload</th><td id="inet-ul-now">&ndash;</td><td id="inet-ul-24">&ndash;</td><td id="inet-ul-30">&ndash;</td></tr>
+            </tbody>
+          </table>
+          <p id="inet-usage-note" class="form-hint hidden"></p>
+        </section>
+
         <div id="inet-message" class="form-message hidden" role="alert"></div>
 
         <section class="card" id="inet-card">

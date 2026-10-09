@@ -370,6 +370,74 @@ window.InternetModule = (function () {
         drawChart();
     }
 
+    // ---------------------------------------------------------------- usage
+
+    let usageTimer = null;
+    let volumeTimer = null;
+    let wanPort = null;       // the port whose traffic is shown
+
+    function fmtRate(bytesPerSec) {
+        const bps = (bytesPerSec || 0) * 8;
+        if (bps < 1000) return bps.toFixed(0) + ' bps';
+        if (bps < 1e6) return (bps / 1e3).toFixed(1) + ' Kbps';
+        if (bps < 1e9) return (bps / 1e6).toFixed(1) + ' Mbps';
+        return (bps / 1e9).toFixed(2) + ' Gbps';
+    }
+
+    function setUsage(prefix, values) {
+        ['now', '24', '30'].forEach((k, i) => { $(`inet-${prefix}-${k}`).textContent = values[i]; });
+    }
+
+    function clearUsage(note) {
+        setUsage('dl', ['\u2013', '\u2013', '\u2013']);
+        setUsage('ul', ['\u2013', '\u2013', '\u2013']);
+        $('inet-usage-port').textContent = '\u2013';
+        $('inet-usage-note').textContent = note || '';
+        $('inet-usage-note').classList.toggle('hidden', !note);
+    }
+
+    async function pollUsage() {
+        const res = await apiFetch('/api/v1/system/stats');
+        if (!res || !res.ok) return;
+        const stats = await res.json();
+        const entry = Object.entries(stats.interfaces || {}).find(([, m]) => m.role === 'wan');
+        if (!entry) {
+            if (wanPort !== null) { wanPort = null; }
+            clearUsage('No port is set as the internet port yet. Choose one on the Ports page.');
+            return;
+        }
+        const [name, meta] = entry;
+        $('inet-usage-note').classList.add('hidden');
+        $('inet-usage-port').textContent = name;
+        $('inet-dl-now').textContent = fmtRate(meta.rx_bytes_sec);
+        $('inet-ul-now').textContent = fmtRate(meta.tx_bytes_sec);
+        if (name !== wanPort) {
+            wanPort = name;
+            loadVolumes();
+        }
+    }
+
+    // The history holds the average rate of each bucket, so a bucket's volume is rate x its length.
+    // Time the router was off has no buckets and adds nothing, so these are floors, not exact totals.
+    async function volumeOf(port, rangeName, bucketSeconds) {
+        const res = await apiFetch(`/api/v1/system/traffic?iface=${encodeURIComponent(port)}&range=${rangeName}`);
+        if (!res || !res.ok) return null;
+        const data = await res.json();
+        const sum = (arr) => (arr || []).reduce((a, b) => a + b, 0) * bucketSeconds;
+        return { rx: sum(data.rx), tx: sum(data.tx) };
+    }
+
+    async function loadVolumes() {
+        if (!wanPort) return;
+        const port = wanPort;
+        const [day, month] = await Promise.all([volumeOf(port, '24h', 900), volumeOf(port, '30d', 3600)]);
+        if (port !== wanPort) return;
+        $('inet-dl-24').textContent = day ? formatBytes(day.rx) : '\u2013';
+        $('inet-ul-24').textContent = day ? formatBytes(day.tx) : '\u2013';
+        $('inet-dl-30').textContent = month ? formatBytes(month.rx) : '\u2013';
+        $('inet-ul-30').textContent = month ? formatBytes(month.tx) : '\u2013';
+    }
+
     // ---------------------------------------------------------------- connection settings
 
     function showMessage(text, kind) {
@@ -540,11 +608,18 @@ window.InternetModule = (function () {
         loadHealth();
         loadUplink(false);
         scheduleHealth();
+        wanPort = null;
+        clearUsage('');
+        pollUsage();
+        usageTimer = setInterval(pollUsage, 2000);
+        volumeTimer = setInterval(loadVolumes, 60000);
         resizeHandler = () => drawChart();
         window.addEventListener('resize', resizeHandler);
         return () => {
             clearInterval(timer);
             timer = null;
+            clearInterval(usageTimer);
+            clearInterval(volumeTimer);
             window.removeEventListener('resize', resizeHandler);
         };
     }
