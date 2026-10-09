@@ -1477,8 +1477,8 @@ height: 260px;
 .ov-spark-plot canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .ov-spark-foot { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem; }
 
-.ov-row { display: flex; flex-direction: column; gap: 0.7rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border-color); }
-.ov-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.ov-row { display: flex; flex-direction: column; gap: 0.7rem; padding-top: 1rem; border-top: 1px solid var(--border-color); }
+.ov-card-head + .ov-row { padding-top: 0; border-top: 0; }
 .ov-row-title { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .ov-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .ov-dhcp { margin-top: 0.2rem; }

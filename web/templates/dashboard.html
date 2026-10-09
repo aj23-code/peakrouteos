@@ -36,7 +36,7 @@
             </summary>
             <div class="folder-content">
               <a href="#" class="nav-item" data-view="internet">Internet</a>
-              <a href="#" class="nav-item" data-view="networks">Networks</a>
+              <a href="#" class="nav-item" data-view="networks">Local networks</a>
               <a href="#" class="nav-item" data-view="network-physical">Ports</a>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Routes</span>
             </div>
@@ -148,9 +148,18 @@
             <p id="ov-note" class="ov-note hidden"></p>
             <dl class="ov-stats">
               <div><dt>Latency</dt><dd id="ov-latency">&ndash;</dd></div>
-              <div><dt>Gateway</dt><dd id="ov-gateway">&ndash;</dd></div>
+              <div><dt>Gateway latency</dt><dd id="ov-gateway">&ndash;</dd></div>
               <div><dt>Uptime 24 h</dt><dd id="ov-uptime">&ndash;</dd></div>
             </dl>
+            <div class="ov-row">
+              <div class="ov-row-title"><span class="traffic-badge wan">WAN</span><span id="ov-wan-port" class="chip">&ndash;</span><span id="ov-wan-link" class="form-hint"></span></div>
+              <dl class="ov-kv">
+                <div><dt>Address</dt><dd id="ov-wan-addr">&ndash;</dd></div>
+                <div><dt>Gateway</dt><dd id="ov-wan-gw">&ndash;</dd></div>
+                <div><dt>Traffic now</dt><dd class="ov-rates"><span class="ov-rx" title="Download">&darr; <span id="ov-wan-down">&ndash;</span></span><span class="ov-tx" title="Upload">&uarr; <span id="ov-wan-up">&ndash;</span></span></dd></div>
+              </dl>
+            </div>
+
             <div class="ov-spark">
               <div class="ov-spark-plot"><canvas id="ov-spark" role="img" aria-label="Latency to the upstream DNS server over the last hour"></canvas></div>
               <div class="ov-spark-foot"><span>1 hour ago</span><span id="ov-spark-range">&nbsp;</span><span>now</span></div>
@@ -159,17 +168,8 @@
 
           <article class="card ov-card" id="ov-network">
             <div class="ov-card-head">
-              <h2>Network</h2>
+              <h2>Local networks</h2>
               <a href="#" class="view-all-link" data-goto="networks">Details &rarr;</a>
-            </div>
-
-            <div class="ov-row">
-              <div class="ov-row-title"><span class="traffic-badge wan">WAN</span><span id="ov-wan-port" class="chip">&ndash;</span><span id="ov-wan-link" class="form-hint"></span></div>
-              <dl class="ov-kv">
-                <div><dt>Address</dt><dd id="ov-wan-addr">&ndash;</dd></div>
-                <div><dt>Gateway</dt><dd id="ov-wan-gw">&ndash;</dd></div>
-                <div><dt>Traffic now</dt><dd class="ov-rates"><span class="ov-rx" title="Download">&darr; <span id="ov-wan-down">&ndash;</span></span><span class="ov-tx" title="Upload">&uarr; <span id="ov-wan-up">&ndash;</span></span></dd></div>
-              </dl>
             </div>
 
             <div class="ov-row">
@@ -481,7 +481,7 @@
       <div id="view-networks" class="view-section hidden">
         <header class="dash-header">
           <div>
-            <h1>Networks</h1>
+            <h1>Local networks</h1>
             <p class="subtitle">Each network has its own address and DHCP server. Changes are saved as a draft until you commit them.</p>
           </div>
         </header>

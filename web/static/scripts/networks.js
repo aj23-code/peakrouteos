@@ -1,5 +1,5 @@
 // web/static/scripts/networks.js
-// Networks page: the router address and DHCP server of each network (today: the LAN).
+// Local networks page: the router address and DHCP server of each network (today: the LAN).
 
 window.NetworksModule = (function () {
     let network = null;      // last answer from the server
