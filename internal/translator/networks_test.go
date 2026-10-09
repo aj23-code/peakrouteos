@@ -47,15 +47,32 @@ func TestWithoutExtraNetworksNothingChanges(t *testing.T) {
 	}
 }
 
-func TestOneLanPortWithNetworksStillNeedsTheBridge(t *testing.T) {
-	cfg := routerCfg()
-	cfg.Networks = []config.Network{guestNet()}
-	if LanTarget(cfg) != "br0" {
-		t.Fatalf("LanTarget = %q", LanTarget(cfg))
+func TestTheDefaultNetworkLivesOnTheBridgeOnlyWhenSeveralPortsCarryIt(t *testing.T) {
+	one := routerCfg() // eth1 only
+	one.Networks = []config.Network{guestNet()}
+	if got := LanTarget(one); got != "eth1" {
+		t.Errorf("one port carries the default network: LanTarget = %q", got)
+	}
+	if got := LanTarget(netsCfg(guestNet())); got != "br0" {
+		t.Errorf("two ports carry it: LanTarget = %q", got)
+	}
+	// a port whose untagged network is another one does not count
+	cfg := netsCfg(guestNet())
+	cfg.PortNetworks = map[string]config.PortNetworks{"eth2": {Native: "guest"}}
+	if got := LanTarget(cfg); got != "eth1" {
+		t.Errorf("only eth1 carries the default network: LanTarget = %q", got)
+	}
+	// no port carries it: an empty bridge keeps its address
+	cfg.PortNetworks = map[string]config.PortNetworks{"eth1": {Native: "guest"}, "eth2": {Native: "guest"}}
+	if got := LanTarget(cfg); got != "br0" {
+		t.Errorf("no port carries it: LanTarget = %q", got)
+	}
+	if got := content(t, cfg, PathInterfaces); !strings.Contains(got, "iface br0 inet static\n    address 192.168.1.1\n    netmask 255.255.255.0\n    bridge_ports none\n") {
+		t.Errorf("%s", got)
 	}
 }
 
-func TestBridgedInterfacesFile(t *testing.T) {
+func TestInterfacesFileWithNetworks(t *testing.T) {
 	cfg := netsCfg(guestNet(), iotNet())
 	cfg.PortNetworks = map[string]config.PortNetworks{
 		"eth1": {Tagged: []string{"iot", "guest"}}, // the default network untagged plus both VLANs
@@ -67,40 +84,79 @@ iface lo inet loopback
 auto eth0
 iface eth0 inet dhcp
 
+auto eth1.20
+iface eth1.20 inet manual
+    vlan-raw-device eth1
+
+auto eth1.30
+iface eth1.30 inet manual
+    vlan-raw-device eth1
+
+auto eth1
+iface eth1 inet static
+    address 192.168.1.1
+    netmask 255.255.255.0
+
+auto br20
+iface br20 inet static
+    address 10.20.0.1
+    netmask 255.255.255.0
+    bridge_ports eth2 eth1.20
+
+auto br30
+iface br30 inet static
+    address 10.30.0.1
+    netmask 255.255.255.0
+    bridge_ports eth1.30
+`
+	if got := content(t, cfg, PathInterfaces); got != want {
+		t.Errorf("interfaces:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestInterfacesFileWithSeveralDefaultPortsAndAnEmptyNetwork(t *testing.T) {
+	cfg := netsCfg(guestNet()) // two ports, both on the default network; nothing carries the guest network
+	want := `auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
 auto br0
 iface br0 inet static
     address 192.168.1.1
     netmask 255.255.255.0
-    pre-up ip link add name br0 type bridge || true
-    pre-up ip link set dev br0 type bridge vlan_filtering 1
-    pre-up ip link set dev eth1 master br0
-    pre-up ip link set dev eth1 up
-    pre-up ip link set dev eth2 master br0
-    pre-up ip link set dev eth2 up
-    post-up bridge vlan add dev br0 vid 20 self
-    post-up bridge vlan add dev br0 vid 30 self
-    post-up bridge vlan add dev eth1 vid 20
-    post-up bridge vlan add dev eth1 vid 30
-    post-up bridge vlan add dev eth2 vid 20 pvid untagged
-    post-up bridge vlan del dev eth2 vid 1
-    post-down ip link del dev br0 || true
+    bridge_ports eth1 eth2
 
-auto br0.20
-iface br0.20 inet static
+auto br20
+iface br20 inet static
     address 10.20.0.1
     netmask 255.255.255.0
-    pre-up ip link add link br0 name br0.20 type vlan id 20 || true
-    post-down ip link del dev br0.20 || true
-
-auto br0.30
-iface br0.30 inet static
-    address 10.30.0.1
-    netmask 255.255.255.0
-    pre-up ip link add link br0 name br0.30 type vlan id 30 || true
-    post-down ip link del dev br0.30 || true
+    bridge_ports none
 `
 	if got := content(t, cfg, PathInterfaces); got != want {
 		t.Errorf("interfaces:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestTaggedInterfacesComeInVlanOrderAndTwoPortsCanTagTheSameNetwork(t *testing.T) {
+	cfg := netsCfg(iotNet(), guestNet()) // listed iot (30) first on purpose
+	cfg.PortNetworks = map[string]config.PortNetworks{
+		"eth1": {Tagged: []string{"iot", "guest"}},
+		"eth2": {Tagged: []string{"guest"}},
+	}
+	got := content(t, cfg, PathInterfaces)
+	order := []string{"auto eth1.20", "auto eth1.30", "auto eth2.20", "auto br0", "auto br30", "auto br20"}
+	last := -1
+	for _, want := range order {
+		i := strings.Index(got, want+"\n")
+		if i < 0 || i < last {
+			t.Fatalf("%q out of place in:\n%s", want, got)
+		}
+		last = i
+	}
+	if !strings.Contains(got, "iface br20 inet static\n    address 10.20.0.1\n    netmask 255.255.255.0\n    bridge_ports eth1.20 eth2.20\n") {
+		t.Errorf("%s", got)
 	}
 }
 
@@ -121,8 +177,8 @@ func TestBridgedInterfacesKeepTheWanStanzaAsItWas(t *testing.T) {
 func TestBridgedDnsmasqFile(t *testing.T) {
 	cfg := netsCfg(guestNet(), iotNet())
 	want := `interface=br0
-interface=br0.20
-interface=br0.30
+interface=br20
+interface=br30
 dhcp-range=set:lan,192.168.1.100,192.168.1.200,255.255.255.0,12h
 dhcp-option=tag:lan,option:router,192.168.1.1
 dhcp-option=tag:lan,option:dns-server,192.168.1.1
@@ -180,7 +236,7 @@ func has(lines []string, want string) bool {
 func TestANewNetworkHasNoRouteToTheInternetUntilItIsAllowed(t *testing.T) {
 	fwd := nftForward(t, netsCfg(guestNet()))
 	for _, l := range fwd {
-		if strings.Contains(l, "br0.20") {
+		if strings.Contains(l, "br20") {
 			t.Fatalf("an isolated network with no internet got a forwarding rule: %s", l)
 		}
 	}
@@ -190,11 +246,11 @@ func TestANewNetworkHasNoRouteToTheInternetUntilItIsAllowed(t *testing.T) {
 	open := guestNet()
 	open.Internet = true
 	fwd = nftForward(t, netsCfg(open))
-	if !has(fwd, `iifname "br0.20" oifname "eth0" accept`) {
+	if !has(fwd, `iifname "br20" oifname "eth0" accept`) {
 		t.Errorf("internet access was not rendered: %v", fwd)
 	}
 	for _, l := range fwd {
-		if strings.Contains(l, `oifname "br0"`) || strings.Contains(l, `iifname "br0" oifname "br0.20"`) {
+		if strings.Contains(l, `oifname "br0"`) || strings.Contains(l, `iifname "br0" oifname "br20"`) {
 			t.Errorf("internet access must not open the network to the others: %s", l)
 		}
 	}
@@ -208,19 +264,19 @@ func TestNetworksTalkOnlyWhenNeitherIsIsolated(t *testing.T) {
 
 	// the guest network is open but the default network is not isolated either: they talk, both ways
 	fwd := nftForward(t, netsCfg(open(guestNet())))
-	if !has(fwd, `iifname "br0" oifname "br0.20" accept`) || !has(fwd, `iifname "br0.20" oifname "br0" accept`) {
+	if !has(fwd, `iifname "br0" oifname "br20" accept`) || !has(fwd, `iifname "br20" oifname "br0" accept`) {
 		t.Errorf("both directions are needed: %v", fwd)
 	}
 
 	// an isolated guest network cannot talk to anyone
-	if between(nftForward(t, netsCfg(guestNet())), "br0", "br0.20") {
+	if between(nftForward(t, netsCfg(guestNet())), "br0", "br20") {
 		t.Error("an isolated network can reach the default network")
 	}
 
 	// an isolated default network cannot talk to an open one either
 	cfg := netsCfg(open(guestNet()))
 	cfg.LanIsolated = true
-	if between(nftForward(t, cfg), "br0", "br0.20") {
+	if between(nftForward(t, cfg), "br0", "br20") {
 		t.Error("an isolated default network can reach another network")
 	}
 
@@ -231,10 +287,10 @@ func TestNetworksTalkOnlyWhenNeitherIsIsolated(t *testing.T) {
 		return n
 	}())
 	fwd = nftForward(t, cfg)
-	if !between(fwd, "br0.20", "br0.30") || !between(fwd, "br0", "br0.30") || !between(fwd, "br0", "br0.20") {
+	if !between(fwd, "br20", "br30") || !between(fwd, "br0", "br30") || !between(fwd, "br0", "br20") {
 		t.Errorf("open networks should reach each other: %v", fwd)
 	}
-	if between(fwd, "br0.40", "br0") || between(fwd, "br0.40", "br0.20") || between(fwd, "br0.40", "br0.30") {
+	if between(fwd, "br40", "br0") || between(fwd, "br40", "br20") || between(fwd, "br40", "br30") {
 		t.Errorf("the isolated network talks to others: %v", fwd)
 	}
 }
@@ -244,15 +300,15 @@ func TestOtherNetworksMayOnlyUseTheRoutersBasicServices(t *testing.T) {
 	input := nft[strings.Index(nft, "chain input"):strings.Index(nft, "chain forward")]
 	for _, want := range []string{
 		`iifname "br0" accept`, // the default network is trusted, as it always was
-		`iifname "br0.20" udp dport { 53, 67 } accept`,
-		`iifname "br0.20" tcp dport 53 accept`,
-		`iifname "br0.20" icmp type echo-request accept`,
+		`iifname "br20" udp dport { 53, 67 } accept`,
+		`iifname "br20" tcp dport 53 accept`,
+		`iifname "br20" icmp type echo-request accept`,
 	} {
 		if !strings.Contains(input, want) {
 			t.Errorf("missing %q in:\n%s", want, input)
 		}
 	}
-	if strings.Contains(input, `iifname "br0.20" accept`) {
+	if strings.Contains(input, `iifname "br20" accept`) {
 		t.Error("another network was given the same access to the router as the default one")
 	}
 	if !strings.Contains(nft, "policy drop") || strings.Count(nft, "masquerade") != 1 {
@@ -273,18 +329,18 @@ table inet filter {
         ct state established,related accept
         ct state invalid drop
         iifname "br0" accept
-        iifname "br0.20" udp dport { 53, 67 } accept
-        iifname "br0.20" tcp dport 53 accept
-        iifname "br0.20" icmp type echo-request accept
+        iifname "br20" udp dport { 53, 67 } accept
+        iifname "br20" tcp dport 53 accept
+        iifname "br20" icmp type echo-request accept
     }
     chain forward {
         type filter hook forward priority filter; policy drop;
         ct state established,related accept
         ct state invalid drop
         iifname "br0" oifname "eth0" accept
-        iifname "br0.20" oifname "eth0" accept
-        iifname "br0" oifname "br0.20" accept
-        iifname "br0.20" oifname "br0" accept
+        iifname "br20" oifname "eth0" accept
+        iifname "br0" oifname "br20" accept
+        iifname "br20" oifname "br0" accept
     }
     chain output {
         type filter hook output priority filter; policy accept;
@@ -415,15 +471,32 @@ func TestRenamingANetworkChangesNothingOnTheSystem(t *testing.T) {
 	}
 }
 
-func TestMovingAPortBetweenNetworksRestartsOnlyNetworking(t *testing.T) {
+func TestMovingAPortBetweenNetworksRestartsNetworkingAndDnsmasqOnly(t *testing.T) {
 	root := RootFS(t.TempDir())
 	cfg := netsCfg(guestNet())
+	cfg.LanInterfaces = []string{"eth1", "eth2", "eth3"} // the default network stays on br0 with two ports
 	install(t, string(root), mustRender(t, cfg))
 
-	cfg.PortNetworks = map[string]config.PortNetworks{"eth2": {Native: "guest"}}
+	cfg.PortNetworks = map[string]config.PortNetworks{"eth3": {Native: "guest"}}
 	plan, _ := PlanChanges(root, mustRender(t, cfg))
-	// networking restarts, and the DHCP server follows it because its LAN address was dropped
+	// the firewall names networks, not ports, so it is untouched; dnsmasq follows networking because
+	// restarting networking drops the address it is bound to
 	if got := actionSummary(plan); got != "restart networking, restart dnsmasq" {
 		t.Fatalf("%q", got)
+	}
+	if len(plan.Files) != 1 || plan.Files[0].Path != PathInterfaces {
+		t.Fatalf("%+v", plan.Files)
+	}
+}
+
+func TestTheDefaultNetworkChangesInterfaceWhenItsPortCountDoes(t *testing.T) {
+	root := RootFS(t.TempDir())
+	cfg := netsCfg(guestNet()) // eth1 and eth2 both default: br0
+	install(t, string(root), mustRender(t, cfg))
+
+	cfg.PortNetworks = map[string]config.PortNetworks{"eth2": {Native: "guest"}} // now eth1 alone: no bridge
+	plan, _ := PlanChanges(root, mustRender(t, cfg))
+	if got := actionSummary(plan); got != "restart networking, reload nftables, restart dnsmasq" {
+		t.Fatalf("%q: the default network moves from br0 to eth1, which the firewall and DHCP files name", got)
 	}
 }

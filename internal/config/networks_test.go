@@ -104,6 +104,25 @@ func TestInvalidNetworks(t *testing.T) {
 	}
 }
 
+func TestAVlanInterfaceNameThatJustFitsIsAccepted(t *testing.T) {
+	c := twoPorts(withNets(validNet(), guest()))
+	c.LanInterfaces = []string{"enp0s31f6", "eth2"} // "enp0s31f6.20" is 12 characters
+	c.PortNetworks = map[string]PortNetworks{"enp0s31f6": {Tagged: []string{"guest"}}}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	c.LanInterfaces = []string{"enp0s31f6abc", "eth2"} // 12 + ".20" is exactly 15
+	c.PortNetworks = map[string]PortNetworks{"enp0s31f6abc": {Tagged: []string{"guest"}}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("a 15 character VLAN interface name was refused: %v", err)
+	}
+	c.LanInterfaces = []string{"enp0s31f6abcd", "eth2"} // 13 + ".20" is 16: one too many
+	c.PortNetworks = map[string]PortNetworks{"enp0s31f6abcd": {Tagged: []string{"guest"}}}
+	if err := c.Validate(); err == nil {
+		t.Fatal("a 16 character VLAN interface name was accepted")
+	}
+}
+
 func TestInvalidPortNetworks(t *testing.T) {
 	with := func(p map[string]PortNetworks) NetworkConfig {
 		c := twoPorts(withNets(validNet(), guest(), iot()))
@@ -123,6 +142,11 @@ func TestInvalidPortNetworks(t *testing.T) {
 		{"native also tagged", with(map[string]PortNetworks{"eth1": {Native: "guest", Tagged: []string{"guest"}}}), "port_networks.eth1.tagged"},
 		{"tagged twice", with(map[string]PortNetworks{"eth1": {Tagged: []string{"iot", "iot"}}}), "port_networks.eth1.tagged"},
 		{"injection", with(map[string]PortNetworks{"eth1": {Tagged: []string{"iot\nbridge vlan flush"}}}), "port_networks.eth1.tagged"},
+		{"port name too long for a VLAN interface", func() NetworkConfig {
+			c := with(map[string]PortNetworks{"enp0s31f6abcdef": {Tagged: []string{"guest"}}}) // 15 characters + ".20" is 18
+			c.LanInterfaces = []string{"enp0s31f6abcdef", "eth2"}
+			return c
+		}(), "port_networks.enp0s31f6abcdef.tagged"},
 	}
 	for _, c := range cases {
 		err := c.cfg.Validate()

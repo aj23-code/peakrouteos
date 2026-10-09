@@ -57,11 +57,13 @@ echo "${KEYRING_SHA256}  ${KEYRING_DIR}/${KEYRING_DEB}" | sha256sum -c --quiet -
 dpkg-deb -x "${KEYRING_DIR}/${KEYRING_DEB}" "${KEYRING_DIR}/extracted"
 DEBIAN_KEYRING="${KEYRING_DIR}/extracted/usr/share/keyrings/debian-archive-keyring.gpg"
 
+# bridge-utils lets ifupdown build bridges (bridge_ports ...) and vlan lets it build VLAN interfaces
+# (eth1.20): the router's LAN bridge and its VLAN networks are written the standard Debian way.
 sudo debootstrap \
     --arch=amd64 \
     --variant=minbase \
     --keyring="${DEBIAN_KEYRING}" \
-    --include=linux-image-amd64,systemd-sysv,live-boot,live-config,dosfstools,e2fsprogs,rsync,ifupdown,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ca-certificates,lsb-release,util-linux,fdisk,grub-efi-amd64,nano,passwd \
+    --include=linux-image-amd64,systemd-sysv,live-boot,live-config,dosfstools,e2fsprogs,rsync,ifupdown,bridge-utils,vlan,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ca-certificates,lsb-release,util-linux,fdisk,grub-efi-amd64,nano,passwd \
     trixie "${ROOTFS_DIR}" http://deb.debian.org/debian/
 
 echo "[3/5] Configuring rootfs, security, and embedding PeakRoute binary..."

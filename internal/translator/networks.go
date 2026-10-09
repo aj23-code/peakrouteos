@@ -8,22 +8,53 @@ import (
 	"peakroute/internal/config"
 )
 
-// The default network is VLAN 1 of the bridge (br0 itself); every other network is a VLAN of br0
-// with its own interface, br0.<vlan>.
-
-const defaultVLAN = 1
+// How several networks are built (standard Debian ifupdown, with the bridge-utils and vlan packages):
+//
+//   - The default network is untagged, exactly as before: the LAN port itself, or the bridge br0 when
+//     several ports carry it (and an empty br0 when none does).
+//   - Every other network has its own bridge, br<vlan> (br20), which holds the ports that carry it
+//     untagged and a VLAN interface (eth1.20) for each port that carries it tagged. The router's
+//     address on the network sits on that bridge.
+//
+// Separate bridges keep the networks apart at layer 2; the firewall decides what crosses between them.
 
 func vlanOf(cfg config.NetworkConfig, id string) int {
-	if id == config.DefaultNetworkID {
-		return defaultVLAN
-	}
 	if n, ok := cfg.FindNetwork(id); ok {
 		return n.VLAN
 	}
-	return defaultVLAN
+	return 0
 }
 
-func networkIface(n config.Network) string { return fmt.Sprintf("br0.%d", n.VLAN) }
+func networkIface(n config.Network) string { return fmt.Sprintf("br%d", n.VLAN) }
+
+// defaultPorts are the LAN ports whose untagged network is the default one.
+func defaultPorts(cfg config.NetworkConfig) []string {
+	var out []string
+	for _, port := range cfg.LanInterfaces {
+		if cfg.PortNetworks[port].NativeID() == config.DefaultNetworkID {
+			out = append(out, port)
+		}
+	}
+	return out
+}
+
+// networkMembers lists what is bridged into a network: its untagged ports, then its VLAN interfaces.
+func networkMembers(cfg config.NetworkConfig, n config.Network) []string {
+	var members []string
+	for _, port := range cfg.LanInterfaces {
+		if cfg.PortNetworks[port].NativeID() == n.ID {
+			members = append(members, port)
+		}
+	}
+	for _, port := range cfg.LanInterfaces {
+		for _, t := range cfg.PortNetworks[port].Tagged {
+			if t == n.ID {
+				members = append(members, fmt.Sprintf("%s.%d", port, n.VLAN))
+			}
+		}
+	}
+	return members
+}
 
 func anyNetworkDHCP(cfg config.NetworkConfig) bool {
 	for _, n := range cfg.Networks {
@@ -67,48 +98,30 @@ func networkNotes(cfg config.NetworkConfig) []string {
 	return notes
 }
 
-// renderInterfacesBridged writes /etc/network/interfaces when there are several networks: one
-// VLAN-aware bridge holds every LAN port, the default network is the bridge's own (untagged)
-// address and each other network is a VLAN interface on it.
-//
-// The image has no bridge-utils or vlan package, so ifupdown cannot build these on its own: the
-// pre-up and post-up lines do it with ip and bridge from iproute2, which is installed.
-func renderInterfacesBridged(cfg config.NetworkConfig) string {
+// renderInterfacesNetworks writes /etc/network/interfaces when there are several networks.
+func renderInterfacesNetworks(cfg config.NetworkConfig, lan string) string {
 	var b strings.Builder
 	b.WriteString("auto lo\niface lo inet loopback\n\n")
 	writeWanStanza(&b, cfg)
 
-	fmt.Fprintf(&b, "auto br0\n")
-	fmt.Fprintf(&b, "iface br0 inet static\n")
+	// a VLAN interface for every port that carries a network tagged
+	for _, port := range cfg.LanInterfaces {
+		tagged := append([]string(nil), cfg.PortNetworks[port].Tagged...)
+		sort.Slice(tagged, func(i, j int) bool { return vlanOf(cfg, tagged[i]) < vlanOf(cfg, tagged[j]) })
+		for _, id := range tagged {
+			name := fmt.Sprintf("%s.%d", port, vlanOf(cfg, id))
+			fmt.Fprintf(&b, "auto %s\niface %s inet manual\n    vlan-raw-device %s\n\n", name, name, port)
+		}
+	}
+
+	// the default network
+	fmt.Fprintf(&b, "auto %s\n", lan)
+	fmt.Fprintf(&b, "iface %s inet static\n", lan)
 	fmt.Fprintf(&b, "    address %s\n", cfg.LanIP)
 	fmt.Fprintf(&b, "    netmask %s\n", cfg.LanSubnet)
-	b.WriteString("    pre-up ip link add name br0 type bridge || true\n")
-	b.WriteString("    pre-up ip link set dev br0 type bridge vlan_filtering 1\n")
-	for _, port := range cfg.LanInterfaces {
-		fmt.Fprintf(&b, "    pre-up ip link set dev %s master br0\n", port)
-		fmt.Fprintf(&b, "    pre-up ip link set dev %s up\n", port)
+	if lan == "br0" {
+		fmt.Fprintf(&b, "    bridge_ports %s\n", portList(defaultPorts(cfg)))
 	}
-	// the router itself takes part in each VLAN, so the VLAN interfaces can send and receive
-	for _, n := range cfg.Networks {
-		fmt.Fprintf(&b, "    post-up bridge vlan add dev br0 vid %d self\n", n.VLAN)
-	}
-	for _, port := range cfg.LanInterfaces {
-		pn := cfg.PortNetworks[port]
-		if native := vlanOf(cfg, pn.NativeID()); native != defaultVLAN {
-			// the new untagged VLAN first, then the bridge's default one goes
-			fmt.Fprintf(&b, "    post-up bridge vlan add dev %s vid %d pvid untagged\n", port, native)
-			fmt.Fprintf(&b, "    post-up bridge vlan del dev %s vid %d\n", port, defaultVLAN)
-		}
-		var tagged []int
-		for _, t := range pn.Tagged {
-			tagged = append(tagged, vlanOf(cfg, t))
-		}
-		sort.Ints(tagged)
-		for _, v := range tagged {
-			fmt.Fprintf(&b, "    post-up bridge vlan add dev %s vid %d\n", port, v)
-		}
-	}
-	b.WriteString("    post-down ip link del dev br0 || true\n")
 
 	for _, n := range cfg.Networks {
 		iface := networkIface(n)
@@ -116,10 +129,17 @@ func renderInterfacesBridged(cfg config.NetworkConfig) string {
 		fmt.Fprintf(&b, "iface %s inet static\n", iface)
 		fmt.Fprintf(&b, "    address %s\n", n.IP)
 		fmt.Fprintf(&b, "    netmask %s\n", n.Netmask)
-		fmt.Fprintf(&b, "    pre-up ip link add link br0 name %s type vlan id %d || true\n", iface, n.VLAN)
-		fmt.Fprintf(&b, "    post-down ip link del dev %s || true\n", iface)
+		fmt.Fprintf(&b, "    bridge_ports %s\n", portList(networkMembers(cfg, n)))
 	}
 	return b.String()
+}
+
+// portList is a bridge's member list; an empty bridge says so.
+func portList(ports []string) string {
+	if len(ports) == 0 {
+		return "none"
+	}
+	return strings.Join(ports, " ")
 }
 
 // renderDnsmasqDHCPNetworks writes the DHCP server's file for several networks. Every network's

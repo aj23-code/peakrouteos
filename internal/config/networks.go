@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -18,8 +19,8 @@ const (
 	maxNetName  = 32
 )
 
-// Network is an additional local network. Its traffic is a VLAN of the LAN bridge: a port carries
-// it untagged (as the port's native network) and/or tagged.
+// Network is an additional local network. A port carries it untagged (as the port's native network)
+// and/or tagged as a VLAN.
 //
 // Isolated and Internet are both written to the file on purpose, with no "omitempty": a network
 // the file does not say anything about is the least trusting one the format can express.
@@ -53,8 +54,8 @@ func (p PortNetworks) NativeID() string {
 // IsDefault reports whether the entry says nothing beyond the default.
 func (p PortNetworks) IsDefault() bool { return p.NativeID() == DefaultNetworkID && len(p.Tagged) == 0 }
 
-// Bridged reports whether the LAN is built on a VLAN-aware bridge (br0) because there are several
-// networks. Without extra networks the LAN keeps its simple form: the port itself, or a plain bridge.
+// Bridged reports whether there are further networks, which changes how the LAN is built: each
+// network gets its own bridge and the firewall and DHCP files name every network.
 func (c NetworkConfig) Bridged() bool { return len(c.Networks) > 0 }
 
 // FindNetwork returns an additional network by id.
@@ -71,6 +72,21 @@ var (
 	networkIDPattern   = regexp.MustCompile(`^[a-z][a-z0-9-]{0,15}$`)
 	networkNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._()+-]*$`)
 )
+
+// Equal reports whether two networks are configured identically.
+func (n Network) Equal(o Network) bool {
+	if n.ID != o.ID || n.Name != o.Name || n.VLAN != o.VLAN || n.IP != o.IP || n.Netmask != o.Netmask ||
+		n.Internet != o.Internet || n.Isolated != o.Isolated {
+		return false
+	}
+	switch {
+	case n.DHCP == nil && o.DHCP == nil:
+		return true
+	case n.DHCP == nil || o.DHCP == nil:
+		return false
+	}
+	return *n.DHCP == *o.DHCP
+}
 
 func (n Network) clone() Network {
 	if n.DHCP != nil {
@@ -137,19 +153,22 @@ func (c NetworkConfig) validateNetworks(add func(field, format string, args ...a
 		add("dhcp_enabled", "set up the DHCP server of the default network (even if only to turn it off) before adding networks")
 	}
 
+	// A problem shared by two networks (the same name, the same VLAN, overlapping subnets) is
+	// reported on both, so editing either one shows it.
 	type taken struct {
 		what   string
 		prefix netip.Prefix
+		index  int // of the network, or -1 for the default network and the WAN
 	}
 	var prefixes []taken
 	if lanOK {
-		prefixes = append(prefixes, taken{"the default network", lan})
+		prefixes = append(prefixes, taken{"the default network", lan, -1})
 	}
 	if haveWan {
-		prefixes = append(prefixes, taken{"the WAN", wan})
+		prefixes = append(prefixes, taken{"the WAN", wan, -1})
 	}
 
-	ids, names, vlans := map[string]bool{}, map[string]bool{}, map[int]bool{}
+	ids, names, vlans := map[string]int{}, map[string]int{}, map[int]int{}
 	for i, n := range c.Networks {
 		field := func(name string) string { return fmt.Sprintf("networks[%d].%s", i, name) }
 
@@ -158,26 +177,36 @@ func (c NetworkConfig) validateNetworks(add func(field, format string, args ...a
 			add(field("id"), "must be lower-case letters, digits and '-', starting with a letter (up to 16 characters)")
 		case n.ID == DefaultNetworkID:
 			add(field("id"), "%q is the default network", DefaultNetworkID)
-		case ids[n.ID]:
+		case hasKey(ids, n.ID):
 			add(field("id"), "is used by another network")
+			add(fmt.Sprintf("networks[%d].id", ids[n.ID]), "is used by another network")
 		}
-		ids[n.ID] = true
+		if !hasKey(ids, n.ID) {
+			ids[n.ID] = i
+		}
 
 		name := strings.TrimSpace(n.Name)
 		switch {
 		case name == "" || len(name) > maxNetName || !networkNamePattern.MatchString(name):
 			add(field("name"), "use 1 to %d letters, digits, spaces or . _ ( ) + - characters", maxNetName)
-		case names[strings.ToLower(name)] || strings.EqualFold(name, "lan") || strings.EqualFold(name, "default"):
+		case hasKey(names, strings.ToLower(name)):
+			add(field("name"), "is used by another network")
+			add(fmt.Sprintf("networks[%d].name", names[strings.ToLower(name)]), "is used by another network")
+		case strings.EqualFold(name, "lan") || strings.EqualFold(name, "default"):
 			add(field("name"), "is used by another network")
 		}
-		names[strings.ToLower(name)] = true
+		if !hasKey(names, strings.ToLower(name)) {
+			names[strings.ToLower(name)] = i
+		}
 
 		if n.VLAN < 2 || n.VLAN > 4094 {
 			add(field("vlan"), "must be between 2 and 4094 (VLAN 1 is the default network)")
-		} else if vlans[n.VLAN] {
+		} else if first, dup := vlans[n.VLAN]; dup {
 			add(field("vlan"), "is used by another network")
+			add(fmt.Sprintf("networks[%d].vlan", first), "is used by another network")
+		} else {
+			vlans[n.VLAN] = i
 		}
-		vlans[n.VLAN] = true
 
 		ip, ipOK := parseIPv4(n.IP)
 		if !ipOK {
@@ -194,10 +223,13 @@ func (c NetworkConfig) validateNetworks(add func(field, format string, args ...a
 			for _, t := range prefixes {
 				if prefix.Overlaps(t.prefix) {
 					add(field("netmask"), "this subnet (%s) overlaps %s (%s); use a different private range", prefix, t.what, t.prefix)
+					if t.index >= 0 {
+						add(fmt.Sprintf("networks[%d].netmask", t.index), "this subnet (%s) overlaps network %q (%s)", t.prefix, strings.TrimSpace(n.Name), prefix)
+					}
 					break
 				}
 			}
-			prefixes = append(prefixes, taken{"another network", prefix})
+			prefixes = append(prefixes, taken{"another network", prefix, i})
 		}
 
 		validateDHCP(n.DHCP, prefix, ip, prefixOK, "this network's subnet",
@@ -223,7 +255,7 @@ func (c NetworkConfig) validateNetworks(add func(field, format string, args ...a
 			add("port_networks."+port, "is not a LAN port")
 			continue
 		}
-		if native := pn.NativeID(); native != DefaultNetworkID && !ids[native] {
+		if native := pn.NativeID(); native != DefaultNetworkID && !hasKey(ids, native) {
 			add(field("native"), "is not a network that exists")
 		}
 		seen := map[string]bool{}
@@ -231,14 +263,21 @@ func (c NetworkConfig) validateNetworks(add func(field, format string, args ...a
 			switch {
 			case t == DefaultNetworkID:
 				add(field("tagged"), "the default network is not tagged; it is the native network of the ports that carry it")
-			case !ids[t]:
+			case !hasKey(ids, t):
 				add(field("tagged"), "%q is not a network that exists", t)
 			case t == pn.NativeID():
 				add(field("tagged"), "%q is already this port's native network", t)
 			case seen[t]:
 				add(field("tagged"), "%q is listed more than once", t)
+			default:
+				// the VLAN interface is named port.vlan, and the kernel allows 15 characters
+				if n, ok := c.FindNetwork(t); ok && len(port)+1+len(strconv.Itoa(n.VLAN)) > 15 {
+					add(field("tagged"), "the port name %q is too long to carry VLAN %d (interface names are at most 15 characters)", port, n.VLAN)
+				}
 			}
 			seen[t] = true
 		}
 	}
 }
+
+func hasKey[K comparable](m map[K]int, k K) bool { _, ok := m[k]; return ok }

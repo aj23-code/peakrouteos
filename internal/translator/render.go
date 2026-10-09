@@ -57,14 +57,14 @@ type Desired struct {
 	Notes     []string // things the user should know about, shown with the plan
 }
 
-// LanTarget is the interface the default network lives on: the single LAN port itself, or the br0
-// bridge when several ports are combined or there are further networks (which are VLANs of br0).
-// Without further networks this mirrors what the first-boot wizard does.
+// LanTarget is the interface the default network lives on: the single LAN port that carries it, or
+// the br0 bridge when several ports are combined. Without further networks this mirrors what the
+// first-boot wizard does.
 func LanTarget(cfg config.NetworkConfig) string {
-	if len(cfg.LanInterfaces) > 1 || cfg.Bridged() {
-		return "br0"
+	if ports := defaultPorts(cfg); len(ports) == 1 {
+		return ports[0]
 	}
-	return cfg.LanInterfaces[0]
+	return "br0"
 }
 
 var safeToken = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
@@ -240,7 +240,7 @@ func writeWanStanza(b *strings.Builder, cfg config.NetworkConfig) {
 
 func renderInterfaces(cfg config.NetworkConfig, lan string) string {
 	if cfg.Bridged() {
-		return renderInterfacesBridged(cfg)
+		return renderInterfacesNetworks(cfg, lan)
 	}
 	var b strings.Builder
 

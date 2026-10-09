@@ -401,12 +401,16 @@ files, the wizard and every golden test are untouched):
   port whose networks changed, and one for the default network's isolation.
 
 **Translator** (`translator/networks.go`; with no extra networks every file is byte-identical to before):
-- **Interfaces:** one VLAN-aware bridge `br0` holds every LAN port (`vlan_filtering 1`). The default
-  network is VLAN 1, untagged, on `br0` itself; every other network is an interface `br0.<vlan>` with its
-  own address. A port's native network is `pvid untagged` (the bridge's default VLAN 1 is removed from it
-  when its native network is another one), its tagged networks are plain `bridge vlan add`. The bridge
-  itself joins every VLAN (`... self`) so the VLAN interfaces work. The bridge is built by `pre-up`/`post-up`
-  lines, see below. With extra networks even a single LAN port gets the bridge (`LanTarget` is `br0`).
+- **Interfaces, the standard Debian way** (ifupdown with the `bridge-utils` and `vlan` packages, both added
+  to the image in `buildISO.sh` on 2026-10-08, so **the ISO must be rebuilt to get them**; no `pre-up` tricks):
+  the default network is untagged exactly as before (the LAN port that carries it, or `br0` when several
+  ports do, or an empty `br0` with `bridge_ports none` when none does). Every other network has its **own
+  bridge `br<vlan>`** (`br20`) with the router's address on it, holding the ports that carry it untagged
+  and a **VLAN interface** (`eth1.20`, declared with `vlan-raw-device eth1`) for each port that carries it
+  tagged. Separate bridges keep the networks apart at layer 2; the firewall decides what crosses. A
+  VLAN interface is named `port.vlan` and the kernel allows 15 characters, so a long port name cannot carry
+  a tagged network (validation says so). This also gives the wizard's multi-port `bridge_ports` the package
+  it needs to survive a reboot.
 - **DHCP and DNS:** one dnsmasq file lists every network's interface (so a network without DHCP still
   gets DNS) and, in this mode, **tags** each range and its router/DNS options with the network
   (`set:guest` / `tag:guest`), otherwise a guest client would be handed the default network's router. The
@@ -421,23 +425,19 @@ files, the wizard and every golden test are untouched):
 - **Plan:** adding a network restarts networking, reloads the firewall and restarts dnsmasq; flipping the
   Internet or isolation switch only reloads the firewall (no interruption); moving a port between networks
   restarts networking (and dnsmasq after it); renaming a network changes nothing on the system (names never
-  reach a file). Review notes warn about a network no port carries and about a default network with no port.
-- **Checked against the real tools:** the rendered `pre-up`/`post-up` lines were run in a throwaway
-  network namespace (`unshare -rn`, dummy ports) and `bridge vlan show` came out as designed (default
-  network untagged plus VLANs 20 and 30 tagged on one port, only VLAN 20 untagged on the other, the bridge in
-  all three), restarting is idempotent; the firewall passes `nft -c` and the DHCP file `dnsmasq --test`.
-  If a LAN port named in the file does not exist, its `pre-up` line fails and `br0` does not come up (the
-  same risk the wizard's bridge has).
+  reach a file). When the number of ports on the default network crosses one (br0 becomes the port itself or
+  the other way round) the firewall and DHCP files change too, because they name the interface. Review
+  notes warn about a network no port carries and about a default network with no port.
+- **Checked against the real tools** (in a throwaway user and network namespace with dummy ports, the
+  distribution's own `ifupdown`, `bridge-utils` and `vlan` packages unpacked next to the host's tools,
+  `sysfs` remounted so the bridge hooks see the namespace's interfaces): `ifup` builds `eth1.20`/`eth1.30`
+  on `eth1`, `br20` with `eth1.20` and `eth2`, `br30` with `eth1.30`, each with its address; `ifdown -a`
+  removes all of it and `ifup -a` builds it again, and both exit 0 (what `systemctl restart networking`
+  needs; the `vlan` hook prints a harmless "Cannot find device" while tearing a VLAN interface down). The
+  firewall passes `nft -c` and the DHCP file `dnsmasq --test`.
 
 **Still to do, in order:** the API (create, edit, delete networks; native/tagged on the Ports endpoint),
 the Local Networks and Ports pages, and the Overview card.
-
-**Why a bridge built with `ip`/`bridge` commands and not `bridge_ports`:** the image installs `ifupdown`
-and `iproute2` but not `bridge-utils` or `vlan`, and ifupdown only understands `bridge_ports` through the
-bridge-utils hook. The wizard's multi-port LAN writes `bridge_ports`, so after a reboot that bridge may not
-come back on the current image (it was never checked on hardware): **to verify on a real box or in the VM**
-(`bridge_ports` needs `/etc/network/if-pre-up.d/bridge`). The new rendering uses `pre-up`/`post-up`
-lines with `ip link add ... type bridge vlan_filtering 1` and `bridge vlan add`, which need nothing more.
 
 ## 7b. Navigation (decided 2026-10-08)
 
