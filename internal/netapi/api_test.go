@@ -360,15 +360,15 @@ func TestSavingTheLANNeverTouchesThePortRoles(t *testing.T) {
 
 func TestNetworkMethods(t *testing.T) {
 	e := standard(t)
-	for _, m := range []string{http.MethodPost, http.MethodDelete, http.MethodPatch} {
+	for _, m := range []string{http.MethodPost, http.MethodPatch} {
 		rec := e.do(e.api.HandleNetwork, m, "", "")
-		if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, PUT" {
+		if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, PUT, DELETE" {
 			t.Errorf("%s = %d (Allow %q)", m, rec.Code, rec.Header().Get("Allow"))
 		}
 	}
-	for _, m := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
+	for _, m := range []string{http.MethodPut, http.MethodDelete, http.MethodPatch} {
 		rec := e.do(e.api.HandleNetworks, m, "", "")
-		if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET" {
+		if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "GET, POST" {
 			t.Errorf("list %s = %d (Allow %q)", m, rec.Code, rec.Header().Get("Allow"))
 		}
 	}

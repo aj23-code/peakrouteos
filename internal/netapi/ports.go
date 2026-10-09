@@ -3,6 +3,7 @@ package netapi
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"peakroute/internal/config"
 )
@@ -19,11 +20,25 @@ type Port struct {
 	Role       string `json:"role"`        // what the draft says: wan, lan or unassigned
 	ActiveRole string `json:"active_role"` // what is in effect now
 	Pending    bool   `json:"pending"`     // the draft differs from what is in effect
+
+	// What a LAN port carries (empty for the other roles): the id of its untagged network and the
+	// ids of the networks it carries as VLANs.
+	Native string   `json:"native"`
+	Tagged []string `json:"tagged"`
+}
+
+// NetworkRef names a network a port can carry.
+type NetworkRef struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	VLAN    int    `json:"vlan"`
+	Default bool   `json:"default"`
 }
 
 type portsResponse struct {
-	Ports    []Port `json:"ports"`
-	Editable bool   `json:"editable"`
+	Ports    []Port       `json:"ports"`
+	Networks []NetworkRef `json:"networks"` // what a LAN port can carry
+	Editable bool         `json:"editable"`
 }
 
 // portNames lists every port that can be given a role: the hardware, in the order the system reports
@@ -71,8 +86,24 @@ func (a *API) portsView() (portsResponse, error) {
 			Role:       roleOf(draft, name),
 			ActiveRole: roleOf(active, name),
 		}
+		p.Tagged = []string{}
+		if p.Role == RoleLAN {
+			pn := draft.PortNetworks[name]
+			p.Native = pn.NativeID()
+			p.Tagged = append(p.Tagged, pn.Tagged...)
+		}
 		p.Pending = p.Role != p.ActiveRole
+		if !p.Pending && p.Role == RoleLAN {
+			// the same role, but a different set of networks
+			ap := active.PortNetworks[name]
+			p.Pending = ap.NativeID() != p.Native || strings.Join(ap.Tagged, ",") != strings.Join(p.Tagged, ",")
+		}
 		resp.Ports = append(resp.Ports, p)
+	}
+
+	resp.Networks = []NetworkRef{{ID: lanID, Name: "LAN", VLAN: 1, Default: true}}
+	for _, n := range draft.Networks {
+		resp.Networks = append(resp.Networks, NetworkRef{ID: n.ID, Name: n.Name, VLAN: n.VLAN})
 	}
 	return resp, nil
 }
@@ -101,6 +132,11 @@ func (a *API) putPorts(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Assignments map[string]string `json:"assignments"`
+		// Optional: the networks a LAN port carries. A LAN port not mentioned keeps what it has.
+		Networks map[string]struct {
+			Native string   `json:"native"`
+			Tagged []string `json:"tagged"`
+		} `json:"networks"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -165,7 +201,38 @@ func (a *API) putPorts(w http.ResponseWriter, r *http.Request) {
 		c.WanInterface = wans[0]
 		c.LanInterfaces = lans
 
-		if own := ownedErrors(c.Validate(), "wan_interface", "lan_interfaces"); len(own) > 0 {
+		// a port that is no longer a LAN port carries no networks
+		for port := range c.PortNetworks {
+			if roles[port] != RoleLAN {
+				delete(c.PortNetworks, port)
+			}
+		}
+		for port, in := range req.Networks {
+			if roles[port] != RoleLAN {
+				problems = append(problems, config.FieldError{Field: "networks." + port, Message: "only a LAN port carries networks"})
+				continue
+			}
+			if c.PortNetworks == nil {
+				c.PortNetworks = map[string]config.PortNetworks{}
+			}
+			pn := config.PortNetworks{Native: strings.TrimSpace(in.Native)}
+			for _, t := range in.Tagged {
+				pn.Tagged = append(pn.Tagged, strings.TrimSpace(t))
+			}
+			if pn.IsDefault() {
+				delete(c.PortNetworks, port)
+			} else {
+				c.PortNetworks[port] = pn
+			}
+		}
+		if len(c.PortNetworks) == 0 {
+			c.PortNetworks = nil
+		}
+		if len(problems) > 0 {
+			return config.ValidationError(problems)
+		}
+
+		if own := ownedErrors(c.Validate(), "wan_interface", "lan_interfaces", "port_networks"); len(own) > 0 {
 			problems = append(problems, own...)
 			return config.ValidationError(problems)
 		}

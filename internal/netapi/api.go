@@ -112,12 +112,12 @@ func ownedErrors(err error, fields ...string) config.ValidationError {
 	for _, f := range fields {
 		own[f] = true
 	}
-	// "routes" owns "routes[3].gateway" and the like
+	// "routes" owns "routes[3].gateway" and "port_networks" owns "port_networks.eth1.native"
 	owns := func(field string) bool {
 		if own[field] {
 			return true
 		}
-		if i := strings.IndexByte(field, '['); i > 0 {
+		if i := strings.IndexAny(field, "[."); i > 0 {
 			return own[field[:i]]
 		}
 		return false

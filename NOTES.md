@@ -436,8 +436,13 @@ files, the wizard and every golden test are untouched):
   needs; the `vlan` hook prints a harmless "Cannot find device" while tearing a VLAN interface down). The
   firewall passes `nft -c` and the DHCP file `dnsmasq --test`.
 
-**Still to do, in order:** the API (create, edit, delete networks; native/tagged on the Ports endpoint),
-the Local Networks and Ports pages, and the Overview card.
+**API** (`netapi/networks.go`, `ports.go`): see the endpoint table. Notes: a request validates only the network it
+is about (another network's own problems are shown when that one is edited, or at commit), but a problem two
+networks share (the same VLAN or name, overlapping subnets) is reported on **both**, so editing either shows
+it; deleting is refused while a port still carries the network untagged, because silently moving that port to
+the default network would be a security change nobody asked for; ids are `net2`, `net3`... (lowest free).
+
+**Still to do:** the Local Networks and Ports pages, and the Overview card.
 
 ## 7b. Navigation (decided 2026-10-08)
 
@@ -566,10 +571,28 @@ every future page works on every screen automatically.
 | `POST /api/v1/config/confirm` | session + CSRF | keep the change; 409 if nothing is waiting |
 | `POST /api/v1/config/revert` | session + CSRF | undo the change waiting for confirmation now (202) |
 | `POST /api/v1/config/discard` | session + CSRF | drop the staged changes; 409 while applying or awaiting confirmation |
+| `GET /api/v1/ports` | session | physical ports with hardware details, `role` (wan, lan, unassigned) from the draft, `active_role`, `pending`, `present` (false: configured but the hardware is gone), `editable`; for LAN ports `native` (the id of the untagged network) and `tagged` (ids); and `networks`: what a LAN port can carry (`id`, `name`, `vlan`, `default`) |
+| `PUT /api/v1/ports` | session + CSRF | `{"assignments": {"eth0": "wan", "eth1": "lan", "eth2": "unassigned"}, "networks": {"eth1": {"native": "lan", "tagged": ["net2"]}}}` stages the roles as one atomic change; ports not mentioned keep their role, and a LAN port not named under `networks` keeps its networks; the result must have exactly one WAN and at least one LAN; an entry that says only the default network is dropped; a port that stops being a LAN port loses its networks |
+| `GET /api/v1/networks`, `GET /api/v1/networks/{id}` | session | the networks, the default one (id `lan`) first: `name`, `default`, `vlan` (1 for the default), `ip`, `netmask`, `ports` (carried untagged), `tagged_ports`, `bridged`, `dhcp` (null if none), `internet`, `isolated`, `pending` |
+| `POST /api/v1/networks` | session + CSRF | adds a network: `{"name", "vlan", "ip", "netmask", "dhcp": {...}, "internet", "isolated"}`; left out, `internet` is false and `isolated` true and there is no DHCP; the id (`net2`, `net3`...) is chosen by the server; answers 201 with the network |
+| `PUT /api/v1/networks/{id}` | session + CSRF | `{"ip", "netmask"}` always, and `name`, `vlan`, `dhcp`, `internet`, `isolated` only if they change (a field left out stays); the default network's name, VLAN and internet access cannot be changed |
+| `DELETE /api/v1/networks/{id}` | session + CSRF | stages the removal and answers with the list; refused for the default network and while a port still carries the network untagged (a network that is only tagged is taken off those ports) |
+| `GET /api/v1/routes` | session | `routes` (the draft: `name`, `destination`, `gateway`, `metric`, `enabled`), `pending`, `editable`, and `table`: the kernel's routing table in effect (`destination`, `gateway`, `interface`, `metric`, `kind`: default, connected, static (one of ours, matched against the *active* config) or via) |
+| `PUT /api/v1/routes` | session + CSRF | `{"routes": [...]}` replaces the whole list in the draft (`enabled` omitted means on); field errors come back as `routes[2].gateway` and so on |
+| `GET /api/v1/uplinks`, `GET /api/v1/uplinks/{id}` | session | the internet connection (today one, id `wan`): `port`, `mode` (dhcp or static), `ip`, `netmask`, `gateway`, `dns`, `pending`, and `live` (what is in effect: `up`, `address`, `gateway`, `dns`) |
+| `PUT /api/v1/uplinks/{id}` | session + CSRF | `{"mode": "dhcp"}` or `{"mode": "static", "ip", "netmask", "gateway", "dns": []}`; stages a draft. Switching to DHCP clears the static values. A static address also requires a gateway and one DNS server |
+| `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (the DNS series' `state`, `target`, `source`, `rtt_ms`, plus `method`, `gateway` (the same fields for the gateway) and a `diagnosis` sentence), `availability` (`uptime_24h`, `uptime_30d` in percent or null, `outage_count`, `outages`: newest first, at most 20, each `start` ms, `seconds`, `ongoing`; independent of the charted range), and two series, `dns` and `gateway`, each with `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
+| `GET /api/v1/system/logs?limit=` | session | systemd journal |
+| `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage |
+| `POST /api/v1/cert/upload` | session + `X-CSRF-Token` | multipart `cert` and `key` |
+| `GET /api/v1/config/status` | session | `state` (idle, applying, awaiting_confirm), `has_changes`, `change_count`, `confirm.seconds_left`, `last` outcome; polled by the banner |
+| `GET /api/v1/config/staged` | session | the review: `changes`, `valid`, per-field `errors`, `plan` (files and service actions), `notes`, `needs_confirm`, `confirm_seconds` |
+| `POST /api/v1/config/commit` | session + CSRF | 202 once applying has started (poll status); 400 with per-field `errors`; 409 if busy or nothing staged |
+| `POST /api/v1/config/confirm` | session + CSRF | keep the change; 409 if nothing is waiting |
+| `POST /api/v1/config/revert` | session + CSRF | undo the change waiting for confirmation now (202) |
+| `POST /api/v1/config/discard` | session + CSRF | drop the staged changes; 409 while applying or awaiting confirmation |
 | `GET /api/v1/ports` | session | physical ports with hardware details, `role` (wan, lan, unassigned) from the draft, `active_role`, `pending`, `present` (false: configured but the hardware is gone), `editable` |
 | `PUT /api/v1/ports` | session + CSRF | `{"assignments": {"eth0": "wan", "eth1": "lan", "eth2": "unassigned"}}` stages the roles as one atomic change; ports not mentioned keep their role; the result must have exactly one WAN and at least one LAN |
-| `GET /api/v1/networks`, `GET /api/v1/networks/{id}` | session | the networks (today one, id `lan`): `ip`, `netmask`, `ports`, `bridged`, `dhcp` (null if not managed yet), `pending` |
-| `PUT /api/v1/networks/{id}` | session + CSRF | `{"ip", "netmask", "dhcp": {"enabled", "range_start", "range_end", "lease_time"}}` stages the address and DHCP; `dhcp` omitted leaves DHCP unchanged |
 
 ## 9. Decisions log
 
