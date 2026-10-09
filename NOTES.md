@@ -335,7 +335,7 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 | Overview | system health, interface counters, top clients | yes (`overview`) |
 | Clients | DHCP leases and per-client usage | yes (`dhcp`) |
 | Traffic | per-port throughput history | yes (`traffic`) |
-| Network: Internet, **Local networks**, Ports, Routes | WAN uplink; each local network with its address range *and* DHCP; physical ports; static routes | Internet (`internet`), Local networks (`networks`) and Ports (`network-physical`) |
+| Network: Internet, **Local Networks**, Ports, Routes | WAN uplink; each local network with its address range *and* DHCP; physical ports; static routes | Internet (`internet`), Local Networks (`networks`) and Ports (`network-physical`) |
 | Firewall: Rules, Port forwarding, Connections | | planned |
 | Services: DNS, VPN, Dynamic DNS | | planned |
 | System: Settings, Administrators, Certificates, Backup and restore, Updates, Logs, Diagnostics | | Logs only (`logs`) |
@@ -343,13 +343,13 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 - **Planned pages are listed but greyed out and not clickable** (a `<span class="nav-item nav-soon">`, no
   `data-view`), because the whole product will be built before it is used. To hide them instead, add
   `.nav-soon { display: none; }` to the stylesheet (the groups then only show real pages).
-- **Names are confirmed** (friendly, not technical) and live only in `dashboard.html`: friendly (Internet, Local networks, Ports, Clients)
+- **Names are confirmed** (friendly, not technical) and live only in `dashboard.html`: friendly (Internet, Local Networks, Ports, Clients)
   rather than technical (WAN, Interfaces, Devices, DHCP). The view ids behind them did not change.
 - **Quick search** filters entries (a group's own name matches all its pages), opens matching groups, shows
   "No matches", and on clearing opens the group of the page you are on. **Accordion:** opening a group by
   clicking closes the others; groups the page opens itself (navigation, search) are handled separately so the
   two do not fight.
-- **Local networks** (view id `networks`; called Networks until 2026-10-08) is the first editor page (9e): one card per network (router address, ports, DHCP), so VLANs
+- **Local Networks** (view id `networks`; called Networks until 2026-10-08) is the first editor page (9e): one card per network (router address, ports, DHCP), so VLANs
   later are just more cards.
 - Pending changes are not a menu entry: the banner and review dialog cover them.
 
@@ -391,7 +391,7 @@ Ports.
   latency, gateway latency, uptime 24 h and the diagnosis sentence when there is one; the WAN port, link,
   address, gateway and live download/upload rates; and a one-hour sparkline (latency line, red columns for
   lost minutes, min to max under it). Health comes from the health endpoint every 10 s (`overview_cards.js`).
-- **Local networks card** ("Details" goes to the Local networks page): the LAN ports, router address as
+- **Local Networks card** ("Details" goes to the Local Networks page): the LAN ports, router address as
   CIDR, client count and how much of the DHCP range is leased ("34 of 101", orange from 90 %). Addresses
   come from `/api/v1/uplinks` and `/api/v1/networks` every 30 s. The WAN rates and the client count are not
   fetched again: `telemetry.js` already polls stats and leases every second and passes them to
@@ -486,7 +486,7 @@ every future page works on every screen automatically.
 | 2026-10-08 | WAN health pings the upstream DNS server (ICMP, DNS query only as a fallback), per-minute history in its own SQLite file | what Meraki's appliance status shows; the resolver is what clients actually depend on; same flash-friendly storage as traffic |
 | 2026-10-08 | The gateway is measured as a second series, only with real pings | tells ISP problems from local ones; a DNS query to a gateway is not a valid test |
 | 2026-10-08 | Uptime is a share of observed minutes, and an outage is whole minutes of total loss on the DNS series | missing data (daemon down) must not read as downtime, and a gateway that ignores pings must not read as an outage |
-| 2026-10-08 | "Networks" renamed "Local networks" (menu, page title, Overview card); all WAN facts live in the Overview's Internet card | the Network group also holds Internet, so "Networks" was ambiguous; each card should lead to the page about its subject |
+| 2026-10-08 | "Networks" renamed "Local Networks" (menu, page title, Overview card); all WAN facts live in the Overview's Internet card | the Network group also holds Internet, so "Networks" was ambiguous; each card should lead to the page about its subject |
 | 2026-10-08 | Overview: one device card first (hostname and a vertical list of specs, no DNS), then Internet and Network cards; the interfaces table is gone | the landing page should say what this box is, then whether it is working and what is connected |
 | 2026-10-08 | WAN usage reuses the stats and traffic endpoints instead of a new one | the data is already collected and served; one less thing to keep in step |
 | 2026-10-08 | Static WAN needs a gateway and a DNS server in the editor, though the shared validation allows them empty | an address alone cannot reach the internet, and the health chart needs a DNS server to measure |
