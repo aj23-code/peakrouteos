@@ -120,26 +120,17 @@
           </div>
         </header>
 
-        <!-- The device: who it is, how long it has been up, what it runs on -->
+        <!-- The device: who it is and what it runs on -->
         <section class="card ov-device">
-          <div class="ov-device-main">
-            <div class="ov-device-id">
-              <span class="metric-label">Device</span>
-              <strong id="hostname-val" class="ov-hostname">--</strong>
-              <div class="ov-tags">
-                <span class="ov-tag">PeakRoute <strong id="app-version-val">--</strong></span>
-                <span class="ov-tag" id="arch-val">--</span>
-                <span class="ov-tag" id="kernel-val">--</span>
-              </div>
-            </div>
-            <dl class="ov-device-stats">
-              <div><dt>Uptime</dt><dd id="uptime-val">0s</dd></div>
-              <div><dt>Load average</dt><dd id="load-avg-val">0.00, 0.00, 0.00</dd><dd class="ov-dim">1, 5 and 15 minutes</dd></div>
-            </dl>
-          </div>
-          <dl class="ov-device-more">
+          <span class="metric-label">Device</span>
+          <strong id="hostname-val" class="ov-hostname">--</strong>
+          <dl class="ov-specs">
+            <div><dt>PeakRoute</dt><dd id="app-version-val">--</dd></div>
+            <div><dt>Uptime</dt><dd id="uptime-val">0s</dd></div>
+            <div><dt>Load average</dt><dd><span id="load-avg-val">0.00, 0.00, 0.00</span> <span class="ov-dim">1, 5 and 15 minutes</span></dd></div>
             <div><dt>Processor</dt><dd id="cpu-model-val">--</dd></div>
-            <div><dt>DNS resolvers</dt><dd id="dns-servers-val">--</dd></div>
+            <div><dt>Architecture</dt><dd id="arch-val">--</dd></div>
+            <div><dt>Kernel</dt><dd id="kernel-val">--</dd></div>
           </dl>
         </section>
 

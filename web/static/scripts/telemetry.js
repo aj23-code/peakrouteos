@@ -165,14 +165,6 @@ if (archMatch) {
             }
         }
 
-        // 9. DNS Servers
-        const dnsValEl = document.getElementById('dns-servers-val');
-        if (dnsValEl) {
-            dnsValEl.innerText = (Array.isArray(data.dns_servers) && data.dns_servers.length > 0)
-            ? data.dns_servers.join(', ')
-            : 'None configured';
-        }
-
         // 10. System Uptime
         const uptimeValEl = document.getElementById('uptime-val');
         if (uptimeValEl) {
