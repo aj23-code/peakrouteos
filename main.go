@@ -12,6 +12,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -27,6 +28,7 @@ import (
 	"peakroute/internal/system"
 	"peakroute/internal/translator"
 	"peakroute/internal/wanhealth"
+	"peakroute/internal/wireless"
 )
 
 //go:embed web/templates/* web/static/*
@@ -240,6 +242,12 @@ func main() {
 		return netapi.ClassifyRoutes(network.ParseRoutingTable(data))
 	}
 	mux.HandleFunc("/api/v1/routes", requireAuth(netAPI.HandleRoutes))
+	// Wi-Fi adapters and what they can do (read only)
+	wifi := wireless.Detector{SysClassNet: "/sys/class/net", Run: func(ctx context.Context, name string, args ...string) (string, error) {
+		out, err := exec.CommandContext(ctx, name, args...).Output()
+		return string(out), err
+	}}
+	mux.HandleFunc("/api/v1/wireless", requireAuth(wifi.Handler))
 	mux.HandleFunc("/api/v1/uplinks", requireAuth(netAPI.HandleUplinks))
 	mux.HandleFunc("/api/v1/uplinks/{id}", requireAuth(netAPI.HandleUplink))
 	mux.HandleFunc("/api/v1/uplinks/{id}/health", requireAuth(func(w http.ResponseWriter, r *http.Request) {

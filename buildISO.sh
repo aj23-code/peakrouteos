@@ -59,11 +59,19 @@ DEBIAN_KEYRING="${KEYRING_DIR}/extracted/usr/share/keyrings/debian-archive-keyri
 
 # bridge-utils lets ifupdown build bridges (bridge_ports ...) and vlan lets it build VLAN interfaces
 # (eth1.20): the router's LAN bridge and its VLAN networks are written the standard Debian way.
+#
+# Wireless (the Wireless page, and PeakRoute running on an access point): hostapd runs the access
+# point, iw reads what an adapter can do (bands, channels), wireless-regdb gives the regulatory rules
+# per country and rfkill lifts a radio's software block. Wi-Fi adapters (and some wired NICs)
+# need firmware, which Debian keeps in the non-free-firmware section, hence the extra component:
+# Intel (iwlwifi), Qualcomm Atheros (ath9k_htc, ath10k...), MediaTek (mt76) and Realtek. Together they
+# add roughly 270 MB uninstalled; drop the ones for hardware you will never use to shrink the image.
 sudo debootstrap \
     --arch=amd64 \
     --variant=minbase \
+    --components=main,non-free-firmware \
     --keyring="${DEBIAN_KEYRING}" \
-    --include=linux-image-amd64,systemd-sysv,live-boot,live-config,dosfstools,e2fsprogs,rsync,ifupdown,bridge-utils,vlan,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ca-certificates,lsb-release,util-linux,fdisk,grub-efi-amd64,nano,passwd \
+    --include=linux-image-amd64,systemd-sysv,live-boot,live-config,dosfstools,e2fsprogs,rsync,ifupdown,bridge-utils,vlan,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,hostapd,iw,wireless-regdb,rfkill,firmware-iwlwifi,firmware-atheros,firmware-mediatek,firmware-realtek,ca-certificates,lsb-release,util-linux,fdisk,grub-efi-amd64,nano,passwd \
     trixie "${ROOTFS_DIR}" http://deb.debian.org/debian/
 
 echo "[3/5] Configuring rootfs, security, and embedding PeakRoute binary..."

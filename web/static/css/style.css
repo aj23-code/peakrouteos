@@ -1545,3 +1545,14 @@ height: 260px;
     .net-picker select { width: 100%; }
     .net-toolbar .cfg-btn { flex: 1; min-height: 44px; }
 }
+
+/* ---------- Wireless page ---------- */
+.wifi-empty { border-style: dashed; }
+.wifi-empty h2 { font-size: 1.1rem; margin-bottom: 0.4rem; }
+.wifi-body { display: flex; flex-direction: column; gap: 1.25rem; }
+.is-disabled { opacity: 0.45; pointer-events: none; user-select: none; }
+.wifi-adapters { display: flex; flex-direction: column; gap: 1.25rem; }
+.wifi-band { margin-top: 1rem; padding-top: 0.8rem; border-top: 1px solid var(--border-color); }
+.wifi-band-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.9rem; margin-bottom: 0.5rem; }
+.wifi-note { margin-bottom: 0.5rem; }
+.wifi-note code { font-family: monospace; }

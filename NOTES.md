@@ -470,6 +470,41 @@ the default network would be a security change nobody asked for; ids are `net2`,
 whose networks changed, and the usual file and service list: adding a network restarts networking, the
 firewall and the DHCP server, flipping the Internet or isolation switch only reloads the firewall.
 
+## 7g. Wireless, and PeakRoute on access points (started 2026-10-08)
+
+**Direction (from the maintainer):** PeakRoute should also run on **access points**, with the same codebase.
+`operation_mode` in `sys.json` already has `ROUTER` and `AP`; in AP mode the GUI is a **limited** one (no
+firewall, routes, WAN, DHCP or several local networks; the Wireless page and the basics stay). Nothing of AP mode
+is built yet except this page and the packages; the translator still refuses any mode but ROUTER.
+
+**Image** (`buildISO.sh`, **the ISO needs a rebuild to get this**): `hostapd` (the access point daemon), `iw`
+(reads what an adapter can do), `wireless-regdb` (regulatory rules per country), `rfkill`, and Wi-Fi firmware
+from Debian's `non-free-firmware` section (hence `--components=main,non-free-firmware`): `firmware-iwlwifi`
+(Intel), `firmware-atheros` (Qualcomm Atheros), `firmware-mediatek` (mt76) and `firmware-realtek` (which some
+wired NICs need too). Together roughly 270 MB uninstalled on top of the 286 MB ISO; trim the ones for hardware
+you will never use. The package names were checked against the trixie package lists.
+
+**Detection and capabilities** (`internal/wireless`, `GET /api/v1/wireless`, read only):
+- An interface is a Wi-Fi adapter if the kernel gives it a `wireless` folder or a `phy80211` link under
+  `/sys/class/net/<name>` (no extra tool needed). Per adapter: name, radio (`phy0`), MAC, driver, link state.
+- With `iw` present, `iw phy <phy> info` is parsed (`iw.go`, tested against real output from an Intel AX
+  adapter in `testdata/`): the interface modes (an adapter can be an access point if `AP` is among them), and per
+  band (2.4, 5 and 6 GHz; others are ignored) the usable widths (20 always, 40 from `HT20/HT40`, 80 with VHT or
+  HE, 160 only when the adapter says so; never above 40 in 2.4 GHz) and every channel with its flags: `disabled`
+  (not allowed), `no_ir` (can be listened on but **no access point can start there**) and `dfs` (shares
+  spectrum with radar; an access point must listen first). `iw reg get` gives the country in effect; `00` is the
+  world domain, which is strict: on the dev laptop every 5 GHz channel is closed for access points until a
+  country is set. Without `iw` the adapters are still listed and the page says capabilities cannot be shown.
+- **The page:** with no adapter it says "No wireless adapter found" and greys out the rest (an `is-disabled`
+  wrapper, no pointer events); otherwise one card per adapter (badge "Can be an access point" or "Cannot be an
+  access point", the facts, then each band's widths and open channels, DFS ones marked, and a count of the
+  channels that are closed). It checks again every 10 s, so a USB adapter plugged in appears by itself. A
+  "Wi-Fi networks" card is shown as **Planned** (greyed unless some adapter can be an access point).
+
+**Next, in order:** the config model for Wi-Fi networks (an SSID tied to a Local Network, so a Guest SSID lands
+on the Guest VLAN: name, WPA2/WPA3 passphrase, band, channel, width), the translator for hostapd, the country
+setting, then AP mode (the limited GUI and a translator that bridges everything to one port).
+
 ## 7b. Navigation (decided 2026-10-08)
 
 An OPNsense-style sidebar (grouped by function, quick search, clear two-level navigation) holding
@@ -480,7 +515,7 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 | Overview | system health, interface counters, top clients | yes (`overview`) |
 | Clients | DHCP leases and per-client usage | yes (`dhcp`) |
 | Traffic | per-port throughput history | yes (`traffic`) |
-| Network: Internet, **Local Networks**, Ports, Routes | WAN uplink; each local network with its address range *and* DHCP; physical ports; static routes | Internet (`internet`), Local Networks (`networks`), Ports (`network-physical`) and Routes (`routes`) |
+| Network: Internet, **Local Networks**, Ports, Wireless, Routes | WAN uplink; each local network with its address range *and* DHCP; physical ports; static routes | Internet (`internet`), Local Networks (`networks`), Ports (`network-physical`), Wireless (`wireless`) and Routes (`routes`) |
 | Firewall: Rules, Port forwarding, Connections | | planned |
 | Services: DNS, VPN, Dynamic DNS | | planned |
 | System: Settings, Administrators, Certificates, Backup and restore, Updates, Logs, Diagnostics | | Logs only (`logs`) |
@@ -583,6 +618,7 @@ every future page works on every screen automatically.
 | `GET /`, `/dashboard` | session | server-rendered shell; embeds the CSRF token |
 | `GET /api/v1/system/stats` | session | from the poller snapshot, no disk reads |
 | `GET /api/v1/system/traffic?iface=&range=` | session | history; ranges `1h` (also used for 5m), `24h`, `30d` |
+| `GET /api/v1/wireless` | session | `adapters` (`name`, `phy`, `mac`, `driver`, `state`, `capabilities_known`, `ap_capable`, `modes`, `bands`: `name`, `widths`, `channels` with `number`, `mhz`, `disabled`, `no_ir`, `dfs`), `iw_available`, `country`, `country_known` |
 | `GET /api/v1/routes` | session | `routes` (the draft: `name`, `destination`, `gateway`, `metric`, `enabled`), `pending`, `editable`, and `table`: the kernel's routing table in effect (`destination`, `gateway`, `interface`, `metric`, `kind`: default, connected, static (one of ours, matched against the *active* config) or via) |
 | `PUT /api/v1/routes` | session + CSRF | `{"routes": [...]}` replaces the whole list in the draft (`enabled` omitted means on); field errors come back as `routes[2].gateway` and so on |
 | `GET /api/v1/uplinks`, `GET /api/v1/uplinks/{id}` | session | the internet connection (today one, id `wan`): `port`, `mode` (dhcp or static), `ip`, `netmask`, `gateway`, `dns`, `pending`, and `live` (what is in effect: `up`, `address`, `gateway`, `dns`) |

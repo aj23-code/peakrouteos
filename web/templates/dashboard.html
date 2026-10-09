@@ -38,6 +38,7 @@
               <a href="#" class="nav-item" data-view="internet">Internet</a>
               <a href="#" class="nav-item" data-view="networks">Local Networks</a>
               <a href="#" class="nav-item" data-view="network-physical">Ports</a>
+              <a href="#" class="nav-item" data-view="wireless">Wireless</a>
               <a href="#" class="nav-item" data-view="routes">Routes</a>
             </div>
           </details>
@@ -417,6 +418,34 @@
         </section>
       </div>
 
+      <!-- View: Wireless -->
+      <div id="view-wireless" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Wireless</h1>
+            <p class="subtitle">The Wi-Fi adapters in this machine and what each one can do.</p>
+          </div>
+        </header>
+
+        <section id="wifi-empty" class="card wifi-empty hidden" role="status">
+          <h2>No wireless adapter found</h2>
+          <p class="form-hint">Plug in a Wi-Fi adapter, or use a machine that has one. Adapters that can act as an access point are the ones that can host Wi-Fi networks for your Local Networks. This page checks again every few seconds.</p>
+        </section>
+
+        <div id="wifi-body" class="wifi-body">
+          <div id="wifi-notes"></div>
+          <div id="wifi-adapters" class="wifi-adapters"></div>
+
+          <section class="card wifi-ssids" id="wifi-ssids">
+            <div class="net-card-head">
+              <h2>Wi-Fi networks</h2>
+              <span class="tag">Planned</span>
+            </div>
+            <p class="form-hint">Soon: create a Wi-Fi network (name, password, band and channel) for each of your Local Networks, for example a Guest network on its own VLAN. The channels and widths above are what those choices will be built from.</p>
+          </section>
+        </div>
+      </div>
+
       <!-- View: Routes -->
       <div id="view-routes" class="view-section hidden">
         <header class="dash-header">
@@ -611,6 +640,7 @@
   <script src="/static/scripts/ports.js"></script>
   <script src="/static/scripts/networks.js"></script>
   <script src="/static/scripts/routes.js"></script>
+  <script src="/static/scripts/wireless.js"></script>
   <script src="/static/scripts/leases.js"></script>
   <script src="/static/scripts/syslogs.js"></script>
 </body>
