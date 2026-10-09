@@ -93,19 +93,24 @@ type Route struct {
 }
 
 type NetworkConfig struct {
-	WanInterface    string                `json:"wan_interface,omitempty"`
-	WanMode         string                `json:"wan_mode,omitempty"` // "dhcp" or "static"
-	WanIP           string                `json:"wan_ip,omitempty"`
-	WanSubnet       string                `json:"wan_subnet,omitempty"`
-	WanGateway      string                `json:"wan_gateway,omitempty"`
-	WanDNS          []string              `json:"wan_dns,omitempty"`
-	LanInterfaces   []string              `json:"lan_interfaces,omitempty"`
-	LanIP           string                `json:"lan_ip,omitempty"`
-	LanSubnet       string                `json:"lan_subnet,omitempty"`
-	DHCP            *DHCPConfig           `json:"dhcp,omitempty"`
-	Routes          []Route               `json:"routes,omitempty"`
-	Interfaces      []SystemInterface     `json:"interfaces,omitempty"`
-	ManagedSwitches []ManagedSwitchConfig `json:"managed_switches,omitempty"`
+	WanInterface  string      `json:"wan_interface,omitempty"`
+	WanMode       string      `json:"wan_mode,omitempty"` // "dhcp" or "static"
+	WanIP         string      `json:"wan_ip,omitempty"`
+	WanSubnet     string      `json:"wan_subnet,omitempty"`
+	WanGateway    string      `json:"wan_gateway,omitempty"`
+	WanDNS        []string    `json:"wan_dns,omitempty"`
+	LanInterfaces []string    `json:"lan_interfaces,omitempty"`
+	LanIP         string      `json:"lan_ip,omitempty"`
+	LanSubnet     string      `json:"lan_subnet,omitempty"`
+	DHCP          *DHCPConfig `json:"dhcp,omitempty"`
+	Routes        []Route     `json:"routes,omitempty"`
+	// Further local networks, and which LAN ports carry them. LanIsolated is the default network's
+	// own isolation switch (the extra networks carry theirs).
+	LanIsolated     bool                    `json:"lan_isolated,omitempty"`
+	Networks        []Network               `json:"networks,omitempty"`
+	PortNetworks    map[string]PortNetworks `json:"port_networks,omitempty"`
+	Interfaces      []SystemInterface       `json:"interfaces,omitempty"`
+	ManagedSwitches []ManagedSwitchConfig   `json:"managed_switches,omitempty"`
 }
 
 type SysConfig struct {
@@ -189,6 +194,16 @@ func (c NetworkConfig) clone() NetworkConfig {
 	c.WanDNS = append([]string(nil), c.WanDNS...)
 	c.LanInterfaces = append([]string(nil), c.LanInterfaces...)
 	c.Routes = append([]Route(nil), c.Routes...)
+	if len(c.Networks) > 0 {
+		nets := make([]Network, len(c.Networks))
+		for i, n := range c.Networks {
+			nets[i] = n.clone()
+		}
+		c.Networks = nets
+	} else {
+		c.Networks = nil
+	}
+	c.PortNetworks = clonePortNetworks(c.PortNetworks)
 	c.Interfaces = append([]SystemInterface(nil), c.Interfaces...)
 
 	if len(c.ManagedSwitches) > 0 {

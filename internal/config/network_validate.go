@@ -209,31 +209,11 @@ func (c NetworkConfig) Validate() error {
 	}
 
 	// --- DHCP (nil = not managed by the JSON yet, which is valid) ---
-	if d := c.DHCP; d != nil && d.Enabled {
-		start, startOK := parseIPv4(d.RangeStart)
-		end, endOK := parseIPv4(d.RangeEnd)
-		if !startOK {
-			add("dhcp_range_start", "must be an IPv4 address")
-		}
-		if !endOK {
-			add("dhcp_range_end", "must be an IPv4 address")
-		}
-		if startOK && endOK && lanOK {
-			switch {
-			case !isHostAddr(lanPrefix, start):
-				add("dhcp_range_start", "must be a host address inside the LAN subnet (%s)", lanPrefix)
-			case !isHostAddr(lanPrefix, end):
-				add("dhcp_range_end", "must be a host address inside the LAN subnet (%s)", lanPrefix)
-			case start.Compare(end) > 0:
-				add("dhcp_range_end", "must not be lower than the range start")
-			case lanIP.Compare(start) >= 0 && lanIP.Compare(end) <= 0:
-				add("dhcp_range_start", "the range must not include the router's own LAN address (%s)", lanIP)
-			}
-		}
-		if _, ok := ParseLeaseTime(d.LeaseTime); !ok {
-			add("dhcp_lease_time", "must look like 30m, 12h or 1d (at least 2 minutes), or \"infinite\"")
-		}
-	}
+	validateDHCP(c.DHCP, lanPrefix, lanIP, lanOK, "the LAN subnet",
+		func(s string) string { return "dhcp_" + s }, add)
+
+	// --- Further local networks ---
+	c.validateNetworks(add, lanPrefix, lanOK, wanPrefix, haveWanPrefix)
 
 	// --- Static routes ---
 	c.validateRoutes(add, lanPrefix, lanOK, lanIP, wanPrefix, haveWanPrefix)

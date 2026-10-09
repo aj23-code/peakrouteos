@@ -374,6 +374,43 @@ A route's name is never written to any file, so a rename alone changes nothing o
 - **Tested** with the real shell against temporary files (the check and apply commands, and the script
   being lenient for ifupdown and strict for the commit), plus 25 mutants of the validation, diff, render and apply code.
 
+## 7f. Several local networks and VLANs (in progress, started 2026-10-08)
+
+**What was decided with the maintainer:** UniFi-style ports (each LAN port has a *native* network, untagged,
+and any number of *tagged* networks); a new network is **blocked from the internet until you allow it**
+(OPNsense/pfSense style: no rule, no access) and **isolated from the other networks by default**, with a
+switch for each. The default network (the one the wizard creates) keeps working exactly as before.
+
+**Config model** (`internal/config/networks.go`; the default network stays in `lan_*`/`dhcp` so existing
+files, the wizard and every golden test are untouched):
+- `networks`: a list of `{id, name, vlan 2..4094, ip, netmask, dhcp, internet, isolated}`. `internet` and
+  `isolated` are always written (no `omitempty`) so reading the file never has to guess; a hand-edited
+  entry missing `internet` has no internet. `lan_isolated` is the default network's own isolation switch
+  (internet is always on for it).
+- `port_networks`: `{port: {native, tagged}}` for LAN ports, where `native` is a network id (`""` or
+  `"lan"` is the default network) and `tagged` lists extra networks. A LAN port with no entry carries
+  just the default network. The default network is never tagged.
+- **Validation** (errors on `networks[i].field`, `networks[i].dhcp.range_start`, `port_networks.eth1.native`
+  and so on): id lower-case and unique, name plain and unique (not "lan" or "default"), VLAN 2..4094 and
+  unique, address/netmask valid, **no subnet overlaps** the LAN, a static WAN or another network, DHCP
+  checked like the default network's (`validateDHCP` is now shared), at most 16 networks, ports must be
+  LAN ports and the networks they name must exist. With extra networks the default network's DHCP must be
+  managed (non-null): the DHCP file is written for all networks and would otherwise overwrite whatever
+  serves the default one.
+- **Review dialog:** one line per network added, removed or changed (a rename is one change), one per LAN
+  port whose networks changed, and one for the default network's isolation.
+
+**Planned, in order** (this section is updated as each lands): translator (a VLAN-aware bridge `br0`, one
+SVI per network, a dnsmasq range per network, per-network firewall rules), API (create, edit, delete
+networks; native/tagged on the Ports endpoint), the Local Networks and Ports pages, and the Overview card.
+
+**Why a bridge built with `ip`/`bridge` commands and not `bridge_ports`:** the image installs `ifupdown`
+and `iproute2` but not `bridge-utils` or `vlan`, and ifupdown only understands `bridge_ports` through the
+bridge-utils hook. The wizard's multi-port LAN writes `bridge_ports`, so after a reboot that bridge may not
+come back on the current image (it was never checked on hardware): **to verify on a real box or in the VM**
+(`bridge_ports` needs `/etc/network/if-pre-up.d/bridge`). The new rendering uses `pre-up`/`post-up`
+lines with `ip link add ... type bridge vlan_filtering 1` and `bridge vlan add`, which need nothing more.
+
 ## 7b. Navigation (decided 2026-10-08)
 
 An OPNsense-style sidebar (grouped by function, quick search, clear two-level navigation) holding

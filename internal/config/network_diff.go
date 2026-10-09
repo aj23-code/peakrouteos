@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -62,6 +63,12 @@ var networkSettings = []networkSetting{
 	{"lan_interfaces", "LAN ports", func(c NetworkConfig) string { return list(c.LanInterfaces) }},
 	{"lan_ip", "LAN IP address", func(c NetworkConfig) string { return text(c.LanIP) }},
 	{"lan_subnet", "LAN netmask", func(c NetworkConfig) string { return text(c.LanSubnet) }},
+	{"lan_isolated", "Default network isolation", func(c NetworkConfig) string {
+		if c.LanIsolated {
+			return "isolated from other networks"
+		}
+		return "not isolated"
+	}},
 	{"dhcp_enabled", "DHCP server", func(c NetworkConfig) string {
 		return dhcpValue(c, func(d *DHCPConfig) string {
 			if d.Enabled {
@@ -91,7 +98,130 @@ func DiffNetwork(active, candidate NetworkConfig) []Change {
 			changes = append(changes, Change{Field: s.field, Label: s.label, Old: before, New: after})
 		}
 	}
+	changes = append(changes, diffNetworks(active, candidate)...)
+	changes = append(changes, diffPortNetworks(active, candidate)...)
 	return append(changes, diffRoutes(active.Routes, candidate.Routes)...)
+}
+
+func onOff(b bool, on, off string) string {
+	if b {
+		return on
+	}
+	return off
+}
+
+// networkText describes an additional network on one line, for the review screen.
+func networkText(n Network) string {
+	dhcp := "no DHCP"
+	if d := n.DHCP; d != nil && d.Enabled {
+		dhcp = fmt.Sprintf("DHCP %s to %s, lease %s", d.RangeStart, d.RangeEnd, d.LeaseTime)
+	}
+	return fmt.Sprintf("VLAN %d, router %s / %s, %s, %s, %s", n.VLAN, text(n.IP), text(n.Netmask), dhcp,
+		onOff(n.Internet, "internet allowed", "no internet"), onOff(n.Isolated, "isolated from other networks", "can reach other networks"))
+}
+
+func networkLabel(n Network) string {
+	if name := strings.TrimSpace(n.Name); name != "" {
+		return "Network " + name
+	}
+	return "Network " + n.ID
+}
+
+// diffNetworks reports one change per additional network that was added, removed or changed. A
+// network is the same network while its id stays the same, so renaming one is a change, not a
+// removal and an addition.
+func diffNetworks(active, candidate NetworkConfig) []Change {
+	before := map[string]Network{}
+	for _, n := range active.Networks {
+		before[n.ID] = n
+	}
+	var changes []Change
+	seen := map[string]bool{}
+	for _, n := range candidate.Networks {
+		seen[n.ID] = true
+		old, existed := before[n.ID]
+		switch {
+		case !existed:
+			changes = append(changes, Change{Field: "networks", Label: networkLabel(n), Old: valueNone, New: networkText(n)})
+		case networkText(old) != networkText(n) || strings.TrimSpace(old.Name) != strings.TrimSpace(n.Name):
+			label := networkLabel(n)
+			if oldName := strings.TrimSpace(old.Name); oldName != strings.TrimSpace(n.Name) {
+				label = networkLabel(old) + " (now " + strings.TrimSpace(n.Name) + ")"
+			}
+			changes = append(changes, Change{Field: "networks", Label: label, Old: networkText(old), New: networkText(n)})
+		}
+	}
+	for _, n := range active.Networks {
+		if !seen[n.ID] {
+			changes = append(changes, Change{Field: "networks", Label: networkLabel(n), Old: networkText(n), New: "(removed)"})
+		}
+	}
+	return changes
+}
+
+// portNetworksText says which networks a LAN port carries, using the network names.
+func portNetworksText(c NetworkConfig, port string) string {
+	name := func(id string) string {
+		if id == DefaultNetworkID {
+			return "LAN (default)"
+		}
+		if n, ok := c.FindNetwork(id); ok && strings.TrimSpace(n.Name) != "" {
+			return strings.TrimSpace(n.Name)
+		}
+		return id
+	}
+	pn := c.PortNetworks[port]
+	out := "native " + name(pn.NativeID())
+	if len(pn.Tagged) > 0 {
+		tagged := make([]string, len(pn.Tagged))
+		for i, t := range pn.Tagged {
+			tagged[i] = name(t)
+		}
+		sort.Strings(tagged)
+		out += ", tagged " + strings.Join(tagged, ", ")
+	}
+	return out
+}
+
+// diffPortNetworks reports a change for each LAN port whose networks differ. A port that stops being
+// a LAN port is the Ports page's business (its role); one that becomes a LAN port is shown with the
+// networks it will carry.
+func diffPortNetworks(active, candidate NetworkConfig) []Change {
+	isLan := func(c NetworkConfig, p string) bool {
+		for _, l := range c.LanInterfaces {
+			if l == p {
+				return true
+			}
+		}
+		return false
+	}
+	ports := map[string]bool{}
+	for p := range active.PortNetworks {
+		ports[p] = true
+	}
+	for p := range candidate.PortNetworks {
+		ports[p] = true
+	}
+	names := make([]string, 0, len(ports))
+	for p := range ports {
+		names = append(names, p)
+	}
+	sort.Strings(names)
+
+	var changes []Change
+	for _, p := range names {
+		if !isLan(candidate, p) {
+			continue
+		}
+		before := "(not a LAN port)"
+		if isLan(active, p) {
+			before = portNetworksText(active, p)
+		}
+		if after := portNetworksText(candidate, p); before != after {
+			changes = append(changes, Change{Field: "port_networks", Label: "Networks on port " + p, Old: before, New: after})
+		}
+	}
+	return changes
 }
 
 // routeText describes what a route does, for the review screen.
