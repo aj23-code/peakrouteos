@@ -26,6 +26,7 @@ import (
 	"peakroute/internal/pipeline"
 	"peakroute/internal/system"
 	"peakroute/internal/translator"
+	"peakroute/internal/wanhealth"
 )
 
 //go:embed web/templates/* web/static/*
@@ -143,6 +144,30 @@ func main() {
 	defer cancelPoller()
 	go startBackgroundNetworkPoller(pollerCtx)
 
+	// Watch the internet connection: ping the upstream DNS resolver every few seconds
+	healthStore, err := wanhealth.Open(filepath.Join(configDir, "wan_health.db"))
+	if err != nil {
+		log.Fatalf("[-] Failed to initialize WAN health history: %v", err)
+	}
+	wanProbe := &wanhealth.Prober{
+		Store:   healthStore,
+		Pinger:  &wanhealth.AutoPinger{},
+		Every:   5 * time.Second,
+		Timeout: 2 * time.Second,
+		Target: func() (wanhealth.Target, bool) {
+			cfg := cfgMgr.NetworkConfig()
+			if cfg.WanInterface == "" {
+				return wanhealth.Target{}, false
+			}
+			resolvers, source := network.UpstreamResolvers(cfg, os.ReadFile)
+			if len(resolvers) == 0 {
+				return wanhealth.Target{}, false
+			}
+			return wanhealth.Target{Addr: resolvers[0], Source: source}, true
+		},
+	}
+	go wanProbe.Run(pollerCtx)
+
 	// Drop timed-out web sessions in the background
 	sessionMgr.StartJanitor(pollerCtx, time.Minute)
 
@@ -189,7 +214,25 @@ func main() {
 
 	// Editing the network: port roles and per-network settings. Saving stages a draft; edits are
 	// refused while a change is being applied or waits for confirmation.
-	netAPI := &netapi.API{Manager: cfgMgr, Ports: network.GetPhysicalInterfaces, Editable: configSvc.Idle}
+	netAPI := &netapi.API{Manager: cfgMgr, Ports: network.GetPhysicalInterfaces, Editable: configSvc.Idle,
+		Live: func(port string) *netapi.Live {
+			up, addr, gw := network.WANConnection(port)
+			live := &netapi.Live{Up: up, Address: addr, Gateway: gw, DNS: []string{}}
+			resolvers, _ := network.UpstreamResolvers(cfgMgr.NetworkConfig(), os.ReadFile)
+			for _, r := range resolvers {
+				live.DNS = append(live.DNS, r.String())
+			}
+			return live
+		}}
+	mux.HandleFunc("/api/v1/uplinks", requireAuth(netAPI.HandleUplinks))
+	mux.HandleFunc("/api/v1/uplinks/{id}", requireAuth(netAPI.HandleUplink))
+	mux.HandleFunc("/api/v1/uplinks/{id}/health", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("id") != "wan" {
+			http.NotFound(w, r)
+			return
+		}
+		wanProbe.HandleHistory(w, r)
+	}))
 	mux.HandleFunc("/api/v1/ports", requireAuth(netAPI.HandlePorts))
 	mux.HandleFunc("/api/v1/networks", requireAuth(netAPI.HandleNetworks))
 	mux.HandleFunc("/api/v1/networks/{id}", requireAuth(netAPI.HandleNetwork))
@@ -324,6 +367,9 @@ func main() {
 	}
 
 	// Flush RAM samples and close SQLite connection
+	if err := healthStore.Close(); err != nil {
+		log.Printf("[-] Error closing WAN health history: %v", err)
+	}
 	if err := trafficDB.Close(); err != nil {
 		log.Printf("[-] Error closing TrafficDB: %v", err)
 	} else {

@@ -52,7 +52,7 @@ records what the system does, why it is built that way, and what was learned on 
   self-signed certificate (browsers warn). All state goes in `./dev-data/` (gitignored). The first
   visit shows the first-run setup page.
 - **Production:** state lives in `/etc/peakroute/` (`auth.json`, `network.json`, `sys.json`,
-  `configured`, `traffic_history.db`, `certs/`). The systemd unit runs the daemon as root today
+  `configured`, `traffic_history.db`, `wan_health.db`, `certs/`). The systemd unit runs the daemon as root today
   (running unprivileged is TODO #21).
 - **Dev mode must never change the machine it runs on.** The apply step (section 7) writes into a
   sandbox folder and only logs the commands it would run.
@@ -259,6 +259,46 @@ Decisions for the remaining steps (9c to 9e):
   hardware is missing is still listed (`present: false`) so it can be reassigned.
 - Requests must be `application/json`, at most 64 KB, with no unknown fields.
 
+## 7d. Internet connection and its health (built 2026-10-08)
+
+**Settings** (`netapi/uplinks.go`, same rules as 7a): DHCP or static (IP, netmask, gateway, DNS). Saving
+only stages. Choosing DHCP clears the static fields so no stale values stay in `network.json`. The
+shared validation lets a static gateway and DNS be empty (the wizard allows it); the editor requires both
+because a static address without them cannot reach anything. The LAN/WAN subnet overlap is reported on
+both `lan_subnet` and `wan_subnet`, so whichever page you are on can show it next to its field. The
+`live` block describes the *active* config's port (not the draft's) from the kernel: `/sys` link state,
+the first IPv4 address, the default route in `/proc/net/route`, and the resolvers.
+
+**Health** (`internal/wanhealth`):
+- **What is probed:** the first upstream DNS server: the configured one for a static address, otherwise the
+  first non-loopback server in `/etc/resolv.conf` (on systemd-resolved machines, the real servers in
+  `/run/systemd/resolve/resolv.conf`; a local stub is not "upstream"). The target is looked up on every
+  probe, so a change of provider or a commit is followed. Nothing is probed until a WAN port exists.
+- **How:** an ICMP echo (a real ping) every 5 s with a 2 s timeout. An unprivileged "ping" datagram socket
+  is tried first, then a raw socket (root/`CAP_NET_RAW`). If neither is allowed (a developer running as a
+  normal user) it falls back to timing a small DNS query (`. NS`) to the same address, and the page says so.
+  **Caveat:** some networks redirect all outgoing DNS to their own resolver, which answers for any
+  address (the dev machine's network does: even 192.0.2.1 answers in ~50 ms), so the DNS fallback can
+  look healthy while the link is down. The ICMP path does not have this problem. On the appliance the
+  daemon runs as root today; when it is moved to a normal user (TODO #21) it needs `AmbientCapabilities=CAP_NET_RAW`
+  (or `net.ipv4.ping_group_range`) to keep real pings.
+- **State:** `online` if any of the last probes answered, `offline` after 3 failures in a row (15 s),
+  `unknown` until the first result, `not_configured` without a WAN port or resolver. A probe cancelled
+  by shutdown is not counted as lost.
+- **Storage:** probes are folded into one row per target per minute in RAM (sent, lost, RTT sum/min/max)
+  and written once a minute in one transaction (the same wear reasoning as the traffic history);
+  `wan_health.db`, 30-day retention purged at start and daily at 03:00, incremental auto-vacuum. Closing
+  the daemon writes the pending minute. A power cut costs at most the last minute.
+- **Reading:** the 5m range uses the last 120 raw probes kept in RAM (so it starts empty after a
+  restart); 1h, 24h and 30d use 1-minute, 15-minute and 1-hour buckets, as on the traffic page. The
+  newest minutes come from RAM and only older ones from the database, so a minute is never counted twice
+  whether or not it has been written yet. Average latency is weighted by answered probes, so lost probes
+  do not drag it down; a bucket where everything was lost has no latency (null) and shows as a red column.
+  Loss under 1 % in a bucket is not drawn, so a stray lost packet does not paint the whole 30-day chart.
+- **Chart** (`internet.js`): canvas, average line with a best-to-worst band, red columns for loss, gaps
+  where no probes ran, hover tooltip, drawn at device pixel ratio. It refreshes every 5 to 60 s depending
+  on the range.
+
 ## 7b. Navigation (decided 2026-10-08)
 
 An OPNsense-style sidebar (grouped by function, quick search, clear two-level navigation) holding
@@ -269,7 +309,7 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 | Overview | system health, interface counters, top clients | yes (`overview`) |
 | Clients | DHCP leases and per-client usage | yes (`dhcp`) |
 | Traffic | per-port throughput history | yes (`traffic`) |
-| Network: Internet, **Networks**, Ports, Routes | WAN uplink; each network with its address range *and* DHCP; physical ports; static routes | Networks (`networks`) and Ports (`network-physical`) |
+| Network: Internet, **Networks**, Ports, Routes | WAN uplink; each network with its address range *and* DHCP; physical ports; static routes | Internet (`internet`), Networks (`networks`) and Ports (`network-physical`) |
 | Firewall: Rules, Port forwarding, Connections | | planned |
 | Services: DNS, VPN, Dynamic DNS | | planned |
 | System: Settings, Administrators, Certificates, Backup and restore, Updates, Logs, Diagnostics | | Logs only (`logs`) |
@@ -345,6 +385,9 @@ every future page works on every screen automatically.
 | `GET /`, `/dashboard` | session | server-rendered shell; embeds the CSRF token |
 | `GET /api/v1/system/stats` | session | from the poller snapshot, no disk reads |
 | `GET /api/v1/system/traffic?iface=&range=` | session | history; ranges `1h` (also used for 5m), `24h`, `30d` |
+| `GET /api/v1/uplinks`, `GET /api/v1/uplinks/{id}` | session | the internet connection (today one, id `wan`): `port`, `mode` (dhcp or static), `ip`, `netmask`, `gateway`, `dns`, `pending`, and `live` (what is in effect: `up`, `address`, `gateway`, `dns`) |
+| `PUT /api/v1/uplinks/{id}` | session + CSRF | `{"mode": "dhcp"}` or `{"mode": "static", "ip", "netmask", "gateway", "dns": []}`; stages a draft. Switching to DHCP clears the static values. A static address also requires a gateway and one DNS server |
+| `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (state, target, method, latest latency), `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
 | `GET /api/v1/system/logs?limit=` | session | systemd journal |
 | `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage |
 | `POST /api/v1/cert/upload` | session + `X-CSRF-Token` | multipart `cert` and `key` |
@@ -387,6 +430,8 @@ every future page works on every screen automatically.
 | 2026-10-08 | First editor slice is LAN address plus DHCP, with port roles (WAN, LAN, unassigned) on the Ports page | the address and DHCP mean little without saying which ports are which |
 | 2026-10-08 | Editing endpoints validate only their own fields and are refused while a change is applying | partial configuration stays editable; a revert must not overwrite a newer draft |
 | 2026-10-08 | Ports and Networks pages replace the read-only Devices table; Save writes a draft only, never the system | one pipeline for every change; the banner is the single place to commit |
+| 2026-10-08 | WAN health pings the upstream DNS server (ICMP, DNS query only as a fallback), per-minute history in its own SQLite file | what Meraki's appliance status shows; the resolver is what clients actually depend on; same flash-friendly storage as traffic |
+| 2026-10-08 | Static WAN needs a gateway and a DNS server in the editor, though the shared validation allows them empty | an address alone cannot reach the internet, and the health chart needs a DNS server to measure |
 | 2026-10-06 | Success messages show ~8 s; failures and reverts stay until dismissed | problems must not be missed, good news should not nag |
 
 ## 10. How things are tested (worth documenting)
@@ -399,6 +444,13 @@ every future page works on every screen automatically.
   writes, timing comparisons of old and new builds (login timing, stats latency), concurrent setup race.
 - Time is injectable (`SessionManager.now`) and filesystems/command runners are interfaces, so logic is
   tested without root or real time.
+- **Real ICMP without root:** `unshare -rn` gives a user+network namespace in which the process has
+  `CAP_NET_RAW`; bring `lo` up inside it and run the compiled test binary (`go test -c`) to exercise
+  `TestPingICMPLoopback`, which is skipped otherwise. Writing `0 0` to `/proc/sys/net/ipv4/ping_group_range`
+  inside the namespace exercises the unprivileged datagram path instead of the raw one (both verified).
+- **Chart checks without a real outage:** a scratch copy with a fake "flaky" pinger and a synthetic 30-day
+  history written straight into `wan_health.db`, with the static files served from disk so the JS/CSS can be
+  edited without rebuilding.
 
 ## 11. Gotchas learned
 

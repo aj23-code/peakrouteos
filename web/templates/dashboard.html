@@ -35,7 +35,7 @@
               <span class="chevron">▸</span>
             </summary>
             <div class="folder-content">
-              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Internet</span>
+              <a href="#" class="nav-item" data-view="internet">Internet</a>
               <a href="#" class="nav-item" data-view="networks">Networks</a>
               <a href="#" class="nav-item" data-view="network-physical">Ports</a>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Routes</span>
@@ -289,6 +289,108 @@
         </div>
       </div>
 
+      <!-- View: Internet -->
+      <div id="view-internet" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Internet</h1>
+            <p class="subtitle">How this router connects to the internet, and how healthy that connection is.</p>
+          </div>
+        </header>
+
+        <section class="card inet-status" aria-live="polite">
+          <div class="inet-state">
+            <span id="inet-dot" class="inet-dot inet-dot--unknown" aria-hidden="true"></span>
+            <div>
+              <div id="inet-state-text" class="inet-state-text">Checking&hellip;</div>
+              <div id="inet-target" class="form-hint"></div>
+            </div>
+          </div>
+          <dl class="inet-stats">
+            <div><dt>Latency now</dt><dd id="inet-now">&ndash;</dd></div>
+            <div><dt>Average</dt><dd id="inet-avg">&ndash;</dd></div>
+            <div><dt>Best / worst</dt><dd id="inet-range">&ndash;</dd></div>
+            <div><dt>Packet loss</dt><dd id="inet-loss">&ndash;</dd></div>
+          </dl>
+        </section>
+
+        <section class="traffic-interface-card inet-chart-card">
+          <div class="traffic-card-header">
+            <div class="traffic-card-meta">
+              <span class="traffic-badge wan">LATENCY</span>
+              <span id="inet-chart-note" class="form-hint">Round trip time to your upstream DNS server</span>
+            </div>
+            <div class="traffic-time-picker time-picker" id="inet-picker">
+              <button class="time-btn" data-range="5m">5m</button>
+              <button class="time-btn active" data-range="1h">1h</button>
+              <button class="time-btn" data-range="24h">24h</button>
+              <button class="time-btn" data-range="30d">30d</button>
+            </div>
+          </div>
+          <div class="traffic-chart-container">
+            <canvas id="inet-canvas" class="traffic-canvas" role="img" aria-label="Latency to the upstream DNS server over time"></canvas>
+          </div>
+          <div class="inet-legend">
+            <span><i class="inet-key inet-key--avg"></i>Average</span>
+            <span><i class="inet-key inet-key--band"></i>Best to worst</span>
+            <span><i class="inet-key inet-key--loss"></i>Lost packets</span>
+          </div>
+        </section>
+
+        <div id="inet-message" class="form-message hidden" role="alert"></div>
+
+        <section class="card" id="inet-card">
+          <div class="net-card-head">
+            <h2>Connection</h2>
+            <span id="inet-draft" class="tag tag-draft hidden">Draft</span>
+          </div>
+
+          <dl class="inet-live" id="inet-live">
+            <div><dt>Port</dt><dd><span id="inet-port" class="chip"></span> <a href="#" data-goto="network-physical" class="form-hint">change</a></dd></div>
+            <div><dt>Link</dt><dd id="inet-live-link">&ndash;</dd></div>
+            <div><dt>Address</dt><dd id="inet-live-address">&ndash;</dd></div>
+            <div><dt>Gateway</dt><dd id="inet-live-gateway">&ndash;</dd></div>
+            <div><dt>DNS</dt><dd id="inet-live-dns">&ndash;</dd></div>
+          </dl>
+
+          <h3 class="form-section">How to get an address</h3>
+          <div class="radio-row" role="radiogroup" aria-label="Connection type">
+            <label class="radio"><input type="radio" name="inet-mode" value="dhcp" id="inet-mode-dhcp"> Automatic (DHCP)<span class="form-hint">The provider or upstream router assigns the address.</span></label>
+            <label class="radio"><input type="radio" name="inet-mode" value="static" id="inet-mode-static"> Static address<span class="form-hint">You enter the address your provider gave you.</span></label>
+          </div>
+
+          <div class="form-grid" id="inet-static-fields">
+            <div class="form-field" data-field="ip">
+              <label for="inet-ip">IP address</label>
+              <input type="text" id="inet-ip" inputmode="decimal" autocomplete="off" placeholder="203.0.113.10" spellcheck="false">
+              <p class="field-error hidden" data-error="ip"></p>
+            </div>
+            <div class="form-field" data-field="netmask">
+              <label for="inet-netmask">Netmask</label>
+              <input type="text" id="inet-netmask" inputmode="decimal" autocomplete="off" placeholder="255.255.255.0" spellcheck="false">
+              <p class="field-error hidden" data-error="netmask"></p>
+            </div>
+            <div class="form-field" data-field="gateway">
+              <label for="inet-gateway">Gateway</label>
+              <input type="text" id="inet-gateway" inputmode="decimal" autocomplete="off" placeholder="203.0.113.1" spellcheck="false">
+              <p class="field-error hidden" data-error="gateway"></p>
+            </div>
+            <div class="form-field" data-field="dns">
+              <label for="inet-dns">DNS servers</label>
+              <input type="text" id="inet-dns" autocomplete="off" placeholder="9.9.9.9, 149.112.112.112" spellcheck="false">
+              <p class="form-hint">Up to three, separated by commas. The first one is also what the health chart pings.</p>
+              <p class="field-error hidden" data-error="dns"></p>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <span id="inet-hint" class="form-hint"></span>
+            <button type="button" id="inet-reset" class="cfg-btn cfg-btn--ghost" disabled>Reset</button>
+            <button type="button" id="inet-save" class="cfg-btn cfg-btn--primary" disabled>Save to draft</button>
+          </div>
+        </section>
+      </div>
+
       <!-- View: Physical Devices -->
       <div id="view-network-physical" class="view-section hidden">
         <header class="dash-header">
@@ -480,6 +582,7 @@
   <script src="/static/scripts/config_banner.js"></script>
   <script src="/static/scripts/telemetry.js"></script>
   <script src="/static/scripts/traffic.js"></script>
+  <script src="/static/scripts/internet.js"></script>
   <script src="/static/scripts/ports.js"></script>
   <script src="/static/scripts/networks.js"></script>
   <script src="/static/scripts/leases.js"></script>

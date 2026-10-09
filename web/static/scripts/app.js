@@ -144,6 +144,11 @@ function loadView(viewName) {
                 activeViewCleanup = window.DHCPModule.init();
             }
             break;
+        case 'internet':
+            if (window.InternetModule) {
+                activeViewCleanup = window.InternetModule.init();
+            }
+            break;
         case 'network-physical':
             if (window.PortsModule) {
                 activeViewCleanup = window.PortsModule.init();

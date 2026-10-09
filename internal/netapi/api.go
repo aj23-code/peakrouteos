@@ -27,6 +27,9 @@ type API struct {
 	// Editable reports whether edits are allowed right now. They are not while a change is being
 	// applied or waiting for confirmation: a revert would overwrite a newer draft. Nil means always.
 	Editable func() bool
+	// Live reports how the given port is connected right now (its address, gateway and DNS
+	// servers). Nil means it is not reported.
+	Live func(port string) *Live
 }
 
 const maxBody = 64 << 10
@@ -47,6 +50,11 @@ var errorField = map[string]string{
 	"dhcp_lease_time":  "dhcp.lease_time",
 	"wan_interface":    "ports",
 	"lan_interfaces":   "ports",
+	"wan_mode":         "mode",
+	"wan_ip":           "ip",
+	"wan_subnet":       "netmask",
+	"wan_gateway":      "gateway",
+	"wan_dns":          "dns",
 }
 
 type errorBody struct {

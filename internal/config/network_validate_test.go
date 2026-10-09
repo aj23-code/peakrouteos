@@ -143,6 +143,11 @@ func TestInvalidConfigurationsAreRejectedWithTheRightField(t *testing.T) {
 			c.LanIP, c.LanSubnet = "203.0.113.129", "255.255.255.128"
 			c.DHCP = nil
 		}, "lan_subnet"},
+		{"static WAN overlaps the LAN (reported on the WAN too)", func(c *NetworkConfig) {
+			*c = staticWan(*c)
+			c.LanIP, c.LanSubnet = "203.0.113.129", "255.255.255.128"
+			c.DHCP = nil
+		}, "wan_subnet"},
 
 		// DHCP
 		{"DHCP without a start", func(c *NetworkConfig) { c.DHCP.RangeStart = "" }, "dhcp_range_start"},

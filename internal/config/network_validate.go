@@ -203,6 +203,8 @@ func (c NetworkConfig) Validate() error {
 		}
 		if haveWanPrefix && lanPrefix.Overlaps(wanPrefix) {
 			add("lan_subnet", "overlaps the WAN subnet (%s); use a different private range", wanPrefix)
+			// Reported on the WAN side too, so the internet page can show it next to its own field
+			add("wan_subnet", "overlaps the LAN subnet (%s); one of the two must change", lanPrefix)
 		}
 	}
 

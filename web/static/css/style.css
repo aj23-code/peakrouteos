@@ -1438,3 +1438,34 @@ height: 260px;
     .role-select { width: 100%; min-height: 44px; }
     .form-field input[type="text"] { min-height: 44px; }
 }
+
+/* ---------- Internet page ---------- */
+.inet-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem 2rem; margin-bottom: 1rem; }
+.inet-state { display: flex; align-items: center; gap: 0.8rem; min-width: 0; }
+.inet-state-text { font-size: 1.25rem; font-weight: 600; }
+.inet-dot { width: 0.9rem; height: 0.9rem; border-radius: 50%; flex: none; background: var(--text-muted); }
+.inet-dot--online { background: var(--accent-green); box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.18); }
+.inet-dot--offline { background: var(--error-color); box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.18); }
+.inet-dot--not_configured { background: var(--accent-amber); }
+
+.inet-stats, .inet-live { display: flex; flex-wrap: wrap; gap: 0.8rem 2rem; margin: 0; }
+.inet-stats dt, .inet-live dt { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.inet-stats dd, .inet-live dd { font-size: 1.05rem; font-weight: 600; margin: 0.15rem 0 0; }
+.inet-live { margin-top: 1rem; }
+.inet-live dd { font-size: 0.95rem; font-weight: 500; }
+.inet-bad { color: var(--error-color); }
+
+.inet-chart-card { margin-bottom: 1rem; }
+.inet-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; margin-top: 0.6rem; font-size: 0.8rem; color: var(--text-muted); }
+.inet-key { display: inline-block; width: 1.4rem; height: 0.55rem; margin-right: 0.4rem; border-radius: 2px; vertical-align: middle; }
+.inet-key--avg { background: #38bdf8; height: 3px; }
+.inet-key--band { background: rgba(56, 189, 248, 0.3); }
+.inet-key--loss { background: rgba(239, 68, 68, 0.6); width: 0.7rem; }
+
+.radio-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.75rem; }
+.radio { display: grid; grid-template-columns: auto 1fr; column-gap: 0.6rem; align-items: start; padding: 0.7rem 0.9rem; border: 1px solid var(--border-color); border-radius: 0.5rem; cursor: pointer; }
+.radio input { margin-top: 0.2rem; accent-color: var(--accent-green); }
+.radio .form-hint { grid-column: 2; }
+.radio:has(input:checked) { border-color: var(--accent-green); background: rgba(16, 185, 129, 0.06); }
+.radio:has(input:disabled) { opacity: 0.6; cursor: not-allowed; }
+#inet-static-fields { margin-top: 1rem; }
