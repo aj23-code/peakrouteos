@@ -7,12 +7,6 @@ window.OverviewCards = (function () {
     const HEALTH_MS = 10000;
     const NETWORK_MS = 30000;
 
-    const BADGE = {
-        online: 'Internet online',
-        offline: 'Internet offline',
-        unknown: 'Checking internet…',
-        not_configured: 'Internet not set up',
-    };
     const STATE = { online: 'Online', offline: 'Offline', unknown: 'Checking…', not_configured: 'Not set up yet' };
 
     let healthTimer = null;
@@ -46,8 +40,6 @@ window.OverviewCards = (function () {
         const gw = st.gateway || {};
         const state = STATE[st.state] ? st.state : 'unknown';
 
-        $('ov-badge').className = 'status-badge ov-badge--' + state;
-        $('ov-badge-text').textContent = BADGE[state];
         $('ov-dot').className = 'inet-dot inet-dot--' + state;
         $('ov-state-text').textContent = STATE[state];
 

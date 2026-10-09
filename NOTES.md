@@ -376,8 +376,8 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 
 ### Overview page (redesigned 2026-10-08)
 
-Top to bottom: a header whose badge shows the real internet state (online, offline, checking, not set
-up); the **device card**; then **Internet** and **Network** cards side by side (one column on a narrow
+Top to bottom: the header (no status badge: the old fixed "System Online" pill was removed because it only
+existed on this page, and the Internet card already shows the state); the **device card**; then **Internet** and **Network** cards side by side (one column on a narrow
 screen); then the system resource cards (CPU, memory, disk, firewall states) and the Top Clients table.
 The old Network Interfaces table is gone: per-port counters live on Traffic, roles and link state on
 Ports.

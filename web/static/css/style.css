@@ -1457,14 +1457,6 @@ height: 260px;
 .inet-usage-table tbody tr { border-top: 1px solid var(--border-color); }
 
 /* ---------- Overview ---------- */
-.ov-badge--online { background: rgba(16, 185, 129, 0.1); color: var(--accent-green); border-color: rgba(16, 185, 129, 0.25); }
-.ov-badge--offline { background: rgba(239, 68, 68, 0.1); color: #f87171; border-color: rgba(239, 68, 68, 0.3); }
-.ov-badge--offline .status-dot { background: var(--error-color); }
-.ov-badge--unknown { background: rgba(148, 163, 184, 0.1); color: var(--text-muted); border-color: rgba(148, 163, 184, 0.25); }
-.ov-badge--unknown .status-dot { background: var(--text-muted); }
-.ov-badge--not_configured { background: rgba(245, 158, 11, 0.1); color: var(--accent-amber); border-color: rgba(245, 158, 11, 0.3); }
-.ov-badge--not_configured .status-dot { background: var(--accent-amber); }
-
 .ov-hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 20px; }
 .ov-card { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
 .ov-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
