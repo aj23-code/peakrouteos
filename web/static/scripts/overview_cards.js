@@ -28,8 +28,7 @@ window.OverviewCards = (function () {
 
     function onLeases(list) {
         leases = Array.isArray(list) ? list : [];
-        $('ov-clients').textContent = leases.length === 1 ? '1 connected' : `${leases.length} connected`;
-        renderDhcp();
+        renderNetworks();
     }
 
     // ---------------------------------------------------------------- internet
@@ -139,48 +138,72 @@ window.OverviewCards = (function () {
         return bits.indexOf('0') === -1 ? 32 : bits.indexOf('0');
     }
 
-    function renderNetwork() {
-        if (!network) return;
-        const { lan, uplink } = network;
-
-        if (uplink) {
-            const live = uplink.live;
-            $('ov-wan-port').textContent = uplink.port || 'none';
-            $('ov-wan-link').textContent = !uplink.port ? 'choose a port on the Ports page' : live ? (live.up ? 'connected' : 'no link') : '';
-            $('ov-wan-addr').textContent = (live && live.address) || (uplink.port ? 'Waiting for an address' : '–');
-            $('ov-wan-gw').textContent = (live && live.gateway) || '–';
-        }
-        if (lan) {
-            const ports = lan.ports || [];
-            $('ov-lan-ports').innerHTML = ports.length
-                ? ports.map(p => `<span class="chip">${escapeHtml(p)}</span>`).join('')
-                : '<span class="form-hint">no ports yet</span>';
-            $('ov-lan-addr').textContent = lan.ip ? `${lan.ip}/${prefixOf(lan.netmask || '255.255.255.0')}` : '–';
-        }
-        renderDhcp();
+    // The leases that fall inside a network's subnet
+    function leasesIn(n) {
+        if (!n.ip || !n.netmask) return [];
+        const mask = ipToInt(n.netmask), net = ipToInt(n.ip) & mask;
+        return leases.filter(l => {
+            const ip = l.ip_address || l.ip;
+            return ip && (ipToInt(ip) & mask) === net;
+        });
     }
 
-    function renderDhcp() {
-        const lan = network && network.lan;
-        const box = $('ov-dhcp'), off = $('ov-dhcp-off');
-        const d = lan && lan.dhcp;
-        const usable = d && d.enabled && d.range_start && d.range_end;
-        box.classList.toggle('hidden', !usable);
-        off.classList.toggle('hidden', !!usable || !lan || !d);
-        if (!usable) return;
+    function renderWan() {
+        const uplink = network && network.uplink;
+        if (!uplink) return;
+        const live = uplink.live;
+        $('ov-wan-port').textContent = uplink.port || 'none';
+        $('ov-wan-link').textContent = !uplink.port ? 'choose a port on the Ports page' : live ? (live.up ? 'connected' : 'no link') : '';
+        $('ov-wan-addr').textContent = (live && live.address) || (uplink.port ? 'Waiting for an address' : '\u2013');
+        $('ov-wan-gw').textContent = (live && live.gateway) || '\u2013';
+    }
 
-        const start = ipToInt(d.range_start), end = ipToInt(d.range_end);
-        const size = Math.max(0, end - start + 1);
-        const used = leases.filter(l => {
-            const ip = l.ip_address || l.ip;
-            if (!ip) return false;
-            const n = ipToInt(ip);
-            return n >= start && n <= end;
-        }).length;
-        const pct = size ? Math.min(100, Math.round((used / size) * 100)) : 0;
-        $('ov-dhcp-val').textContent = `${used} of ${size}`;
-        $('ov-dhcp-bar').style.width = pct + '%';
-        $('ov-dhcp-bar').className = 'progress-fill ' + (pct >= 90 ? 'fill-orange' : 'fill-green');
+    function networkHtml(n) {
+        const mine = leasesIn(n);
+        const chips = (n.ports || []).map(p => `<span class="chip">${escapeHtml(p)}</span>`)
+            .concat((n.tagged_ports || []).map(p => `<span class="chip chip--tag">${escapeHtml(p)} <small>tagged</small></span>`)).join('');
+        const tags = [];
+        if (!n.default) tags.push(`<span class="tag">VLAN ${n.vlan}</span>`);
+        if (!n.default) tags.push(n.internet ? '<span class="tag tag-ok">Internet</span>' : '<span class="tag tag-warn">No internet</span>');
+        if (n.isolated) tags.push('<span class="tag">Isolated</span>');
+        if (n.pending) tags.push('<span class="tag tag-draft">Draft</span>');
+
+        let dhcp = '';
+        const d = n.dhcp;
+        if (d && d.enabled && d.range_start && d.range_end) {
+            const start = ipToInt(d.range_start), end = ipToInt(d.range_end);
+            const size = Math.max(0, end - start + 1);
+            const used = mine.filter(l => { const v = ipToInt(l.ip_address || l.ip); return v >= start && v <= end; }).length;
+            const pct = size ? Math.min(100, Math.round((used / size) * 100)) : 0;
+            dhcp = `<div class="ov-dhcp"><div class="metric-header"><span class="metric-label">DHCP addresses in use</span>
+                <span class="metric-subtext">${used} of ${size}</span></div>
+                <div class="progress-track"><div class="progress-fill ${pct >= 90 ? 'fill-orange' : 'fill-green'}" style="width: ${pct}%"></div></div></div>`;
+        } else if (n.default && d === null) {
+            dhcp = '';
+        } else {
+            dhcp = '<p class="form-hint">No DHCP server on this network.</p>';
+        }
+
+        return `<div class="ov-row">
+            <div class="ov-row-title"><span class="traffic-badge lan">${escapeHtml(n.name)}</span>${tags.join('')}</div>
+            <div class="ov-chips">${chips || '<span class="form-hint">no ports yet</span>'}</div>
+            <dl class="ov-kv">
+                <div><dt>Router address</dt><dd>${n.ip ? escapeHtml(n.ip) + '/' + prefixOf(n.netmask || '255.255.255.0') : '\u2013'}</dd></div>
+                <div><dt>Clients</dt><dd>${mine.length === 1 ? '1 connected' : mine.length + ' connected'}</dd></div>
+            </dl>
+            ${dhcp}
+        </div>`;
+    }
+
+    function renderNetworks() {
+        const box = $('ov-networks');
+        if (!box || !network) return;
+        box.innerHTML = (network.networks || []).map(networkHtml).join('');
+    }
+
+    function renderNetwork() {
+        renderWan();
+        renderNetworks();
     }
 
     async function loadNetwork() {
@@ -189,7 +212,7 @@ window.OverviewCards = (function () {
         const uplinks = await u.json(), networks = await n.json();
         network = {
             uplink: (uplinks.uplinks || [])[0] || null,
-            lan: (networks.networks || []).find(x => x.id === 'lan') || (networks.networks || [])[0] || null,
+            networks: networks.networks || [],
         };
         renderNetwork();
     }

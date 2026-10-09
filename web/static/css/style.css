@@ -1514,3 +1514,25 @@ height: 260px;
 @media (max-width: 420px) {
     .route-fields { grid-template-columns: 1fr; }
 }
+
+/* ---------- Local Networks: several cards ---------- */
+.net-list { display: flex; flex-direction: column; gap: 1.25rem; }
+.net-card .form-message { margin-top: 1rem; margin-bottom: 0; }
+.net-access { display: flex; flex-direction: column; gap: 0.5rem; }
+.toggle--block { display: flex; align-items: flex-start; gap: 0.7rem; padding: 0.6rem 0.8rem; border: 1px solid var(--border-color); border-radius: 0.5rem; }
+.toggle--block input { margin-top: 0.2rem; }
+.toggle--block span { display: flex; flex-direction: column; gap: 0.15rem; }
+.toggle--block .form-hint { font-weight: 400; }
+.net-warn { margin-top: 0.6rem; color: var(--accent-amber); }
+.chip--tag { border-style: dashed; color: var(--text-muted); }
+.chip--tag small { font-size: 0.7rem; margin-left: 0.2rem; }
+.net-card .is-off { opacity: 0.6; }
+
+/* Ports: the networks a LAN port carries */
+.port-nets { display: flex; flex-direction: column; gap: 0.45rem; margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px dashed var(--border-color); }
+.port-net-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.7rem; }
+.port-tagged { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; }
+.toggle--small { min-height: 1.8rem; font-size: 0.88rem; }
+.ov-networks { display: flex; flex-direction: column; gap: 1rem; }
+.ov-row-title .tag { margin-left: 0; }
+.ov-networks .ov-row:first-child { padding-top: 0; border-top: 0; }

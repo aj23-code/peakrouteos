@@ -8,6 +8,8 @@ window.PortsModule = (function () {
     let ports = [];          // last answer from the server
     let editable = true;
     let chosen = {};         // port name -> role currently selected in the table
+    let networks = [];       // what a LAN port can carry: { id, name, vlan, default }
+    let chosenNets = {};     // port name -> { native, tagged } currently selected
     let dirty = false;       // the person changed something that is not saved yet
     let saving = false;
     let wired = false;
@@ -28,9 +30,30 @@ window.PortsModule = (function () {
         return roles;
     }
 
+    const serverNets = (p) => ({ native: p.native || 'lan', tagged: (p.tagged || []).slice() });
+    const netsOf = (name) => chosenNets[name] || { native: 'lan', tagged: [] };
+    const sameNets = (a, b) => a.native === b.native && a.tagged.slice().sort().join(',') === b.tagged.slice().sort().join(',');
+
     function isDirty() {
         const saved = serverRoles();
-        return ports.some(p => chosen[p.name] !== saved[p.name]);
+        return ports.some(p => chosen[p.name] !== saved[p.name] ||
+            (chosen[p.name] === 'lan' && p.role === 'lan' && !sameNets(netsOf(p.name), serverNets(p))));
+    }
+
+    // Only worth showing when there is more than the default network to choose from
+    const showNets = () => networks.length > 1;
+
+    function netsHtml(p) {
+        const cur = netsOf(p.name);
+        const off = editable && !saving ? '' : ' disabled';
+        const options = networks.map(n => `<option value="${escapeHtml(n.id)}"${n.id === cur.native ? ' selected' : ''}>${escapeHtml(n.name)}${n.default ? '' : ' (VLAN ' + n.vlan + ')'}</option>`).join('');
+        const tagged = networks.filter(n => !n.default && n.id !== cur.native).map(n =>
+            `<label class="toggle toggle--small"><input type="checkbox" class="net-tagged" data-port="${escapeHtml(p.name)}" data-net="${escapeHtml(n.id)}"${cur.tagged.includes(n.id) ? ' checked' : ''}${off}> ${escapeHtml(n.name)}</label>`).join('');
+        return `<div class="port-nets">
+            <label class="port-net-row"><span class="form-hint">Untagged network</span>
+                <select class="role-select net-native" data-port="${escapeHtml(p.name)}" aria-label="Untagged network of ${escapeHtml(p.name)}"${off}>${options}</select></label>
+            ${tagged ? `<div class="port-net-row"><span class="form-hint">Also carries, tagged</span><span class="port-tagged">${tagged}</span></div>` : ''}
+        </div>`;
     }
 
     // The same rules the server enforces, so the person hears it before pressing Save
@@ -63,6 +86,8 @@ window.PortsModule = (function () {
                 }
                 if (role !== p.role) {
                     note = `<span class="tag tag-draft">Unsaved (was ${escapeHtml(ROLE_LABELS[p.role] || p.role)})</span>`;
+                } else if (role === 'lan' && p.role === 'lan' && !sameNets(netsOf(p.name), serverNets(p))) {
+                    note = '<span class="tag tag-draft">Unsaved networks</span>';
                 }
 
                 const link = p.present
@@ -72,8 +97,9 @@ window.PortsModule = (function () {
                 return `<tr>
                     <td data-label="Port"><strong>${escapeHtml(p.name)}</strong></td>
                     <td data-label="Role">
-                        <select class="role-select" data-port="${escapeHtml(p.name)}" aria-label="Role of ${escapeHtml(p.name)}"${editable && !saving ? '' : ' disabled'}>${options}</select>
+                        <select class="role-select" data-port="${escapeHtml(p.name)}" data-role aria-label="Role of ${escapeHtml(p.name)}"${editable && !saving ? '' : ' disabled'}>${options}</select>
                         ${note}
+                        ${role === 'lan' && showNets() ? netsHtml(p) : ''}
                     </td>
                     <td data-label="Link">${link}</td>
                     <td data-label="Speed">${escapeHtml(p.speed || '-')}</td>
@@ -102,6 +128,7 @@ window.PortsModule = (function () {
         const data = await res.json();
         const previous = ports;
         ports = data.ports || [];
+        networks = data.networks || [];
         editable = data.editable !== false;
 
         // Keep what the person is choosing; new ports (hardware plugged in) start at the server's value
@@ -111,7 +138,26 @@ window.PortsModule = (function () {
             next[p.name] = (dirty && known && chosen[p.name] !== undefined) ? chosen[p.name] : p.role;
         });
         chosen = next;
+
+        // the networks each LAN port carries follow the same rule: what is being edited stays
+        const nextNets = {};
+        ports.forEach(p => {
+            const known = previous.find(q => q.name === p.name);
+            nextNets[p.name] = (dirty && known && chosenNets[p.name]) ? chosenNets[p.name] : serverNets(p);
+        });
+        chosenNets = nextNets;
         render();
+    }
+
+    // The networks of every port that is a LAN port in the choice; the server ignores the default-only ones
+    function networksToSend() {
+        const out = {};
+        ports.forEach(p => {
+            if (chosen[p.name] !== 'lan') return;
+            const c = netsOf(p.name);
+            out[p.name] = { native: c.native === 'lan' ? '' : c.native, tagged: c.tagged };
+        });
+        return out;
     }
 
     async function save() {
@@ -123,7 +169,7 @@ window.PortsModule = (function () {
         const res = await apiFetch('/api/v1/ports', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ assignments: chosen }),
+            body: JSON.stringify({ assignments: chosen, networks: networksToSend() }),
         });
         saving = false;
 
@@ -148,7 +194,26 @@ window.PortsModule = (function () {
         wired = true;
 
         $('ports-list').addEventListener('change', (e) => {
-            const select = e.target.closest('select[data-port]');
+            const netSelect = e.target.closest('select.net-native');
+            if (netSelect) {
+                const cur = netsOf(netSelect.dataset.port);
+                // a network cannot be both the untagged and a tagged one on the same port
+                chosenNets[netSelect.dataset.port] = { native: netSelect.value, tagged: cur.tagged.filter(t => t !== netSelect.value) };
+                showMessage('');
+                render();
+                return;
+            }
+            const box = e.target.closest('input.net-tagged');
+            if (box) {
+                const cur = netsOf(box.dataset.port);
+                const tagged = cur.tagged.filter(t => t !== box.dataset.net);
+                if (box.checked) tagged.push(box.dataset.net);
+                chosenNets[box.dataset.port] = { native: cur.native, tagged };
+                showMessage('');
+                render();
+                return;
+            }
+            const select = e.target.closest('select[data-role]');
             if (!select) return;
             const name = select.dataset.port;
             const role = select.value;
@@ -164,6 +229,8 @@ window.PortsModule = (function () {
         $('ports-save').addEventListener('click', save);
         $('ports-reset').addEventListener('click', () => {
             chosen = serverRoles();
+            chosenNets = {};
+            ports.forEach(p => { chosenNets[p.name] = serverNets(p); });
             showMessage('');
             render();
         });

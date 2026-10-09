@@ -442,7 +442,28 @@ networks share (the same VLAN or name, overlapping subnets) is reported on **bot
 it; deleting is refused while a port still carries the network untagged, because silently moving that port to
 the default network would be a security change nobody asked for; ids are `net2`, `net3`... (lowest free).
 
-**Still to do:** the Local Networks and Ports pages, and the Overview card.
+**Pages** (2026-10-08):
+- **Local Networks** (`networks.js`): one card per network, the default one first, and an **Add network**
+  button. A card has the address and netmask, (for added networks) the name and VLAN ID, the ports that carry
+  it (plain chips untagged, dashed "tagged" chips), the DHCP server, and the two switches: **Allow internet
+  access** (off for a new network, with a note that devices will get an address but cannot reach the internet
+  until it is allowed; always on and disabled for the default network) and **Isolate from other networks**
+  (on for a new network). A new network starts with a suggested VLAN (the next free multiple of 10) and a
+  /24 (192.168.<vlan>.0) with a DHCP range, which the person can change. Each card saves on its own; errors
+  appear under the field; deleting takes two clicks (the button turns into "Click again to delete" for 4
+  seconds) and says why when refused.
+- **Ports** (`ports.js`): when there is more than the default network, a LAN port shows an **Untagged
+  network** choice and, under "Also carries, tagged", a checkbox per added network (the untagged one is
+  never offered as tagged). The networks are saved with the roles in one request.
+- **Overview, Local Networks card:** one block per network with its tags (VLAN, Internet or No internet,
+  Isolated, Draft), its ports, router address, how many leases fall inside its subnet and how much of its
+  DHCP range is leased.
+- Hardware needed to try it: the dev machine has two NICs, so a scratch build can add fake ports; the real
+  bridges and VLAN interfaces were checked in a namespace (see above) but not on a box with several ports.
+
+**What a person sees in the review:** one line per network added, removed or changed, one per LAN port
+whose networks changed, and the usual file and service list: adding a network restarts networking, the
+firewall and the DHCP server, flipping the Internet or isolation switch only reloads the firewall.
 
 ## 7b. Navigation (decided 2026-10-08)
 
