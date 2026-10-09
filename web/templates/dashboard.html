@@ -314,29 +314,6 @@
           </dl>
         </section>
 
-        <section class="traffic-interface-card inet-chart-card">
-          <div class="traffic-card-header">
-            <div class="traffic-card-meta">
-              <span class="traffic-badge wan">LATENCY</span>
-              <span id="inet-chart-note" class="form-hint">Round trip time to your upstream DNS server</span>
-            </div>
-            <div class="traffic-time-picker time-picker" id="inet-picker">
-              <button class="time-btn" data-range="5m">5m</button>
-              <button class="time-btn active" data-range="1h">1h</button>
-              <button class="time-btn" data-range="24h">24h</button>
-              <button class="time-btn" data-range="30d">30d</button>
-            </div>
-          </div>
-          <div class="traffic-chart-container">
-            <canvas id="inet-canvas" class="traffic-canvas" role="img" aria-label="Latency to the upstream DNS server over time"></canvas>
-          </div>
-          <div class="inet-legend">
-            <span><i class="inet-key inet-key--avg"></i>Average</span>
-            <span><i class="inet-key inet-key--band"></i>Best to worst</span>
-            <span><i class="inet-key inet-key--loss"></i>Lost packets</span>
-          </div>
-        </section>
-
         <div id="inet-message" class="form-message hidden" role="alert"></div>
 
         <section class="card" id="inet-card">
@@ -387,6 +364,29 @@
             <span id="inet-hint" class="form-hint"></span>
             <button type="button" id="inet-reset" class="cfg-btn cfg-btn--ghost" disabled>Reset</button>
             <button type="button" id="inet-save" class="cfg-btn cfg-btn--primary" disabled>Save to draft</button>
+          </div>
+        </section>
+
+        <section class="traffic-interface-card inet-chart-card">
+          <div class="traffic-card-header">
+            <div class="traffic-card-meta">
+              <span class="traffic-badge wan">LATENCY</span>
+              <span id="inet-chart-note" class="form-hint">Round trip time to your upstream DNS server</span>
+            </div>
+            <div class="traffic-time-picker time-picker" id="inet-picker">
+              <button class="time-btn" data-range="5m">5m</button>
+              <button class="time-btn active" data-range="1h">1h</button>
+              <button class="time-btn" data-range="24h">24h</button>
+              <button class="time-btn" data-range="30d">30d</button>
+            </div>
+          </div>
+          <div class="traffic-chart-container">
+            <canvas id="inet-canvas" class="traffic-canvas" role="img" aria-label="Latency to the upstream DNS server over time"></canvas>
+          </div>
+          <div class="inet-legend">
+            <span><i class="inet-key inet-key--avg"></i>Average</span>
+            <span><i class="inet-key inet-key--band"></i>Best to worst</span>
+            <span><i class="inet-key inet-key--loss"></i>Lost packets</span>
           </div>
         </section>
       </div>

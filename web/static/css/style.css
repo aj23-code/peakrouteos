@@ -1455,7 +1455,7 @@ height: 260px;
 .inet-live dd { font-size: 0.95rem; font-weight: 500; }
 .inet-bad { color: var(--error-color); }
 
-.inet-chart-card { margin-bottom: 1rem; }
+.inet-chart-card { margin-top: 1rem; }
 .inet-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; margin-top: 0.6rem; font-size: 0.8rem; color: var(--text-muted); }
 .inet-key { display: inline-block; width: 1.4rem; height: 0.55rem; margin-right: 0.4rem; border-radius: 2px; vertical-align: middle; }
 .inet-key--avg { background: #38bdf8; height: 3px; }
