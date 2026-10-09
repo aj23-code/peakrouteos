@@ -90,6 +90,55 @@ window.InternetModule = (function () {
         else gwEl.textContent = 'Not measured';
         gwEl.title = [gw.target ? `Gateway ${gw.target}` : '', gw.problem || ''].filter(Boolean).join(' – ');
         $('inet-gw-key').classList.toggle('hidden', !(history.gateway.timestamps || []).length);
+        renderAvailability();
+    }
+
+    function fmtPct(v) {
+        if (v === null || v === undefined) return '\u2013';
+        // 99.996 must not read as 100 while minutes were lost
+        const shown = v < 100 && v > 99.99 ? 99.99 : v;
+        return (v === 100 ? '100' : shown.toFixed(shown >= 99 ? 2 : 1)) + '%';
+    }
+
+    function fmtDuration(seconds) {
+        const m = Math.round(seconds / 60);
+        if (m < 60) return m + (m === 1 ? ' minute' : ' minutes');
+        const h = Math.floor(m / 60), rest = m % 60;
+        if (h >= 48) return Math.floor(h / 24) + ' d ' + (h % 24) + ' h';
+        return h + ' h' + (rest ? ' ' + rest + ' min' : '');
+    }
+
+    function renderAvailability() {
+        const a = history.availability || {};
+        $('inet-up24').textContent = fmtPct(a.uptime_24h);
+        $('inet-up30').textContent = fmtPct(a.uptime_30d);
+        $('inet-up24').classList.toggle('inet-bad', a.uptime_24h !== null && a.uptime_24h !== undefined && a.uptime_24h < 99);
+
+        const outages = a.outages || [];
+        const empty = $('inet-outages-empty');
+        const wrap = $('inet-outages-table-wrap');
+        const more = $('inet-outages-more');
+        if (!outages.length) {
+            empty.textContent = a.uptime_30d === null || a.uptime_30d === undefined
+                ? 'Collecting data\u2026' : 'No outages recorded in the last 30 days.';
+            empty.classList.remove('hidden');
+            wrap.classList.add('hidden');
+            more.classList.add('hidden');
+            return;
+        }
+        empty.classList.add('hidden');
+        wrap.classList.remove('hidden');
+        $('inet-outages-body').innerHTML = outages.map(o => {
+            const when = new Date(o.start).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+            return `<tr><td>${escapeHtml(when)}</td><td>${escapeHtml(fmtDuration(o.seconds))}</td>` +
+                `<td>${o.ongoing ? '<span class="tag tag-warn">Ongoing</span>' : ''}</td></tr>`;
+        }).join('');
+        if (a.outage_count > outages.length) {
+            more.textContent = `Showing the newest ${outages.length} of ${a.outage_count}.`;
+            more.classList.remove('hidden');
+        } else {
+            more.classList.add('hidden');
+        }
     }
 
     function niceCeil(v) {

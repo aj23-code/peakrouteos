@@ -36,6 +36,7 @@ type Prober struct {
 	Every   time.Duration         // between probes
 	Timeout time.Duration         // per probe
 
+	avail  availabilityCache
 	mu     sync.Mutex
 	dns    seriesState
 	gw     seriesState

@@ -21,6 +21,8 @@ type historyResponse struct {
 	Status  Status     `json:"status"`
 	DNS     seriesJSON `json:"dns"`
 	Gateway seriesJSON `json:"gateway"`
+	// How reachable the internet has been over the last day and month, whatever range is charted
+	Availability Availability `json:"availability"`
 }
 
 func seriesOf(points []Point, sum Summary) seriesJSON {
@@ -66,6 +68,13 @@ func (p *Prober) HandleHistory(w http.ResponseWriter, r *http.Request) {
 			resp.Gateway = seriesOf(points, summary)
 		}
 	}
+
+	avail, err := p.availability(now)
+	if err != nil {
+		http.Error(w, "could not read the history", http.StatusInternalServerError)
+		return
+	}
+	resp.Availability = avail
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")

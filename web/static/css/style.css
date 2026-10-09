@@ -1471,3 +1471,5 @@ height: 260px;
 #inet-static-fields { margin-top: 1rem; }
 .inet-key--gw { background: #34d399; height: 3px; }
 .inet-diagnosis { margin-top: 0.4rem; font-size: 0.85rem; color: var(--accent-amber); max-width: 46rem; }
+.inet-outages { margin-top: 1rem; }
+.inet-outages .table-container { margin-top: 0.75rem; }

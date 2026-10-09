@@ -313,6 +313,8 @@
             <div><dt>Best / worst</dt><dd id="inet-range">&ndash;</dd></div>
             <div><dt>Packet loss</dt><dd id="inet-loss">&ndash;</dd></div>
             <div><dt>Gateway now</dt><dd id="inet-gw">&ndash;</dd></div>
+            <div><dt>Uptime 24 h</dt><dd id="inet-up24">&ndash;</dd></div>
+            <div><dt>Uptime 30 d</dt><dd id="inet-up30">&ndash;</dd></div>
           </dl>
         </section>
 
@@ -391,6 +393,21 @@
             <span><i class="inet-key inet-key--band"></i>Best to worst</span>
             <span><i class="inet-key inet-key--loss"></i>Lost packets</span>
           </div>
+        </section>
+
+        <section class="card inet-outages" id="inet-outages-card">
+          <div class="net-card-head">
+            <h2>Outages</h2>
+            <span class="form-hint">When the upstream DNS server could not be reached, last 30 days</span>
+          </div>
+          <p id="inet-outages-empty" class="form-hint">Collecting data&hellip;</p>
+          <div class="table-container hidden" id="inet-outages-table-wrap">
+            <table class="data-table">
+              <thead><tr><th>Started</th><th>Length</th><th></th></tr></thead>
+              <tbody id="inet-outages-body"></tbody>
+            </table>
+          </div>
+          <p id="inet-outages-more" class="form-hint hidden"></p>
         </section>
       </div>
 

@@ -306,6 +306,15 @@ the first IPv4 address, the default route in `/proc/net/route`, and the resolver
   whether or not it has been written yet. Average latency is weighted by answered probes, so lost probes
   do not drag it down; a bucket where everything was lost has no latency (null) and shows as a red column.
   Loss under 1 % in a bucket is not drawn, so a stray lost packet does not paint the whole 30-day chart.
+- **Uptime and outages** (`availability.go`), from the DNS series' per-minute rows (RAM for the newest,
+  database for the rest, RAM wins for a minute that is in both). A minute is *down* when every probe in
+  it was lost and at least 3 were sent (the same 3 as the offline rule); *up* if anything answered;
+  minutes with fewer than 3 probes (daemon starting or stopping) or no data at all say nothing and are
+  not counted, so uptime is a share of *observed* minutes and a gap in the data does not count as
+  downtime. An outage is a run of consecutive down minutes (a missing minute splits it); `ongoing` only
+  for the last one, and only if it reaches the present. The gateway series never counts: a modem that
+  ignores pings must not make outages. The result is cached for 20 s because the page asks every few
+  seconds and a 30-day scan is wasted work.
 - **Chart** (`internet.js`): canvas, DNS average line with a best-to-worst band, a thinner gateway line,
   red columns for DNS loss, gaps
   where no probes ran, hover tooltip, drawn at device pixel ratio. It refreshes every 5 to 60 s depending
@@ -399,7 +408,7 @@ every future page works on every screen automatically.
 | `GET /api/v1/system/traffic?iface=&range=` | session | history; ranges `1h` (also used for 5m), `24h`, `30d` |
 | `GET /api/v1/uplinks`, `GET /api/v1/uplinks/{id}` | session | the internet connection (today one, id `wan`): `port`, `mode` (dhcp or static), `ip`, `netmask`, `gateway`, `dns`, `pending`, and `live` (what is in effect: `up`, `address`, `gateway`, `dns`) |
 | `PUT /api/v1/uplinks/{id}` | session + CSRF | `{"mode": "dhcp"}` or `{"mode": "static", "ip", "netmask", "gateway", "dns": []}`; stages a draft. Switching to DHCP clears the static values. A static address also requires a gateway and one DNS server |
-| `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (the DNS series' `state`, `target`, `source`, `rtt_ms`, plus `method`, `gateway` (the same fields for the gateway) and a `diagnosis` sentence), and two series, `dns` and `gateway`, each with `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
+| `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (the DNS series' `state`, `target`, `source`, `rtt_ms`, plus `method`, `gateway` (the same fields for the gateway) and a `diagnosis` sentence), `availability` (`uptime_24h`, `uptime_30d` in percent or null, `outage_count`, `outages`: newest first, at most 20, each `start` ms, `seconds`, `ongoing`; independent of the charted range), and two series, `dns` and `gateway`, each with `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
 | `GET /api/v1/system/logs?limit=` | session | systemd journal |
 | `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage |
 | `POST /api/v1/cert/upload` | session + `X-CSRF-Token` | multipart `cert` and `key` |
@@ -444,6 +453,7 @@ every future page works on every screen automatically.
 | 2026-10-08 | Ports and Networks pages replace the read-only Devices table; Save writes a draft only, never the system | one pipeline for every change; the banner is the single place to commit |
 | 2026-10-08 | WAN health pings the upstream DNS server (ICMP, DNS query only as a fallback), per-minute history in its own SQLite file | what Meraki's appliance status shows; the resolver is what clients actually depend on; same flash-friendly storage as traffic |
 | 2026-10-08 | The gateway is measured as a second series, only with real pings | tells ISP problems from local ones; a DNS query to a gateway is not a valid test |
+| 2026-10-08 | Uptime is a share of observed minutes, and an outage is whole minutes of total loss on the DNS series | missing data (daemon down) must not read as downtime, and a gateway that ignores pings must not read as an outage |
 | 2026-10-08 | Static WAN needs a gateway and a DNS server in the editor, though the shared validation allows them empty | an address alone cannot reach the internet, and the health chart needs a DNS server to measure |
 | 2026-10-06 | Success messages show ~8 s; failures and reverts stay until dismissed | problems must not be missed, good news should not nag |
 
