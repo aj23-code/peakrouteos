@@ -155,11 +155,11 @@ func New(o Options) *Service {
 
 func (s *Service) fs() translator.FileSystem { return s.applier.FS }
 
-// needsConfirm reports whether a plan can cut the admin off: changing the network or the firewall.
-// A DHCP-only change restarts dnsmasq and cannot, so it needs no confirmation.
+// needsConfirm reports whether a plan can cut the admin off: changing the network, the routes or
+// the firewall. A DHCP-only change restarts dnsmasq and cannot, so it needs no confirmation.
 func needsConfirm(p translator.Plan) bool {
 	for _, a := range p.Actions {
-		if a.Service == translator.SvcNetworking || a.Service == translator.SvcNftables {
+		if a.Service == translator.SvcNetworking || a.Service == translator.SvcNftables || a.Service == translator.SvcRoutes {
 			return true
 		}
 	}

@@ -1,6 +1,9 @@
 package config
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Change is one user-visible difference between two network configurations.
 type Change struct {
@@ -86,6 +89,59 @@ func DiffNetwork(active, candidate NetworkConfig) []Change {
 		before, after := s.value(active), s.value(candidate)
 		if before != after {
 			changes = append(changes, Change{Field: s.field, Label: s.label, Old: before, New: after})
+		}
+	}
+	return append(changes, diffRoutes(active.Routes, candidate.Routes)...)
+}
+
+// routeText describes what a route does, for the review screen.
+func routeText(r Route) string {
+	out := "via " + text(r.Gateway)
+	if r.Metric > 0 {
+		out += fmt.Sprintf(", metric %d", r.Metric)
+	}
+	if r.Disabled {
+		out += " (turned off)"
+	}
+	if n := strings.TrimSpace(r.Name); n != "" {
+		out += " [" + n + "]"
+	}
+	return out
+}
+
+// diffRoutes reports one change per route that was added, removed or changed. A route is the
+// same route while its destination and metric stay the same; the rest of it can change.
+func diffRoutes(active, candidate []Route) []Change {
+	key := func(r Route) string { return fmt.Sprintf("%s|%d", strings.TrimSpace(r.Destination), r.Metric) }
+	label := func(r Route) string {
+		l := "Static route to " + text(r.Destination)
+		if r.Metric > 0 {
+			l += fmt.Sprintf(" (metric %d)", r.Metric)
+		}
+		return l
+	}
+
+	before := map[string]Route{}
+	for _, r := range active {
+		before[key(r)] = r
+	}
+
+	var changes []Change
+	seen := map[string]bool{}
+	for _, r := range candidate {
+		k := key(r)
+		seen[k] = true
+		old, existed := before[k]
+		switch {
+		case !existed:
+			changes = append(changes, Change{Field: "routes", Label: label(r), Old: valueNone, New: routeText(r)})
+		case old != r:
+			changes = append(changes, Change{Field: "routes", Label: label(r), Old: routeText(old), New: routeText(r)})
+		}
+	}
+	for _, r := range active {
+		if !seen[key(r)] {
+			changes = append(changes, Change{Field: "routes", Label: label(r), Old: routeText(r), New: "(removed)"})
 		}
 	}
 	return changes

@@ -235,8 +235,102 @@ func (c NetworkConfig) Validate() error {
 		}
 	}
 
+	// --- Static routes ---
+	c.validateRoutes(add, lanPrefix, lanOK, lanIP, wanPrefix, haveWanPrefix)
+
 	if len(errs) == 0 {
 		return nil
 	}
 	return errs
+}
+
+const (
+	maxRoutes      = 64
+	maxRouteMetric = 9999
+	maxRouteName   = 40
+)
+
+// Letters, digits, spaces and a little punctuation. Names are only shown back to people, but
+// keeping them plain means they can never matter anywhere else.
+var routeNamePattern = regexp.MustCompile(`^[A-Za-z0-9 ._,:()/+-]*$`)
+
+// routeKey identifies a route: the same network may be listed once per metric.
+func routeKey(p netip.Prefix, metric int) string { return fmt.Sprintf("%s|%d", p, metric) }
+
+// validateRoutes checks every route (disabled ones too, so switching one on never surprises).
+// Errors are reported on "routes[i].field", or "routes" for the list as a whole.
+func (c NetworkConfig) validateRoutes(add func(field, format string, args ...any),
+	lan netip.Prefix, lanOK bool, lanIP netip.Addr, wan netip.Prefix, haveWan bool) {
+
+	if len(c.Routes) > maxRoutes {
+		add("routes", "at most %d static routes are supported", maxRoutes)
+	}
+
+	seen := map[string]bool{}
+	for i, r := range c.Routes {
+		field := func(name string) string { return fmt.Sprintf("routes[%d].%s", i, name) }
+
+		if len(r.Name) > maxRouteName || !routeNamePattern.MatchString(r.Name) {
+			add(field("name"), "use up to %d letters, digits or . , : ( ) / + - characters", maxRouteName)
+		}
+		if r.Metric < 0 || r.Metric > maxRouteMetric {
+			add(field("metric"), "must be between 0 and %d (0 uses the default)", maxRouteMetric)
+		}
+
+		// destination
+		dest, destErr := netip.ParsePrefix(strings.TrimSpace(r.Destination))
+		destOK := destErr == nil && dest.Addr().Is4() && dest.Addr().Zone() == ""
+		switch {
+		case !destOK:
+			add(field("destination"), "must be a network such as 10.20.0.0/16")
+		case dest.Bits() == 0:
+			add(field("destination"), "the default route (0.0.0.0/0) comes from the internet connection, not from a static route")
+		case dest != dest.Masked():
+			add(field("destination"), "has host bits set; the network is %s", dest.Masked())
+			destOK = false
+		default:
+			switch {
+			case lanOK && lan.Contains(dest.Addr()) && dest.Bits() >= lan.Bits():
+				add(field("destination"), "is already directly connected to the LAN (%s)", lan)
+			case haveWan && wan.Contains(dest.Addr()) && dest.Bits() >= wan.Bits():
+				add(field("destination"), "is already directly connected to the WAN (%s)", wan)
+			}
+		}
+
+		// gateway
+		gw, gwOK := parseIPv4(r.Gateway)
+		switch {
+		case !gwOK:
+			add(field("gateway"), "must be an IPv4 address such as 192.168.1.2")
+		case lanOK && gw == lanIP, c.WanIP != "" && r.Gateway == c.WanIP:
+			add(field("gateway"), "is this router's own address")
+		case lanOK && lan.Contains(gw):
+			if !isHostAddr(lan, gw) {
+				add(field("gateway"), "cannot be the network or broadcast address of the LAN")
+			}
+		case haveWan && wan.Contains(gw):
+			if !isHostAddr(wan, gw) {
+				add(field("gateway"), "cannot be the network or broadcast address of the WAN")
+			}
+		case c.WanMode == "" || strings.EqualFold(c.WanMode, "dhcp"):
+			// A DHCP uplink's subnet is only known once it is up; a wrong gateway is caught when applied
+		case lanOK || haveWan:
+			var where []string
+			if lanOK {
+				where = append(where, "the LAN subnet ("+lan.String()+")")
+			}
+			if haveWan {
+				where = append(where, "the WAN subnet ("+wan.String()+")")
+			}
+			add(field("gateway"), "must be directly reachable: inside %s", strings.Join(where, " or "))
+		}
+
+		if destOK {
+			key := routeKey(dest, r.Metric)
+			if seen[key] {
+				add(field("destination"), "is listed more than once with the same metric")
+			}
+			seen[key] = true
+		}
+	}
 }

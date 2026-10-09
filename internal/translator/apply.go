@@ -163,6 +163,7 @@ var preChecks = map[string]command{
 	SvcNetworking: {"ifquery", []string{"--list", "--all"}},
 	SvcNftables:   {"nft", []string{"-c", "-f", PathNftables}},
 	SvcDnsmasq:    {"dnsmasq", []string{"--test"}},
+	SvcRoutes:     routesCheckCommand(PathRoutes),
 }
 
 // serviceCommands carry out an action.
@@ -171,6 +172,19 @@ var serviceCommands = map[string]command{
 	SvcNetworking: {"systemctl", []string{"restart", "networking"}},
 	SvcNftables:   {"systemctl", []string{"reload", "nftables"}},
 	SvcDnsmasq:    {"systemctl", []string{"restart", "dnsmasq"}},
+	SvcRoutes:     routesApplyCommand(PathRoutes),
+}
+
+// routesCheckCommand syntax-checks the routes script. The script may be about to be removed (the
+// last route went away), in which case there is nothing to check.
+func routesCheckCommand(script string) command {
+	return command{"sh", []string{"-c", "[ ! -f " + script + " ] || sh -n " + script}}
+}
+
+// routesApplyCommand runs the routes script strictly, so a route the kernel refuses fails the
+// commit. With the script gone (the last route was removed) the routes it added are flushed instead.
+func routesApplyCommand(script string) command {
+	return command{"sh", []string{"-c", "if [ -f " + script + " ]; then sh " + script + " strict; else ip route flush proto " + RouteProto + "; fi"}}
 }
 
 // Apply writes the plan's files, validates them, then restarts the affected services. Any

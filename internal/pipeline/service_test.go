@@ -347,6 +347,8 @@ func TestOnlyNetworkingAndFirewallChangesNeedConfirmation(t *testing.T) {
 		"nftables":          true,
 		"nftables,dnsmasq":  true,
 		"sysctl,networking": true,
+		"routes":            true, // a wrong route can cut off an admin who comes from another network
+		"routes,dnsmasq":    true,
 		"":                  false,
 	} {
 		var list []string

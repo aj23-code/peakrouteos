@@ -54,10 +54,11 @@ type Plan struct {
 func (p Plan) Empty() bool { return len(p.Files) == 0 && len(p.Actions) == 0 }
 
 var (
-	serviceOrder = []string{SvcSysctl, SvcNetworking, SvcNftables, SvcDnsmasq}
+	serviceOrder = []string{SvcSysctl, SvcNetworking, SvcRoutes, SvcNftables, SvcDnsmasq}
 	serviceVerb  = map[string]string{
 		SvcSysctl:     "apply",
 		SvcNetworking: "restart",
+		SvcRoutes:     "apply",
 		SvcNftables:   "reload",
 		SvcDnsmasq:    "restart",
 	}

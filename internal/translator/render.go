@@ -20,12 +20,21 @@ const (
 	PathNftables    = "/etc/nftables.conf"
 	PathDnsmasqDHCP = "/etc/dnsmasq.d/peakroute-dhcp.conf"
 	PathDnsmasqDNS  = "/etc/dnsmasq.d/peakroute-upstream.conf"
+
+	// Static routes. ifupdown runs every script in if-up.d whenever an interface comes up, so
+	// the routes come back after a reboot or a networking restart without touching /etc/network/interfaces.
+	PathRoutes = "/etc/network/if-up.d/peakroute-routes"
 )
+
+// RouteProto is the routing protocol number the translator tags its routes with, so it can
+// remove exactly its own routes and never anything the kernel or a DHCP client added.
+const RouteProto = "77"
 
 // Services that pick up those files, in the order changes must be applied.
 const (
 	SvcSysctl     = "sysctl"
 	SvcNetworking = "networking"
+	SvcRoutes     = "routes"
 	SvcNftables   = "nftables"
 	SvcDnsmasq    = "dnsmasq"
 )
@@ -102,9 +111,19 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	lan := LanTarget(cfg)
 	var d Desired
 
+	// Static routes: a script that is only present while there is something to apply
+	routesArtifact := Artifact{Path: PathRoutes, Remove: true, Service: SvcRoutes}
+	if script, any := renderRoutes(cfg.Routes); any {
+		if err := ensureSafeRoutes(cfg.Routes); err != nil {
+			return Desired{}, err
+		}
+		routesArtifact = Artifact{Path: PathRoutes, Content: []byte(script), Mode: 0755, Service: SvcRoutes}
+	}
+
 	d.Artifacts = append(d.Artifacts,
 		Artifact{Path: PathSysctl, Content: []byte("net.ipv4.ip_forward=1\n"), Mode: 0644, Service: SvcSysctl},
 		Artifact{Path: PathInterfaces, Content: []byte(renderInterfaces(cfg, lan)), Mode: 0644, Service: SvcNetworking},
+		routesArtifact,
 		// Debian ships nftables.conf as an executable script (it has a shebang)
 		Artifact{Path: PathNftables, Content: []byte(renderNftables(cfg, lan)), Mode: 0755, Service: SvcNftables},
 	)
@@ -132,6 +151,59 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	}
 
 	return d, nil
+}
+
+var (
+	routeDestPattern = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$`)
+	routeAddrPattern = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,3}){3}$`)
+)
+
+// ensureSafeRoutes is the render-time twin of ensureSafe for routes, whose destinations contain
+// a slash.
+func ensureSafeRoutes(routes []config.Route) error {
+	for _, r := range routes {
+		if r.Disabled {
+			continue
+		}
+		if !routeDestPattern.MatchString(r.Destination) || !routeAddrPattern.MatchString(r.Gateway) || r.Metric < 0 || r.Metric > 9999 {
+			return fmt.Errorf("refusing to render unsafe route %q via %q", r.Destination, r.Gateway)
+		}
+	}
+	return nil
+}
+
+// renderRoutes writes the script that applies the enabled routes. It is run by ifupdown whenever
+// an interface comes up (it then never fails, so it cannot hold an interface back) and by the
+// commit step with "strict", where a route the kernel refuses must fail the commit.
+func renderRoutes(routes []config.Route) (string, bool) {
+	var lines []string
+	for _, r := range routes {
+		if r.Disabled {
+			continue
+		}
+		line := fmt.Sprintf("ip route replace %s via %s", r.Destination, r.Gateway)
+		if r.Metric > 0 {
+			line += fmt.Sprintf(" metric %d", r.Metric)
+		}
+		lines = append(lines, line+" proto "+RouteProto+" || rc=1")
+	}
+	if len(lines) == 0 {
+		return "", false
+	}
+
+	var b strings.Builder
+	b.WriteString("#!/bin/sh\n")
+	b.WriteString("# Static routes managed by PeakRoute OS. Do not edit: this file is rewritten on every commit.\n")
+	b.WriteString("# ifupdown runs it whenever an interface comes up; the commit step runs it with \"strict\".\n")
+	b.WriteString("PATH=/usr/sbin:/sbin:/usr/bin:/bin\n")
+	b.WriteString("rc=0\n")
+	fmt.Fprintf(&b, "ip route flush proto %s 2>/dev/null\n", RouteProto)
+	for _, l := range lines {
+		b.WriteString(l + "\n")
+	}
+	b.WriteString("[ \"$1\" = strict ] && exit \"$rc\"\n")
+	b.WriteString("exit 0\n")
+	return b.String(), true
 }
 
 func renderInterfaces(cfg config.NetworkConfig, lan string) string {

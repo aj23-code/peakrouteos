@@ -325,6 +325,44 @@ the first IPv4 address, the default route in `/proc/net/route`, and the resolver
   where no probes ran, hover tooltip, drawn at device pixel ratio. It refreshes every 5 to 60 s depending
   on the range.
 
+## 7e. Static routes (built 2026-10-08)
+
+**Model.** `NetworkConfig.Routes` is a list of `{name, destination, gateway, metric, disabled}` (JSON keys
+as written; `disabled` and `metric` are omitted when unset, so a route is enabled by default). Only IPv4,
+only "via a gateway" routes. It is part of `network.json`, so it goes through the same draft, review,
+commit and confirm steps as everything else.
+
+**Validation** (`validateRoutes`, errors on `routes[i].destination|gateway|metric|name`, or `routes` for
+the count): the destination must be a network in CIDR form with no host bits set (the error says what the
+network is); `/0` is refused because the default route comes from the internet connection; a network that
+is already directly connected (inside the LAN or the static WAN subnet) is refused; the gateway must be a
+host address of the LAN or the static WAN subnet, not the router's own address (with a DHCP uplink the WAN
+subnet is unknown until it is up, so any gateway is accepted and a wrong one is caught when the route is
+applied); the same destination may be listed once per metric; metric 0 to 9999 (0 = default); names are
+at most 40 plain characters; at most 64 routes. Turned-off routes are validated too.
+
+**How it reaches the system.** The translator writes one script, `/etc/network/if-up.d/peakroute-routes`
+(mode 0755, service `routes`): `ip route flush proto 77`, then one `ip route replace ... proto 77` per
+enabled route. Protocol 77 tags the translator's own routes, so it removes exactly those and never a
+route the kernel or the DHCP client added. Why a hook script and not lines in `/etc/network/interfaces`:
+changing a route then needs no networking restart (no interruption, no DHCP restart), and ifupdown runs
+every `if-up.d` script when an interface comes up, so the routes return after a reboot or a networking
+restart. The script exits 0 when ifupdown runs it (a route that cannot be added yet must not hold an
+interface back) and takes `strict` from the commit step, where a route the kernel refuses fails the
+commit and the whole change is rolled back. When the last route is removed the file is removed too, and
+the apply step flushes protocol 77 instead (`routesApplyCommand`); the check step skips a missing file.
+A route's name is never written to any file, so a rename alone changes nothing on the system.
+- **Plan and confirm:** the `routes` service sits after `networking` in the order and is an `apply`.
+  A routes-only commit shows just that action, but it **does** need the 60 second confirmation: a wrong
+  route can cut off an admin who reaches the router from another network.
+- **Review dialog:** one line per route added, removed or changed ("Static route to 10.20.0.0/16 (metric
+  100): (none) to via 192.168.1.50, metric 100"). A route is the same route while destination and metric stay.
+- **What the image provides** (`buildISO.sh`): `ifupdown` (the hooks and `networking.service`),
+  `iproute2` (`ip`) and dash. The WAN DHCP client is `udhcpc`; there is no systemd-resolved or
+  NetworkManager, so `/etc/resolv.conf` holds the provider's resolvers (what the WAN health check reads).
+- **Tested** with the real shell against temporary files (the check and apply commands, and the script
+  being lenient for ifupdown and strict for the commit), plus 25 mutants of the validation, diff, render and apply code.
+
 ## 7b. Navigation (decided 2026-10-08)
 
 An OPNsense-style sidebar (grouped by function, quick search, clear two-level navigation) holding

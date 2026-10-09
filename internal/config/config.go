@@ -82,6 +82,16 @@ type DHCPConfig struct {
 	LeaseTime  string `json:"lease_time,omitempty"` // dnsmasq format, e.g. "12h", "30m", "1d"
 }
 
+// Route is a static IPv4 route: traffic for Destination is sent to Gateway. It lives next to the
+// rest of the network settings and goes through the same draft, review and commit steps.
+type Route struct {
+	Name        string `json:"name,omitempty"` // a label for people; never written to a system file
+	Destination string `json:"destination"`    // a network in CIDR form, e.g. "10.20.0.0/16"
+	Gateway     string `json:"gateway"`        // the next hop, reachable on the LAN or the WAN
+	Metric      int    `json:"metric,omitempty"`
+	Disabled    bool   `json:"disabled,omitempty"` // kept in the file but not applied
+}
+
 type NetworkConfig struct {
 	WanInterface    string                `json:"wan_interface,omitempty"`
 	WanMode         string                `json:"wan_mode,omitempty"` // "dhcp" or "static"
@@ -93,6 +103,7 @@ type NetworkConfig struct {
 	LanIP           string                `json:"lan_ip,omitempty"`
 	LanSubnet       string                `json:"lan_subnet,omitempty"`
 	DHCP            *DHCPConfig           `json:"dhcp,omitempty"`
+	Routes          []Route               `json:"routes,omitempty"`
 	Interfaces      []SystemInterface     `json:"interfaces,omitempty"`
 	ManagedSwitches []ManagedSwitchConfig `json:"managed_switches,omitempty"`
 }
@@ -177,6 +188,7 @@ func (c NetworkConfig) clone() NetworkConfig {
 	}
 	c.WanDNS = append([]string(nil), c.WanDNS...)
 	c.LanInterfaces = append([]string(nil), c.LanInterfaces...)
+	c.Routes = append([]Route(nil), c.Routes...)
 	c.Interfaces = append([]SystemInterface(nil), c.Interfaces...)
 
 	if len(c.ManagedSwitches) > 0 {

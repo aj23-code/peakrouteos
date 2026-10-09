@@ -13,6 +13,7 @@ window.ConfigBanner = (function () {
     const SERVICE_TEXT = {
         sysctl: 'Apply kernel settings (IP forwarding)',
         networking: 'Restart networking (a brief interruption)',
+        routes: 'Apply the static routes',
         nftables: 'Reload the firewall rules',
         dnsmasq: 'Restart the DHCP and DNS server',
     };
