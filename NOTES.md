@@ -443,8 +443,10 @@ it; deleting is refused while a port still carries the network untagged, because
 the default network would be a security change nobody asked for; ids are `net2`, `net3`... (lowest free).
 
 **Pages** (2026-10-08):
-- **Local Networks** (`networks.js`): one card per network, the default one first, and an **Add network**
-  button. A card has the address and netmask, (for added networks) the name and VLAN ID, the ports that carry
+- **Local Networks** (`networks.js`): **one network at a time**, chosen from a dropdown at the top (the default
+  network first, each added one as `Name (VLAN n)`, with a bullet when it has a draft or unsaved edits), plus an
+  **Add network** button; edits in a network that is not on show are kept in memory while you look at
+  another. The card for the chosen network has the address and netmask, (for added networks) the name and VLAN ID, the ports that carry
   it (plain chips untagged, dashed "tagged" chips), the DHCP server, and the two switches: **Allow internet
   access** (off for a new network, with a note that devices will get an address but cannot reach the internet
   until it is allowed; always on and disabled for the default network) and **Isolate from other networks**

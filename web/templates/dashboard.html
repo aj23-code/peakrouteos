@@ -516,7 +516,11 @@
             <h1>Local Networks</h1>
             <p class="subtitle">Each network has its own address, DHCP server and rules about what it can reach. Changes are saved as a draft until you commit them.</p>
           </div>
-          <button type="button" id="net-add" class="cfg-btn">Add network</button>
+          <div class="net-toolbar">
+            <label class="net-picker"><span class="form-hint">Network</span>
+              <select id="net-select" class="role-select" aria-label="Choose a network"></select></label>
+            <button type="button" id="net-add" class="cfg-btn">Add network</button>
+          </div>
         </header>
 
         <div id="net-message" class="form-message hidden" role="alert"></div>

@@ -1536,3 +1536,13 @@ height: 260px;
 .ov-networks { display: flex; flex-direction: column; gap: 1rem; }
 .ov-row-title .tag { margin-left: 0; }
 .ov-networks .ov-row:first-child { padding-top: 0; border-top: 0; }
+
+.net-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.6rem 0.8rem; }
+.net-picker { display: flex; flex-direction: column; gap: 0.2rem; }
+.net-picker select { min-width: 14rem; }
+@media (max-width: 520px) {
+    .net-toolbar { width: 100%; }
+    .net-picker { flex: 1 1 100%; }
+    .net-picker select { width: 100%; }
+    .net-toolbar .cfg-btn { flex: 1; min-height: 44px; }
+}

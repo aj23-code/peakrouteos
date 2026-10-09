@@ -4,6 +4,7 @@
 
 window.NetworksModule = (function () {
     let cards = [];          // { key, isNew, server, form, errors, message, confirmDelete }
+    let selected = 'lan';    // the key of the card on show: one network at a time
     let editable = true;
     let busy = false;
     let wired = false;
@@ -142,14 +143,35 @@ window.NetworksModule = (function () {
     }
 
     function renderCard(c) {
+        if (c.key !== selected) return;
         const el = document.querySelector(`#net-list .net-card[data-key="${c.key}"]`);
         if (!el) { renderAll(); return; }
         el.outerHTML = cardHtml(c);
+        renderPicker();
+    }
+
+    // What the picker says about a network: its VLAN, and whether it has a draft or unsaved edits
+    function optionLabel(c) {
+        if (c.isNew) return (c.form.name.trim() || 'New network') + ' (new)';
+        const n = c.server;
+        let label = n.default ? 'LAN' : `${n.name || n.id} (VLAN ${n.vlan})`;
+        if (isDirty(c)) label += ' \u2022 unsaved';
+        else if (n.pending) label += ' \u2022 draft';
+        return label;
+    }
+
+    function renderPicker() {
+        const sel = $('net-select');
+        if (!cards.some(c => c.key === selected)) selected = cards.length ? cards[0].key : 'lan';
+        sel.innerHTML = cards.map(c => `<option value="${escapeHtml(c.key)}"${c.key === selected ? ' selected' : ''}>${escapeHtml(optionLabel(c))}</option>`).join('');
+        $('net-add').disabled = !editable || busy || cards.some(c => c.isNew) || cards.length >= 17;
     }
 
     function renderAll() {
-        $('net-list').innerHTML = cards.map(cardHtml).join('');
-        $('net-add').disabled = !editable || busy || cards.some(c => c.isNew) || cards.length >= 17;
+        if (!cards.some(c => c.key === selected)) selected = cards.length ? cards[0].key : 'lan';
+        const c = cards.find(x => x.key === selected);
+        $('net-list').innerHTML = c ? cardHtml(c) : '';
+        renderPicker();
     }
 
     function showMessage(text, kind) {
@@ -169,7 +191,9 @@ window.NetworksModule = (function () {
         const fresh = (data.networks || []).map(n => ({ key: n.id, isNew: false, server: n, form: formOf(n), errors: {}, message: null, confirmDelete: false }));
         // a card being added stays where it was
         const adding = cards.filter(c => c.isNew);
-        cards = fresh.concat(adding);
+        // edits in a card that is not on show are kept, as long as the network still exists
+        const kept = new Map(cards.filter(c => !c.isNew).map(c => [c.key, c]));
+        cards = fresh.map(f => { const old = kept.get(f.key); return old && !old.justSaved && isDirty(old) ? Object.assign(f, { form: old.form }) : f; }).concat(adding);
         renderAll();
     }
 
@@ -237,6 +261,11 @@ window.NetworksModule = (function () {
         }
 
         const wasNew = c.isNew;
+        if (wasNew) {
+            // show the network that was just added
+            try { selected = (await res.json()).id || selected; } catch (e) { selected = 'lan'; }
+        }
+        c.justSaved = true; // its form now matches what the server holds
         cards = cards.filter(x => x !== c || !wasNew); // the new card is replaced by the saved network
         showMessage(wasNew ? 'Network added to the draft. Review and commit it from the bar at the top when you are ready.'
             : 'Saved as a draft. Review and commit it from the bar at the top when you are ready.', 'ok');
@@ -265,6 +294,7 @@ window.NetworksModule = (function () {
             return;
         }
         showMessage('Network removed from the draft. Review and commit it from the bar at the top when you are ready.', 'ok');
+        selected = 'lan';
         await load();
         if (window.ConfigBanner) window.ConfigBanner.refresh();
     }
@@ -304,7 +334,7 @@ window.NetworksModule = (function () {
             if (btn.classList.contains('net-save')) save(c);
             else if (btn.classList.contains('net-delete')) remove(c);
             else if (btn.classList.contains('net-reset')) { c.form = formOf(c.server); c.errors = {}; c.message = null; renderCard(c); }
-            else if (btn.classList.contains('net-cancel')) { cards = cards.filter(x => x !== c); renderAll(); }
+            else if (btn.classList.contains('net-cancel')) { cards = cards.filter(x => x !== c); selected = 'lan'; renderAll(); }
         });
         list.addEventListener('keydown', (e) => {
             if (e.key !== 'Enter' || e.target.tagName !== 'INPUT' || e.target.type !== 'text') return;
@@ -319,9 +349,15 @@ window.NetworksModule = (function () {
                 key: 'new-' + newCount, isNew: true, server: null, errors: {}, message: null, confirmDelete: false,
                 form: { name: '', vlan: s.vlan, ip: s.ip, netmask: s.netmask, dhcpEnabled: true, start: s.start, end: s.end, lease: '12h', internet: false, isolated: true },
             });
+            selected = 'new-' + newCount;
             renderAll();
             const nameField = document.getElementById(`new-${newCount}-name`);
-            if (nameField) { nameField.focus(); nameField.scrollIntoView({ block: 'center' }); }
+            if (nameField) nameField.focus();
+        });
+
+        $('net-select').addEventListener('change', (e) => {
+            selected = e.target.value;
+            renderAll();
         });
     }
 
@@ -337,12 +373,15 @@ window.NetworksModule = (function () {
         if (state && editable) state.textContent = dirty && !c.isNew ? 'You have unsaved changes.' : '';
         const title = el.querySelector('.net-card-head h2');
         if (title && c.isNew) title.textContent = c.form.name.trim() || 'New network';
+        const opt = document.querySelector(`#net-select option[value="${c.key}"]`);
+        if (opt) opt.textContent = optionLabel(c);
     }
 
     function init() {
         wire();
         showMessage('');
         cards = [];
+        selected = 'lan';
         load();
         return () => {};
     }
