@@ -116,12 +116,35 @@
         <header class="dash-header">
           <div>
             <h1>Overview</h1>
-            <p class="subtitle" id="ov-subtitle">&nbsp;</p>
+            <p class="subtitle">Your router and network at a glance</p>
           </div>
           <div id="ov-badge" class="status-badge ov-badge--unknown">
             <span class="status-dot"></span> <span id="ov-badge-text">Checking internet&hellip;</span>
           </div>
         </header>
+
+        <!-- The device: who it is, how long it has been up, what it runs on -->
+        <section class="card ov-device">
+          <div class="ov-device-main">
+            <div class="ov-device-id">
+              <span class="metric-label">Device</span>
+              <strong id="hostname-val" class="ov-hostname">--</strong>
+              <div class="ov-tags">
+                <span class="ov-tag">PeakRoute <strong id="app-version-val">--</strong></span>
+                <span class="ov-tag" id="arch-val">--</span>
+                <span class="ov-tag" id="kernel-val">--</span>
+              </div>
+            </div>
+            <dl class="ov-device-stats">
+              <div><dt>Uptime</dt><dd id="uptime-val">0s</dd></div>
+              <div><dt>Load average</dt><dd id="load-avg-val">0.00, 0.00, 0.00</dd><dd class="ov-dim">1, 5 and 15 minutes</dd></div>
+            </dl>
+          </div>
+          <dl class="ov-device-more">
+            <div><dt>Processor</dt><dd id="cpu-model-val">--</dd></div>
+            <div><dt>DNS resolvers</dt><dd id="dns-servers-val">--</dd></div>
+          </dl>
+        </section>
 
         <!-- Internet and network at a glance -->
         <section class="ov-hero">
@@ -267,43 +290,6 @@
             </table>
           </div>
         </section>
-
-        <h2 class="ov-section-title">System details</h2>
-        <section class="card sys-info-bar">
-          <div class="sys-info-item">
-            <span class="metric-label">Hostname</span>
-            <strong id="hostname-val" class="metric-subtext">--</strong>
-          </div>
-          <div class="sys-info-item">
-            <span class="metric-label">PeakRoute Version</span>
-            <strong id="app-version-val" class="metric-subtext">--</strong>
-          </div>
-          <div class="sys-info-item">
-            <span class="metric-label">Architecture</span>
-            <strong id="arch-val" class="metric-subtext">--</strong>
-          </div>
-          <div class="sys-info-item">
-            <span class="metric-label">Kernel</span>
-            <strong id="kernel-val" class="metric-subtext">--</strong>
-          </div>
-          <div class="sys-info-item">
-            <span class="metric-label">CPU Model</span>
-            <strong id="cpu-model-val" class="metric-subtext">--</strong>
-          </div>
-          <div class="sys-info-item">
-            <span class="metric-label">Uptime</span>
-            <strong id="uptime-val" class="metric-subtext">0s</strong>
-          </div>
-          <div class="sys-info-item">
-            <span class="metric-label">Load Averages (1m, 5m, 15m)</span>
-            <strong id="load-avg-val" class="metric-subtext">0.00, 0.00, 0.00</strong>
-          </div>
-          <div class="sys-info-item">
-            <span class="metric-label">DNS Resolvers</span>
-            <strong id="dns-servers-val" class="metric-subtext">--</strong>
-          </div>
-        </section>
-
       </div>
 
       <!-- View: Interface Traffic - Sub-page View -->

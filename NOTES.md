@@ -377,11 +377,16 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 ### Overview page (redesigned 2026-10-08)
 
 Top to bottom: a header whose badge shows the real internet state (online, offline, checking, not set
-up) and whose subtitle is `hostname · up 3d 15m`; then **Internet** and **Network** cards side by side
-(one column on a narrow screen); then the system resource cards (CPU, memory, disk, firewall states),
-the Top Clients table, and last the system details (version, kernel, CPU model, load, DNS) that used to
-head the page. The old Network Interfaces table is gone: per-port counters live on Traffic, roles and
-link state on Ports.
+up); the **device card**; then **Internet** and **Network** cards side by side (one column on a narrow
+screen); then the system resource cards (CPU, memory, disk, firewall states) and the Top Clients table.
+The old Network Interfaces table is gone: per-port counters live on Traffic, roles and link state on
+Ports.
+- **Device card** (the former system-details bar, now at the top): the hostname large, with the PeakRoute
+  version, architecture and kernel as small tags; uptime and load average as the two figures on the right;
+  and the processor and DNS resolvers as a quiet second line. The element ids (`hostname-val`,
+  `app-version-val`, `uptime-val`, ...) are unchanged, so `telemetry.js` fills it as before.
+  Known wart: the DNS resolvers come from `/etc/resolv.conf`, so a machine with a local stub (or the
+  appliance, once dnsmasq is the resolver) shows 127.x.x.x rather than the upstream servers.
 - **Internet card:** state, latency, gateway latency, uptime 24 h, a one-hour sparkline (latency line,
   red columns for lost minutes, min to max under it) and the diagnosis sentence when there is one. It
   comes from the health endpoint every 10 s (`overview_cards.js`).
@@ -480,7 +485,7 @@ every future page works on every screen automatically.
 | 2026-10-08 | WAN health pings the upstream DNS server (ICMP, DNS query only as a fallback), per-minute history in its own SQLite file | what Meraki's appliance status shows; the resolver is what clients actually depend on; same flash-friendly storage as traffic |
 | 2026-10-08 | The gateway is measured as a second series, only with real pings | tells ISP problems from local ones; a DNS query to a gateway is not a valid test |
 | 2026-10-08 | Uptime is a share of observed minutes, and an outage is whole minutes of total loss on the DNS series | missing data (daemon down) must not read as downtime, and a gateway that ignores pings must not read as an outage |
-| 2026-10-08 | Overview leads with Internet and Network cards; the interfaces table and the system-details bar moved out of the way | the landing page should answer "is it working and what is connected" first |
+| 2026-10-08 | Overview: a device card first (hostname, version, uptime, load), then Internet and Network cards; the interfaces table is gone | the landing page should say what this box is, then whether it is working and what is connected |
 | 2026-10-08 | WAN usage reuses the stats and traffic endpoints instead of a new one | the data is already collected and served; one less thing to keep in step |
 | 2026-10-08 | Static WAN needs a gateway and a DNS server in the editor, though the shared validation allows them empty | an address alone cannot reach the internet, and the health chart needs a DNS server to measure |
 | 2026-10-06 | Success messages show ~8 s; failures and reverts stay until dismissed | problems must not be missed, good news should not nag |

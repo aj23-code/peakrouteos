@@ -27,10 +27,6 @@ window.OverviewCards = (function () {
     // ---------------------------------------------------------------- from telemetry.js
 
     function onStats(data) {
-        const host = data.hostname || '';
-        const up = data.uptime_seconds ? 'up ' + formatUptime(data.uptime_seconds) : '';
-        $('ov-subtitle').textContent = [host, up].filter(Boolean).join(' · ') || ' ';
-
         const wan = Object.entries(data.interfaces || {}).find(([, m]) => m.role === 'wan');
         $('ov-wan-down').textContent = wan ? formatRate(wan[1].rx_bytes_sec) : '–';
         $('ov-wan-up').textContent = wan ? formatRate(wan[1].tx_bytes_sec) : '–';
