@@ -400,9 +400,37 @@ files, the wizard and every golden test are untouched):
 - **Review dialog:** one line per network added, removed or changed (a rename is one change), one per LAN
   port whose networks changed, and one for the default network's isolation.
 
-**Planned, in order** (this section is updated as each lands): translator (a VLAN-aware bridge `br0`, one
-SVI per network, a dnsmasq range per network, per-network firewall rules), API (create, edit, delete
-networks; native/tagged on the Ports endpoint), the Local Networks and Ports pages, and the Overview card.
+**Translator** (`translator/networks.go`; with no extra networks every file is byte-identical to before):
+- **Interfaces:** one VLAN-aware bridge `br0` holds every LAN port (`vlan_filtering 1`). The default
+  network is VLAN 1, untagged, on `br0` itself; every other network is an interface `br0.<vlan>` with its
+  own address. A port's native network is `pvid untagged` (the bridge's default VLAN 1 is removed from it
+  when its native network is another one), its tagged networks are plain `bridge vlan add`. The bridge
+  itself joins every VLAN (`... self`) so the VLAN interfaces work. The bridge is built by `pre-up`/`post-up`
+  lines, see below. With extra networks even a single LAN port gets the bridge (`LanTarget` is `br0`).
+- **DHCP and DNS:** one dnsmasq file lists every network's interface (so a network without DHCP still
+  gets DNS) and, in this mode, **tags** each range and its router/DNS options with the network
+  (`set:guest` / `tag:guest`), otherwise a guest client would be handed the default network's router. The
+  file exists while any network uses DHCP, and the default network's range is left out if its DHCP is off.
+- **Firewall** (the heart of the design): the default network keeps full access to the router, as
+  always. Every other network may only use the router's DHCP, DNS and ping (no web interface, no ssh).
+  A network reaches the internet **only if its Internet switch is on**: that switch is one forwarding rule
+  to the WAN and there is no other. Two networks may talk **only if neither is isolated**, in both
+  directions (so an open network cannot reach an isolated one, and the isolated one cannot reach out).
+  Return traffic is covered by the existing established/related rule. NAT is unchanged (one masquerade on
+  the WAN).
+- **Plan:** adding a network restarts networking, reloads the firewall and restarts dnsmasq; flipping the
+  Internet or isolation switch only reloads the firewall (no interruption); moving a port between networks
+  restarts networking (and dnsmasq after it); renaming a network changes nothing on the system (names never
+  reach a file). Review notes warn about a network no port carries and about a default network with no port.
+- **Checked against the real tools:** the rendered `pre-up`/`post-up` lines were run in a throwaway
+  network namespace (`unshare -rn`, dummy ports) and `bridge vlan show` came out as designed (default
+  network untagged plus VLANs 20 and 30 tagged on one port, only VLAN 20 untagged on the other, the bridge in
+  all three), restarting is idempotent; the firewall passes `nft -c` and the DHCP file `dnsmasq --test`.
+  If a LAN port named in the file does not exist, its `pre-up` line fails and `br0` does not come up (the
+  same risk the wizard's bridge has).
+
+**Still to do, in order:** the API (create, edit, delete networks; native/tagged on the Ports endpoint),
+the Local Networks and Ports pages, and the Overview card.
 
 **Why a bridge built with `ip`/`bridge` commands and not `bridge_ports`:** the image installs `ifupdown`
 and `iproute2` but not `bridge-utils` or `vlan`, and ifupdown only understands `bridge_ports` through the

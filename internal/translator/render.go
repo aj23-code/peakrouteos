@@ -57,10 +57,11 @@ type Desired struct {
 	Notes     []string // things the user should know about, shown with the plan
 }
 
-// LanTarget is the interface the LAN lives on: the single LAN port itself, or the br0 bridge
-// when several ports are combined. This mirrors what the first-boot wizard does.
+// LanTarget is the interface the default network lives on: the single LAN port itself, or the br0
+// bridge when several ports are combined or there are further networks (which are VLANs of br0).
+// Without further networks this mirrors what the first-boot wizard does.
 func LanTarget(cfg config.NetworkConfig) string {
-	if len(cfg.LanInterfaces) > 1 {
+	if len(cfg.LanInterfaces) > 1 || cfg.Bridged() {
 		return "br0"
 	}
 	return cfg.LanInterfaces[0]
@@ -104,6 +105,16 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	if d := cfg.DHCP; d != nil && d.Enabled {
 		tokens = append(tokens, d.RangeStart, d.RangeEnd, d.LeaseTime)
 	}
+	for _, n := range cfg.Networks {
+		tokens = append(tokens, n.ID, n.IP, n.Netmask)
+		if d := n.DHCP; d != nil && d.Enabled {
+			tokens = append(tokens, d.RangeStart, d.RangeEnd, d.LeaseTime)
+		}
+	}
+	for port, pn := range cfg.PortNetworks {
+		tokens = append(tokens, port, pn.NativeID())
+		tokens = append(tokens, pn.Tagged...)
+	}
 	if err := ensureSafe(tokens...); err != nil {
 		return Desired{}, err
 	}
@@ -133,13 +144,15 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	switch dhcp := cfg.DHCP; {
 	case dhcp == nil:
 		d.Notes = append(d.Notes, "DHCP is not managed by network.json yet, so "+PathDnsmasqDHCP+" is left as it is.")
-	case dhcp.Enabled:
+	case dhcp.Enabled || anyNetworkDHCP(cfg):
 		d.Artifacts = append(d.Artifacts, Artifact{
 			Path: PathDnsmasqDHCP, Content: []byte(renderDnsmasqDHCP(cfg, lan)), Mode: 0644, Service: SvcDnsmasq,
 		})
 	default:
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathDnsmasqDHCP, Remove: true, Service: SvcDnsmasq})
 	}
+
+	d.Notes = append(d.Notes, networkNotes(cfg)...)
 
 	// Upstream DNS servers for LAN clients when the WAN has a fixed address and its own DNS
 	if strings.EqualFold(cfg.WanMode, "static") && len(cfg.WanDNS) > 0 {
@@ -206,27 +219,34 @@ func renderRoutes(routes []config.Route) (string, bool) {
 	return b.String(), true
 }
 
+func writeWanStanza(b *strings.Builder, cfg config.NetworkConfig) {
+	fmt.Fprintf(b, "auto %s\n", cfg.WanInterface)
+	if strings.EqualFold(cfg.WanMode, "static") {
+		fmt.Fprintf(b, "iface %s inet static\n", cfg.WanInterface)
+		fmt.Fprintf(b, "    address %s\n", cfg.WanIP)
+		fmt.Fprintf(b, "    netmask %s\n", cfg.WanSubnet)
+		if cfg.WanGateway != "" {
+			fmt.Fprintf(b, "    gateway %s\n", cfg.WanGateway)
+		}
+		if len(cfg.WanDNS) > 0 {
+			fmt.Fprintf(b, "    dns-nameservers %s\n", strings.Join(cfg.WanDNS, " "))
+		}
+	} else {
+		fmt.Fprintf(b, "iface %s inet dhcp\n", cfg.WanInterface)
+	}
+	b.WriteString("\n")
+
+}
+
 func renderInterfaces(cfg config.NetworkConfig, lan string) string {
+	if cfg.Bridged() {
+		return renderInterfacesBridged(cfg)
+	}
 	var b strings.Builder
 
 	b.WriteString("auto lo\niface lo inet loopback\n\n")
 
-	fmt.Fprintf(&b, "auto %s\n", cfg.WanInterface)
-	if strings.EqualFold(cfg.WanMode, "static") {
-		fmt.Fprintf(&b, "iface %s inet static\n", cfg.WanInterface)
-		fmt.Fprintf(&b, "    address %s\n", cfg.WanIP)
-		fmt.Fprintf(&b, "    netmask %s\n", cfg.WanSubnet)
-		if cfg.WanGateway != "" {
-			fmt.Fprintf(&b, "    gateway %s\n", cfg.WanGateway)
-		}
-		if len(cfg.WanDNS) > 0 {
-			fmt.Fprintf(&b, "    dns-nameservers %s\n", strings.Join(cfg.WanDNS, " "))
-		}
-	} else {
-		fmt.Fprintf(&b, "iface %s inet dhcp\n", cfg.WanInterface)
-	}
-	b.WriteString("\n")
-
+	writeWanStanza(&b, cfg)
 	fmt.Fprintf(&b, "auto %s\n", lan)
 	fmt.Fprintf(&b, "iface %s inet static\n", lan)
 	fmt.Fprintf(&b, "    address %s\n", cfg.LanIP)
@@ -243,6 +263,9 @@ func renderInterfaces(cfg config.NetworkConfig, lan string) string {
 }
 
 func renderDnsmasqDHCP(cfg config.NetworkConfig, lan string) string {
+	if cfg.Bridged() {
+		return renderDnsmasqDHCPNetworks(cfg, lan)
+	}
 	d := cfg.DHCP
 	var b strings.Builder
 	fmt.Fprintf(&b, "interface=%s\n", lan)
@@ -262,6 +285,7 @@ func renderDnsmasqUpstream(cfg config.NetworkConfig) string {
 }
 
 func renderNftables(cfg config.NetworkConfig, lan string) string {
+	inputExtra, forwardExtra := nftablesNetworkRules(cfg, lan)
 	return fmt.Sprintf(`#!/usr/sbin/nft -f
 flush ruleset
 
@@ -272,13 +296,13 @@ table inet filter {
         ct state established,related accept
         ct state invalid drop
         iifname "%[1]s" accept
-    }
+%[3]s    }
     chain forward {
         type filter hook forward priority filter; policy drop;
         ct state established,related accept
         ct state invalid drop
         iifname "%[1]s" oifname "%[2]s" accept
-    }
+%[4]s    }
     chain output {
         type filter hook output priority filter; policy accept;
     }
@@ -290,5 +314,5 @@ table ip nat {
         oifname "%[2]s" masquerade
     }
 }
-`, lan, cfg.WanInterface)
+`, lan, cfg.WanInterface, inputExtra, forwardExtra)
 }
