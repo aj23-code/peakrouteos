@@ -42,11 +42,6 @@ window.InternetModule = (function () {
 
     // ---------------------------------------------------------------- health
 
-    function fmtMs(v) {
-        if (v === null || v === undefined) return '–';
-        return (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + ' ms';
-    }
-
     function fmtTime(ts, mode) {
         const d = new Date(ts);
         const hm = d.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit' });
@@ -77,27 +72,20 @@ window.InternetModule = (function () {
         $('inet-diagnosis').textContent = st.diagnosis || '';
         $('inet-diagnosis').classList.toggle('hidden', !st.diagnosis);
 
-        $('inet-now').textContent = state === 'offline' ? 'No answer' : fmtMs(st.rtt_ms);
-        $('inet-avg').textContent = fmtMs(sum.avg_ms);
-        $('inet-range').textContent = sum.min_ms === null || sum.min_ms === undefined ? '–' : `${fmtMs(sum.min_ms)} / ${fmtMs(sum.max_ms)}`;
+        $('inet-now').textContent = state === 'offline' ? 'No answer' : formatMs(st.rtt_ms);
+        $('inet-avg').textContent = formatMs(sum.avg_ms);
+        $('inet-range').textContent = sum.min_ms === null || sum.min_ms === undefined ? '–' : `${formatMs(sum.min_ms)} / ${formatMs(sum.max_ms)}`;
         $('inet-loss').textContent = sum.sent ? `${sum.loss_pct < 10 ? sum.loss_pct.toFixed(1) : sum.loss_pct.toFixed(0)}%` : '–';
         $('inet-loss').classList.toggle('inet-bad', sum.sent > 0 && sum.loss_pct >= 5);
 
         const gwEl = $('inet-gw');
-        if (gw.state === 'online') gwEl.textContent = fmtMs(gw.rtt_ms);
+        if (gw.state === 'online') gwEl.textContent = formatMs(gw.rtt_ms);
         else if (gw.state === 'offline') gwEl.textContent = 'No answer';
         else if (gw.state === 'unknown') gwEl.textContent = '–';
         else gwEl.textContent = 'Not measured';
         gwEl.title = [gw.target ? `Gateway ${gw.target}` : '', gw.problem || ''].filter(Boolean).join(' – ');
         $('inet-gw-key').classList.toggle('hidden', !(history.gateway.timestamps || []).length);
         renderAvailability();
-    }
-
-    function fmtPct(v) {
-        if (v === null || v === undefined) return '\u2013';
-        // 99.996 must not read as 100 while minutes were lost
-        const shown = v < 100 && v > 99.99 ? 99.99 : v;
-        return (v === 100 ? '100' : shown.toFixed(shown >= 99 ? 2 : 1)) + '%';
     }
 
     function fmtDuration(seconds) {
@@ -110,8 +98,8 @@ window.InternetModule = (function () {
 
     function renderAvailability() {
         const a = history.availability || {};
-        $('inet-up24').textContent = fmtPct(a.uptime_24h);
-        $('inet-up30').textContent = fmtPct(a.uptime_30d);
+        $('inet-up24').textContent = formatPercent(a.uptime_24h);
+        $('inet-up30').textContent = formatPercent(a.uptime_30d);
         $('inet-up24').classList.toggle('inet-bad', a.uptime_24h !== null && a.uptime_24h !== undefined && a.uptime_24h < 99);
 
         const outages = a.outages || [];
@@ -302,14 +290,14 @@ window.InternetModule = (function () {
         if (di >= 0) {
             const a = history.dns.avg_ms[di];
             dot(a, COLOR.avg);
-            lines.push({ text: a === null ? 'DNS server: no answer' : `DNS server  ${fmtMs(a)}`, color: '#E2E8F0' });
-            if (a !== null) lines.push({ text: `Best ${fmtMs(history.dns.min_ms[di])}  Worst ${fmtMs(history.dns.max_ms[di])}`, color: COLOR.text });
+            lines.push({ text: a === null ? 'DNS server: no answer' : `DNS server  ${formatMs(a)}`, color: '#E2E8F0' });
+            if (a !== null) lines.push({ text: `Best ${formatMs(history.dns.min_ms[di])}  Worst ${formatMs(history.dns.max_ms[di])}`, color: COLOR.text });
             if (history.dns.loss_pct[di]) lines.push({ text: `Lost ${lossText(history.dns.loss_pct[di])}`, color: '#f87171' });
         }
         if (gi >= 0) {
             const g = history.gateway.avg_ms[gi];
             dot(g, COLOR.gateway);
-            lines.push({ text: g === null ? 'Gateway: no answer' : `Gateway  ${fmtMs(g)}`, color: COLOR.gateway });
+            lines.push({ text: g === null ? 'Gateway: no answer' : `Gateway  ${formatMs(g)}`, color: COLOR.gateway });
         }
 
         const bw = 200, bh = 15 * lines.length + 12;
@@ -376,14 +364,6 @@ window.InternetModule = (function () {
     let volumeTimer = null;
     let wanPort = null;       // the port whose traffic is shown
 
-    function fmtRate(bytesPerSec) {
-        const bps = (bytesPerSec || 0) * 8;
-        if (bps < 1000) return bps.toFixed(0) + ' bps';
-        if (bps < 1e6) return (bps / 1e3).toFixed(1) + ' Kbps';
-        if (bps < 1e9) return (bps / 1e6).toFixed(1) + ' Mbps';
-        return (bps / 1e9).toFixed(2) + ' Gbps';
-    }
-
     function setUsage(prefix, values) {
         ['now', '24', '30'].forEach((k, i) => { $(`inet-${prefix}-${k}`).textContent = values[i]; });
     }
@@ -409,8 +389,8 @@ window.InternetModule = (function () {
         const [name, meta] = entry;
         $('inet-usage-note').classList.add('hidden');
         $('inet-usage-port').textContent = name;
-        $('inet-dl-now').textContent = fmtRate(meta.rx_bytes_sec);
-        $('inet-ul-now').textContent = fmtRate(meta.tx_bytes_sec);
+        $('inet-dl-now').textContent = formatRate(meta.rx_bytes_sec);
+        $('inet-ul-now').textContent = formatRate(meta.tx_bytes_sec);
         if (name !== wanPort) {
             wanPort = name;
             loadVolumes();

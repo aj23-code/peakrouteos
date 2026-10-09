@@ -45,6 +45,31 @@ function formatBytes(bytes) {
 }
 
 /**
+ * Latency, percentage and bit-rate formatters shared by the Overview and Internet pages.
+ */
+function formatMs(v) {
+    if (v === null || v === undefined) return '\u2013';
+    return (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + ' ms';
+}
+
+function formatPercent(v) {
+    if (v === null || v === undefined) return '\u2013';
+    if (v === 100) return '100%';
+    // 99.996 must not read as 100 while minutes were lost
+    const shown = v > 99.99 ? 99.99 : v;
+    return shown.toFixed(shown >= 99 ? 2 : 1) + '%';
+}
+
+// Bytes per second shown as the bits per second people expect from a network
+function formatRate(bytesPerSec) {
+    const bps = (bytesPerSec || 0) * 8;
+    if (bps < 1000) return bps.toFixed(0) + ' bps';
+    if (bps < 1e6) return (bps / 1e3).toFixed(1) + ' Kbps';
+    if (bps < 1e9) return (bps / 1e6).toFixed(1) + ' Mbps';
+    return (bps / 1e9).toFixed(2) + ' Gbps';
+}
+
+/**
  * Escape a value for safe use in HTML text or a quoted attribute value.
  * Use for anything that ends up in innerHTML and did not come from this codebase
  * (DHCP hostnames in particular are chosen by whatever device is on the LAN).

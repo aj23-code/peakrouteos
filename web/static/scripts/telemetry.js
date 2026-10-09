@@ -179,29 +179,7 @@ if (archMatch) {
             uptimeValEl.innerText = formatUptime(data.uptime_seconds || 0);
         }
 
-        // 11. Interfaces Table
-        const tbody = document.getElementById('iface-table-body');
-        if (tbody && data.interfaces && typeof data.interfaces === 'object') {
-            const entries = Object.entries(data.interfaces);
-            if (entries.length > 0) {
-                let rowsHtml = '';
-                for (const [iface, stats] of entries) {
-                    const rxPkts = stats.rx_packets !== undefined ? stats.rx_packets.toLocaleString() : '0';
-                    const txPkts = stats.tx_packets !== undefined ? stats.tx_packets.toLocaleString() : '0';
-
-                    rowsHtml += `
-                    <tr>
-                    <td class="iface-name"><strong>${escapeHtml(iface)}</strong></td>
-                    <td>${formatBytes(stats.rx_bytes || 0)} <span class="pkt-subtext">(${rxPkts} pkts)</span></td>
-                    <td>${formatBytes(stats.tx_bytes || 0)} <span class="pkt-subtext">(${txPkts} pkts)</span></td>
-                    </tr>
-                    `;
-                }
-                tbody.innerHTML = rowsHtml;
-            } else {
-                tbody.innerHTML = '<tr><td colspan="3" class="table-placeholder">No interfaces found</td></tr>';
-            }
-        }
+        if (window.OverviewCards) window.OverviewCards.onStats(data);
     }
 
     async function fetchTopClients() {
@@ -215,6 +193,7 @@ if (archMatch) {
         }
 
         const leases = (await res.json()) || [];
+        if (window.OverviewCards) window.OverviewCards.onLeases(leases);
 
         if (!Array.isArray(leases) || leases.length === 0) {
             tbody.innerHTML = `<tr><td colspan="4" class="table-placeholder">No active LAN clients detected</td></tr>`;
@@ -242,10 +221,12 @@ if (archMatch) {
     }
 
     function init() {
+        if (window.OverviewCards) window.OverviewCards.start();
         updateAll();
         pollInterval = setInterval(updateAll, 1000);
 
         return function destroy() {
+            if (window.OverviewCards) window.OverviewCards.stop();
             if (pollInterval) {
                 clearInterval(pollInterval);
                 pollInterval = null;

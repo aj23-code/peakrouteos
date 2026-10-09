@@ -374,6 +374,27 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
   has unsaved edits (it would overwrite them). The review dialog's warning adds a line when port roles
   change: the cable you are connected through may stop working, plug into a LAN port to confirm.
 
+### Overview page (redesigned 2026-10-08)
+
+Top to bottom: a header whose badge shows the real internet state (online, offline, checking, not set
+up) and whose subtitle is `hostname · up 3d 15m`; then **Internet** and **Network** cards side by side
+(one column on a narrow screen); then the system resource cards (CPU, memory, disk, firewall states),
+the Top Clients table, and last the system details (version, kernel, CPU model, load, DNS) that used to
+head the page. The old Network Interfaces table is gone: per-port counters live on Traffic, roles and
+link state on Ports.
+- **Internet card:** state, latency, gateway latency, uptime 24 h, a one-hour sparkline (latency line,
+  red columns for lost minutes, min to max under it) and the diagnosis sentence when there is one. It
+  comes from the health endpoint every 10 s (`overview_cards.js`).
+- **Network card:** the WAN port, link, address, gateway and live rates; the LAN ports, router address
+  as CIDR, client count and how much of the DHCP range is leased ("34 of 101", orange from 90 %). Addresses
+  come from `/api/v1/uplinks` and `/api/v1/networks` every 30 s. The rates and the client count are not
+  fetched again: `telemetry.js` already polls stats and leases every second and passes them to
+  `OverviewCards.onStats/onLeases`.
+- `formatMs`, `formatPercent` and `formatRate` are shared helpers in `app.js` (Overview and Internet).
+- **Gotcha when testing:** a dev server that serves the static files from disk makes browsers cache
+  scripts heuristically; reload with the cache bypassed (or `fetch(url, {cache: 'reload'})`) or the page
+  keeps running the old script. The real daemon serves embedded files, which carry no modification time.
+
 ## 7c. Responsive layout (decided 2026-10-08)
 
 One site, not separate desktop and mobile sites: the same HTML5 page adapts with CSS media queries, so
@@ -459,6 +480,7 @@ every future page works on every screen automatically.
 | 2026-10-08 | WAN health pings the upstream DNS server (ICMP, DNS query only as a fallback), per-minute history in its own SQLite file | what Meraki's appliance status shows; the resolver is what clients actually depend on; same flash-friendly storage as traffic |
 | 2026-10-08 | The gateway is measured as a second series, only with real pings | tells ISP problems from local ones; a DNS query to a gateway is not a valid test |
 | 2026-10-08 | Uptime is a share of observed minutes, and an outage is whole minutes of total loss on the DNS series | missing data (daemon down) must not read as downtime, and a gateway that ignores pings must not read as an outage |
+| 2026-10-08 | Overview leads with Internet and Network cards; the interfaces table and the system-details bar moved out of the way | the landing page should answer "is it working and what is connected" first |
 | 2026-10-08 | WAN usage reuses the stats and traffic endpoints instead of a new one | the data is already collected and served; one less thing to keep in step |
 | 2026-10-08 | Static WAN needs a gateway and a DNS server in the editor, though the shared validation allows them empty | an address alone cannot reach the internet, and the health chart needs a DNS server to measure |
 | 2026-10-06 | Success messages show ~8 s; failures and reverts stay until dismissed | problems must not be missed, good news should not nag |

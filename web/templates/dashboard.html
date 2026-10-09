@@ -116,50 +116,70 @@
         <header class="dash-header">
           <div>
             <h1>Overview</h1>
-            <p class="subtitle"></p>
+            <p class="subtitle" id="ov-subtitle">&nbsp;</p>
           </div>
-          <div class="status-badge">
-            <span class="status-dot"></span> System Online
+          <div id="ov-badge" class="status-badge ov-badge--unknown">
+            <span class="status-dot"></span> <span id="ov-badge-text">Checking internet&hellip;</span>
           </div>
         </header>
 
-        <!-- System Information Header Bar -->
-        <section class="card sys-info-bar">
-          <div class="sys-info-item">
-            <span class="metric-label">Hostname</span>
-            <strong id="hostname-val" class="metric-subtext">--</strong>
-          </div>
-          <div class="sys-info-item">
-            <span class="metric-label">PeakRoute Version</span>
-            <strong id="app-version-val" class="metric-subtext">--</strong>
-          </div>
-          <div class="sys-info-item">
-            <span class="metric-label">Architecture</span>
-            <strong id="arch-val" class="metric-subtext">--</strong>
-          </div>
-          <div class="sys-info-item">
-            <span class="metric-label">Kernel</span>
-            <strong id="kernel-val" class="metric-subtext">--</strong>
-          </div>
-          <div class="sys-info-item">
-            <span class="metric-label">CPU Model</span>
-            <strong id="cpu-model-val" class="metric-subtext">--</strong>
-          </div>
-          <div class="sys-info-item">
-            <span class="metric-label">Uptime</span>
-            <strong id="uptime-val" class="metric-subtext">0s</strong>
-          </div>
-          <div class="sys-info-item">
-            <span class="metric-label">Load Averages (1m, 5m, 15m)</span>
-            <strong id="load-avg-val" class="metric-subtext">0.00, 0.00, 0.00</strong>
-          </div>
-          <div class="sys-info-item">
-            <span class="metric-label">DNS Resolvers</span>
-            <strong id="dns-servers-val" class="metric-subtext">--</strong>
-          </div>
+        <!-- Internet and network at a glance -->
+        <section class="ov-hero">
+          <article class="card ov-card" id="ov-internet">
+            <div class="ov-card-head">
+              <h2>Internet</h2>
+              <a href="#" class="view-all-link" data-goto="internet">Details &rarr;</a>
+            </div>
+            <div class="ov-state">
+              <span id="ov-dot" class="inet-dot inet-dot--unknown" aria-hidden="true"></span>
+              <span id="ov-state-text" class="ov-state-text">Checking&hellip;</span>
+            </div>
+            <p id="ov-note" class="ov-note hidden"></p>
+            <dl class="ov-stats">
+              <div><dt>Latency</dt><dd id="ov-latency">&ndash;</dd></div>
+              <div><dt>Gateway</dt><dd id="ov-gateway">&ndash;</dd></div>
+              <div><dt>Uptime 24 h</dt><dd id="ov-uptime">&ndash;</dd></div>
+            </dl>
+            <div class="ov-spark">
+              <div class="ov-spark-plot"><canvas id="ov-spark" role="img" aria-label="Latency to the upstream DNS server over the last hour"></canvas></div>
+              <div class="ov-spark-foot"><span>1 hour ago</span><span id="ov-spark-range">&nbsp;</span><span>now</span></div>
+            </div>
+          </article>
+
+          <article class="card ov-card" id="ov-network">
+            <div class="ov-card-head">
+              <h2>Network</h2>
+              <a href="#" class="view-all-link" data-goto="networks">Details &rarr;</a>
+            </div>
+
+            <div class="ov-row">
+              <div class="ov-row-title"><span class="traffic-badge wan">WAN</span><span id="ov-wan-port" class="chip">&ndash;</span><span id="ov-wan-link" class="form-hint"></span></div>
+              <dl class="ov-kv">
+                <div><dt>Address</dt><dd id="ov-wan-addr">&ndash;</dd></div>
+                <div><dt>Gateway</dt><dd id="ov-wan-gw">&ndash;</dd></div>
+                <div><dt>Traffic now</dt><dd class="ov-rates"><span class="ov-rx" title="Download">&darr; <span id="ov-wan-down">&ndash;</span></span><span class="ov-tx" title="Upload">&uarr; <span id="ov-wan-up">&ndash;</span></span></dd></div>
+              </dl>
+            </div>
+
+            <div class="ov-row">
+              <div class="ov-row-title"><span class="traffic-badge lan">LAN</span><span id="ov-lan-ports" class="ov-chips"></span></div>
+              <dl class="ov-kv">
+                <div><dt>Router address</dt><dd id="ov-lan-addr">&ndash;</dd></div>
+                <div><dt>Clients</dt><dd id="ov-clients">&ndash;</dd></div>
+              </dl>
+              <div id="ov-dhcp" class="ov-dhcp hidden">
+                <div class="metric-header">
+                  <span class="metric-label">DHCP addresses in use</span>
+                  <span id="ov-dhcp-val" class="metric-subtext">&ndash;</span>
+                </div>
+                <div class="progress-track"><div id="ov-dhcp-bar" class="progress-fill fill-green" style="width: 0%"></div></div>
+              </div>
+              <p id="ov-dhcp-off" class="form-hint hidden">The DHCP server is turned off.</p>
+            </div>
+          </article>
         </section>
 
-        <!-- Telemetry Metrics Cards -->
+        <h2 class="ov-section-title">System resources</h2>
         <section class="metrics-grid">
           <!-- CPU & Thermal Card -->
           <div class="card">
@@ -219,31 +239,6 @@
           </div>
         </section>
 
-        <!-- Network Interfaces Table -->
-        <section class="card card-nopadding">
-          <div class="card-header">
-            <div class="card-header-group">
-              <h2>Network Interfaces</h2>
-              <span class="card-subtitle">Parsed live from /proc/net/dev</span>
-            </div>
-          </div>
-          <div class="table-container">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Interface</th>
-                  <th>Received (RX)</th>
-                  <th>Transmitted (TX)</th>
-                </tr>
-              </thead>
-              <tbody id="iface-table-body">
-                <tr>
-                  <td colspan="3" class="table-placeholder">Loading interfaces...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
 
         <!-- Top Clients by Usage -->
         <section class="card card-nopadding">
@@ -272,6 +267,43 @@
             </table>
           </div>
         </section>
+
+        <h2 class="ov-section-title">System details</h2>
+        <section class="card sys-info-bar">
+          <div class="sys-info-item">
+            <span class="metric-label">Hostname</span>
+            <strong id="hostname-val" class="metric-subtext">--</strong>
+          </div>
+          <div class="sys-info-item">
+            <span class="metric-label">PeakRoute Version</span>
+            <strong id="app-version-val" class="metric-subtext">--</strong>
+          </div>
+          <div class="sys-info-item">
+            <span class="metric-label">Architecture</span>
+            <strong id="arch-val" class="metric-subtext">--</strong>
+          </div>
+          <div class="sys-info-item">
+            <span class="metric-label">Kernel</span>
+            <strong id="kernel-val" class="metric-subtext">--</strong>
+          </div>
+          <div class="sys-info-item">
+            <span class="metric-label">CPU Model</span>
+            <strong id="cpu-model-val" class="metric-subtext">--</strong>
+          </div>
+          <div class="sys-info-item">
+            <span class="metric-label">Uptime</span>
+            <strong id="uptime-val" class="metric-subtext">0s</strong>
+          </div>
+          <div class="sys-info-item">
+            <span class="metric-label">Load Averages (1m, 5m, 15m)</span>
+            <strong id="load-avg-val" class="metric-subtext">0.00, 0.00, 0.00</strong>
+          </div>
+          <div class="sys-info-item">
+            <span class="metric-label">DNS Resolvers</span>
+            <strong id="dns-servers-val" class="metric-subtext">--</strong>
+          </div>
+        </section>
+
       </div>
 
       <!-- View: Interface Traffic - Sub-page View -->
@@ -615,6 +647,7 @@
   <!-- Modular Scripts -->
   <script src="/static/scripts/app.js"></script>
   <script src="/static/scripts/config_banner.js"></script>
+  <script src="/static/scripts/overview_cards.js"></script>
   <script src="/static/scripts/telemetry.js"></script>
   <script src="/static/scripts/traffic.js"></script>
   <script src="/static/scripts/internet.js"></script>

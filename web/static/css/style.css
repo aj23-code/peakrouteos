@@ -585,18 +585,6 @@ input:focus {
     background-color: rgba(255, 255, 255, 0.02);
 }
 
-.iface-name {
-    font-family: monospace;
-    font-weight: 700;
-    color: var(--accent-blue);
-}
-
-.pkt-subtext {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    margin-left: 4px;
-}
-
 .table-placeholder,
 .card-body-placeholder {
     padding: 24px;
@@ -1481,3 +1469,42 @@ height: 260px;
 .inet-usage-table tbody th { font-weight: 600; white-space: nowrap; }
 .inet-usage-table tbody td { font-variant-numeric: tabular-nums; }
 .inet-usage-table tbody tr { border-top: 1px solid var(--border-color); }
+
+/* ---------- Overview ---------- */
+.ov-badge--online { background: rgba(16, 185, 129, 0.1); color: var(--accent-green); border-color: rgba(16, 185, 129, 0.25); }
+.ov-badge--offline { background: rgba(239, 68, 68, 0.1); color: #f87171; border-color: rgba(239, 68, 68, 0.3); }
+.ov-badge--offline .status-dot { background: var(--error-color); }
+.ov-badge--unknown { background: rgba(148, 163, 184, 0.1); color: var(--text-muted); border-color: rgba(148, 163, 184, 0.25); }
+.ov-badge--unknown .status-dot { background: var(--text-muted); }
+.ov-badge--not_configured { background: rgba(245, 158, 11, 0.1); color: var(--accent-amber); border-color: rgba(245, 158, 11, 0.3); }
+.ov-badge--not_configured .status-dot { background: var(--accent-amber); }
+
+.ov-hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 20px; }
+.ov-card { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.ov-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.ov-card-head h2 { font-size: 1.125rem; font-weight: 600; }
+.ov-section-title { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); margin-bottom: -0.5rem; }
+
+.ov-state { display: flex; align-items: center; gap: 0.7rem; }
+.ov-state-text { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+.ov-note { font-size: 0.85rem; color: var(--accent-amber); margin-top: -0.4rem; }
+
+.ov-stats, .ov-kv { display: flex; flex-wrap: wrap; gap: 0.7rem 1.8rem; margin: 0; }
+.ov-stats dt, .ov-kv dt { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.ov-stats dd, .ov-kv dd { margin: 0.15rem 0 0; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ov-kv dd { font-size: 0.95rem; font-weight: 500; }
+
+.ov-spark { display: flex; flex-direction: column; flex: 1; min-height: 100px; }
+.ov-spark-plot { position: relative; flex: 1; min-height: 72px; }
+.ov-spark-plot canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ov-spark-foot { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem; }
+
+.ov-row { display: flex; flex-direction: column; gap: 0.7rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border-color); }
+.ov-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.ov-row-title { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.ov-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.ov-dhcp { margin-top: 0.2rem; }
+.ov-dhcp .metric-header { margin-bottom: 8px; }
+.ov-rates { display: flex; flex-wrap: wrap; gap: 0 0.9rem; }
+.ov-rx { color: #34d399; }
+.ov-tx { color: var(--accent-blue); }
