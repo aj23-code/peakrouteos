@@ -1432,8 +1432,7 @@ height: 260px;
 .inet-chart-card { margin-top: 1rem; }
 .inet-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; margin-top: 0.6rem; font-size: 0.8rem; color: var(--text-muted); }
 .inet-key { display: inline-block; width: 1.4rem; height: 0.55rem; margin-right: 0.4rem; border-radius: 2px; vertical-align: middle; }
-.inet-key--avg { background: #38bdf8; height: 3px; }
-.inet-key--band { background: rgba(56, 189, 248, 0.3); }
+.inet-key--avg { background: #0072CE; height: 3px; }
 .inet-key--loss { background: rgba(239, 68, 68, 0.6); width: 0.7rem; }
 
 .radio-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.75rem; }
@@ -1443,7 +1442,7 @@ height: 260px;
 .radio:has(input:checked) { border-color: var(--accent-green); background: rgba(16, 185, 129, 0.06); }
 .radio:has(input:disabled) { opacity: 0.6; cursor: not-allowed; }
 #inet-static-fields { margin-top: 1rem; }
-.inet-key--gw { background: #34d399; height: 3px; }
+.inet-key--gw { background: #00A86B; height: 3px; }
 .inet-diagnosis { margin-top: 0.4rem; font-size: 0.85rem; color: var(--accent-amber); max-width: 46rem; }
 .inet-outages { margin-top: 1rem; }
 .inet-outages .table-container { margin-top: 0.75rem; }

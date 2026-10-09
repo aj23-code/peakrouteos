@@ -6,10 +6,14 @@ window.InternetModule = (function () {
     const BUCKET_S = { '5m': 0, '1h': 60, '24h': 900, '30d': 3600 };
     const REFRESH_MS = { '5m': 5000, '1h': 15000, '24h': 30000, '30d': 60000 };
 
+    // The same palette and padding as the Traffic chart, so the two read alike
     const COLOR = {
-        avg: '#38bdf8',
-        gateway: '#34d399',
-        band: 'rgba(56, 189, 248, 0.18)',
+        avg: '#0072CE',
+        avgGradStart: 'rgba(0, 114, 206, 0.28)',
+        avgGradEnd: 'rgba(0, 114, 206, 0.01)',
+        gateway: '#00A86B',
+        gatewayGradStart: 'rgba(0, 168, 107, 0.28)',
+        gatewayGradEnd: 'rgba(0, 168, 107, 0.01)',
         loss: '239, 68, 68',
         grid: 'rgba(255, 255, 255, 0.05)',
         text: '#94A3B8',
@@ -18,7 +22,8 @@ window.InternetModule = (function () {
         cardBg: 'rgba(15, 23, 42, 0.95)',
         cardBorder: '#334155',
     };
-    const PAD = { top: 20, right: 25, bottom: 35, left: 60 };
+    const PAD = { top: 20, right: 25, bottom: 35, left: 65 };
+    const FONT = 'Inter, system-ui, sans-serif';
 
     const STATE_TEXT = {
         online: 'Online',
@@ -147,6 +152,46 @@ window.InternetModule = (function () {
         return runs;
     }
 
+    // A curve through the points, as on the Traffic page
+    function smoothPath(ctx, pts) {
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 0; i < pts.length - 1; i++) {
+            const midX = (pts[i].x + pts[i + 1].x) / 2;
+            const midY = (pts[i].y + pts[i + 1].y) / 2;
+            if (i === 0) ctx.lineTo(midX, midY);
+            else ctx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
+        }
+        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+    }
+
+    // One series: a gradient under a smooth line. A run of one point is just a dot.
+    function drawSeries(ctx, series, gap, x, y, bottom, top, line, gradStart, gradEnd) {
+        runsOf(series.timestamps, series.avg_ms, gap).forEach(run => {
+            const pts = run.map(i => ({ x: x(series.timestamps[i]), y: y(series.avg_ms[i]) }));
+            if (pts.length === 1) {
+                ctx.fillStyle = line;
+                ctx.beginPath(); ctx.arc(pts[0].x, pts[0].y, 3, 0, Math.PI * 2); ctx.fill();
+                return;
+            }
+            const grad = ctx.createLinearGradient(0, top, 0, bottom);
+            grad.addColorStop(0, gradStart);
+            grad.addColorStop(1, gradEnd);
+            smoothPath(ctx, pts);
+            ctx.lineTo(pts[pts.length - 1].x, bottom);
+            ctx.lineTo(pts[0].x, bottom);
+            ctx.closePath();
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            smoothPath(ctx, pts);
+            ctx.strokeStyle = line;
+            ctx.lineWidth = 2;
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+        });
+    }
+
     function drawChart() {
         const canvas = $('inet-canvas');
         if (!canvas) return;
@@ -166,18 +211,17 @@ window.InternetModule = (function () {
         const gw = width - PAD.left - PAD.right;
         const gh = height - PAD.top - PAD.bottom;
         const rangeMs = RANGE_MS[range];
-        const now = Date.now();
-        const minT = now - rangeMs;
+        const minT = Date.now() - rangeMs;
         const dns = history ? history.dns : null;
         const gate = history ? history.gateway : null;
 
-        ctx.font = '11px system-ui, sans-serif';
+        ctx.font = `11px ${FONT}`;
         if (!dns || (!dns.timestamps.length && !gate.timestamps.length)) {
             ctx.fillStyle = COLOR.muted;
             ctx.textAlign = 'center';
             const st = history && history.status ? history.status.state : '';
             ctx.fillText(st === 'not_configured' ? 'Nothing to measure until an internet port and DNS server are set up.'
-                : history ? 'No measurements stored for this window yet.' : 'Loading…', width / 2, height / 2);
+                : history ? 'No measurements stored for this window yet.' : 'Loading\u2026', width / 2, height / 2);
             return;
         }
 
@@ -185,6 +229,7 @@ window.InternetModule = (function () {
         const maxMs = niceCeil(Math.max(5, ...tops) * 1.1);
         const x = (t) => PAD.left + Math.max(0, Math.min(1, (t - minT) / rangeMs)) * gw;
         const y = (v) => PAD.top + gh - (v / maxMs) * gh;
+        const bottom = PAD.top + gh;
 
         // grid and y labels
         ctx.strokeStyle = COLOR.grid;
@@ -194,14 +239,17 @@ window.InternetModule = (function () {
         for (let i = 0; i <= 4; i++) {
             const gy = PAD.top + (gh / 4) * i;
             ctx.beginPath(); ctx.moveTo(PAD.left, gy); ctx.lineTo(width - PAD.right, gy); ctx.stroke();
-            ctx.fillText(`${Math.round(maxMs - (maxMs / 4) * i)} ms`, PAD.left - 8, gy + 4);
+            ctx.fillText(`${Math.round(maxMs - (maxMs / 4) * i)} ms`, PAD.left - 10, gy + 4);
         }
-        // x labels
+        // x ticks and labels
         ctx.textAlign = 'center';
         const mode = range === '30d' ? 'date' : range === '24h' ? 'date-time' : 'time';
         for (let i = 0; i < 5; i++) {
-            const t = minT + (rangeMs / 4) * i;
-            ctx.fillText(fmtTime(t, mode), PAD.left + (gw / 4) * i, height - 10);
+            const tx = PAD.left + (gw / 4) * i;
+            ctx.beginPath(); ctx.moveTo(tx, bottom); ctx.lineTo(tx, bottom + 4);
+            ctx.strokeStyle = COLOR.grid; ctx.stroke();
+            ctx.fillStyle = COLOR.text;
+            ctx.fillText(fmtTime(minT + (rangeMs / 4) * i, mode), tx, height - 10);
         }
 
         // Points further apart than this are not joined: the router (or its probing) was not running
@@ -216,46 +264,10 @@ window.InternetModule = (function () {
             ctx.fillRect(x(dns.timestamps[i]) - barW / 2, PAD.top, barW, gh);
         }
 
-        // the DNS server: best-to-worst band and the average line
-        runsOf(dns.timestamps, dns.avg_ms, gap).forEach(r => {
-            const ts = dns.timestamps;
-            if (r.length > 1) {
-                ctx.beginPath();
-                r.forEach((i, k) => (k ? ctx.lineTo(x(ts[i]), y(dns.max_ms[i])) : ctx.moveTo(x(ts[i]), y(dns.max_ms[i]))));
-                for (let k = r.length - 1; k >= 0; k--) ctx.lineTo(x(ts[r[k]]), y(dns.min_ms[r[k]]));
-                ctx.closePath();
-                ctx.fillStyle = COLOR.band;
-                ctx.fill();
+        drawSeries(ctx, dns, gap, x, y, bottom, PAD.top, COLOR.avg, COLOR.avgGradStart, COLOR.avgGradEnd);
+        drawSeries(ctx, gate, gap, x, y, bottom, PAD.top, COLOR.gateway, COLOR.gatewayGradStart, COLOR.gatewayGradEnd);
 
-                ctx.beginPath();
-                r.forEach((i, k) => (k ? ctx.lineTo(x(ts[i]), y(dns.avg_ms[i])) : ctx.moveTo(x(ts[i]), y(dns.avg_ms[i]))));
-                ctx.strokeStyle = COLOR.avg;
-                ctx.lineWidth = 2;
-                ctx.lineJoin = 'round';
-                ctx.stroke();
-            } else {
-                ctx.fillStyle = COLOR.avg;
-                ctx.beginPath(); ctx.arc(x(ts[r[0]]), y(dns.avg_ms[r[0]]), 2.5, 0, Math.PI * 2); ctx.fill();
-            }
-        });
-
-        // the gateway: a thinner line on top
-        runsOf(gate.timestamps, gate.avg_ms, gap).forEach(r => {
-            const ts = gate.timestamps;
-            if (r.length > 1) {
-                ctx.beginPath();
-                r.forEach((i, k) => (k ? ctx.lineTo(x(ts[i]), y(gate.avg_ms[i])) : ctx.moveTo(x(ts[i]), y(gate.avg_ms[i]))));
-                ctx.strokeStyle = COLOR.gateway;
-                ctx.lineWidth = 1.5;
-                ctx.lineJoin = 'round';
-                ctx.stroke();
-            } else {
-                ctx.fillStyle = COLOR.gateway;
-                ctx.beginPath(); ctx.arc(x(ts[r[0]]), y(gate.avg_ms[r[0]]), 2, 0, Math.PI * 2); ctx.fill();
-            }
-        });
-
-        if (hoverT !== null) drawTooltip(ctx, width, x, y, gap);
+        if (hoverT !== null) drawTooltip(ctx, width, x, y, gap, bottom);
     }
 
     // The point of a series closest to a time, if it is close enough to be the same moment
@@ -265,7 +277,8 @@ window.InternetModule = (function () {
         return bestD <= within ? best : -1;
     }
 
-    function drawTooltip(ctx, width, x, y, gap) {
+    // The crosshair, a dot on each line and a card, laid out like the Traffic page's
+    function drawTooltip(ctx, width, x, y, gap, bottom) {
         const di = nearest(history.dns, hoverT, gap);
         const gi = nearest(history.gateway, hoverT, gap);
         if (di < 0 && gi < 0) return;
@@ -275,7 +288,7 @@ window.InternetModule = (function () {
         ctx.strokeStyle = COLOR.crosshair;
         ctx.lineWidth = 1;
         ctx.setLineDash([3, 3]);
-        ctx.beginPath(); ctx.moveTo(hx, PAD.top); ctx.lineTo(hx, 230 - PAD.bottom); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(hx, PAD.top); ctx.lineTo(hx, bottom); ctx.stroke();
         ctx.setLineDash([]);
 
         const dot = (v, color) => {
@@ -286,32 +299,50 @@ window.InternetModule = (function () {
         };
         const lossText = (p) => (p < 10 ? p.toFixed(1) : p.toFixed(0)) + '%';
 
-        const lines = [{ text: fmtTime(t, range === '30d' || range === '24h' ? 'date-time' : 'time'), color: COLOR.muted, small: true }];
+        // rows: a coloured dot and a line of text, plus plain notes
+        const rows = [];
         if (di >= 0) {
             const a = history.dns.avg_ms[di];
             dot(a, COLOR.avg);
-            lines.push({ text: a === null ? 'DNS server: no answer' : `DNS server  ${formatMs(a)}`, color: '#E2E8F0' });
-            if (a !== null) lines.push({ text: `Best ${formatMs(history.dns.min_ms[di])}  Worst ${formatMs(history.dns.max_ms[di])}`, color: COLOR.text });
-            if (history.dns.loss_pct[di]) lines.push({ text: `Lost ${lossText(history.dns.loss_pct[di])}`, color: '#f87171' });
+            rows.push({ dot: COLOR.avg, text: a === null ? 'DNS server: no answer' : `DNS server:  ${formatMs(a)}` });
+            if (a !== null) rows.push({ note: `Best ${formatMs(history.dns.min_ms[di])}   Worst ${formatMs(history.dns.max_ms[di])}` });
+            if (history.dns.loss_pct[di]) rows.push({ note: `Lost ${lossText(history.dns.loss_pct[di])}`, color: '#f87171' });
         }
         if (gi >= 0) {
             const g = history.gateway.avg_ms[gi];
             dot(g, COLOR.gateway);
-            lines.push({ text: g === null ? 'Gateway: no answer' : `Gateway  ${formatMs(g)}`, color: COLOR.gateway });
+            rows.push({ dot: COLOR.gateway, text: g === null ? 'Gateway: no answer' : `Gateway:  ${formatMs(g)}` });
         }
 
-        const bw = 200, bh = 15 * lines.length + 12;
-        let bx = hx + 12;
-        if (bx + bw > width - PAD.right) bx = hx - bw - 12;
+        const timeStr = fmtTime(t, range === '30d' || range === '24h' ? 'date-time' : 'time');
+        const boxWidth = 190;
+        const boxHeight = 32 + rows.length * 16;
+        let boxX = hx + 12;
+        if (boxX + boxWidth > width - PAD.right) boxX = hx - boxWidth - 12;
+
         ctx.fillStyle = COLOR.cardBg;
         ctx.strokeStyle = COLOR.cardBorder;
         ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.roundRect(bx, PAD.top + 8, bw, bh, 6); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.roundRect(boxX, PAD.top + 8, boxWidth, boxHeight, 6); ctx.fill(); ctx.stroke();
+
         ctx.textAlign = 'left';
-        lines.forEach((l, k) => {
-            ctx.fillStyle = l.color;
-            ctx.font = (l.small ? '10px' : '11px') + ' system-ui, sans-serif';
-            ctx.fillText(l.text, bx + 12, PAD.top + 26 + k * 15);
+        ctx.fillStyle = COLOR.muted;
+        ctx.font = `10px ${FONT}`;
+        ctx.fillText(timeStr, boxX + 12, PAD.top + 25);
+
+        rows.forEach((r, k) => {
+            const ty = PAD.top + 43 + k * 16;
+            if (r.dot) {
+                ctx.fillStyle = r.dot;
+                ctx.beginPath(); ctx.arc(boxX + 14, ty - 4, 3.5, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#E2E8F0';
+                ctx.font = `11px ${FONT}`;
+                ctx.fillText(r.text, boxX + 24, ty);
+            } else {
+                ctx.fillStyle = r.color || COLOR.text;
+                ctx.font = `10px ${FONT}`;
+                ctx.fillText(r.note, boxX + 24, ty);
+            }
         });
     }
 

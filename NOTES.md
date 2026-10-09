@@ -320,10 +320,11 @@ the first IPv4 address, the default route in `/proc/net/route`, and the resolver
   `/api/v1/system/traffic` (reloaded every minute and when the WAN port changes) as the sum of each
   bucket's average rate times its length (900 s and 3600 s). Time the daemon was not running has no
   buckets, so the totals are floors. Without a WAN port the card says to pick one on the Ports page.
-- **Chart** (`internet.js`): canvas, DNS average line with a best-to-worst band, a thinner gateway line,
-  red columns for DNS loss, gaps
-  where no probes ran, hover tooltip, drawn at device pixel ratio. It refreshes every 5 to 60 s depending
-  on the range.
+- **Chart** (`internet.js`): drawn in the **same style as the Traffic chart** (same padding, palette, smooth
+  curves and gradient fill under each line, crosshair with a dot per line, and a card tooltip with a coloured
+  dot per row): the DNS average in blue and the gateway in green, red columns for DNS loss, gaps where no
+  probes ran. Best and worst latency are in the tooltip and the figures above the chart rather than a band.
+  Drawn at device pixel ratio; refreshes every 5 to 60 s depending on the range.
 
 ## 7e. Static routes (built 2026-10-08)
 
