@@ -8,6 +8,7 @@ window.InternetModule = (function () {
 
     const COLOR = {
         avg: '#38bdf8',
+        gateway: '#34d399',
         band: 'rgba(56, 189, 248, 0.18)',
         loss: '239, 68, 68',
         grid: 'rgba(255, 255, 255, 0.05)',
@@ -28,7 +29,7 @@ window.InternetModule = (function () {
 
     let range = '1h';
     let history = null;       // last answer of the health endpoint
-    let hover = -1;
+    let hoverT = null;        // time (ms) under the mouse
     let timer = null;
     let uplink = null;        // last answer of the uplink endpoint
     let editable = true;
@@ -57,7 +58,8 @@ window.InternetModule = (function () {
     function renderStatus() {
         if (!history) return;
         const st = history.status || {};
-        const sum = history.summary || {};
+        const gw = st.gateway || {};
+        const sum = history.dns.summary || {};
         const state = STATE_TEXT[st.state] ? st.state : 'unknown';
 
         $('inet-dot').className = 'inet-dot inet-dot--' + state;
@@ -66,23 +68,46 @@ window.InternetModule = (function () {
         let target = '';
         if (st.target) {
             const how = st.method === 'icmp' ? 'Pinging' : st.method === 'dns' ? 'Timing DNS queries to' : 'Checking';
-            target = `${how} ${st.target}` + (st.source ? ` \u2013 ${st.source}` : '');
+            target = `${how} ${st.target}` + (st.source ? ` – ${st.source}` : '');
             if (st.method === 'dns') target += '. Ping is not permitted for this program here, so a small DNS query is timed instead.';
         } else if (st.problem) {
             target = st.problem;
         }
         $('inet-target').textContent = target;
+        $('inet-diagnosis').textContent = st.diagnosis || '';
+        $('inet-diagnosis').classList.toggle('hidden', !st.diagnosis);
 
         $('inet-now').textContent = state === 'offline' ? 'No answer' : fmtMs(st.rtt_ms);
         $('inet-avg').textContent = fmtMs(sum.avg_ms);
         $('inet-range').textContent = sum.min_ms === null || sum.min_ms === undefined ? '–' : `${fmtMs(sum.min_ms)} / ${fmtMs(sum.max_ms)}`;
         $('inet-loss').textContent = sum.sent ? `${sum.loss_pct < 10 ? sum.loss_pct.toFixed(1) : sum.loss_pct.toFixed(0)}%` : '–';
         $('inet-loss').classList.toggle('inet-bad', sum.sent > 0 && sum.loss_pct >= 5);
+
+        const gwEl = $('inet-gw');
+        if (gw.state === 'online') gwEl.textContent = fmtMs(gw.rtt_ms);
+        else if (gw.state === 'offline') gwEl.textContent = 'No answer';
+        else if (gw.state === 'unknown') gwEl.textContent = '–';
+        else gwEl.textContent = 'Not measured';
+        gwEl.title = [gw.target ? `Gateway ${gw.target}` : '', gw.problem || ''].filter(Boolean).join(' – ');
+        $('inet-gw-key').classList.toggle('hidden', !(history.gateway.timestamps || []).length);
     }
 
     function niceCeil(v) {
         const steps = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
         return steps.find(s => s >= v) || Math.ceil(v / 1000) * 1000;
+    }
+
+    // Runs of consecutive answered points; a lost or missing stretch splits the line
+    function runsOf(ts, avg, gap) {
+        const runs = [];
+        let run = [];
+        for (let i = 0; i < ts.length; i++) {
+            const broken = avg[i] === null || (run.length && ts[i] - ts[run[run.length - 1]] > gap);
+            if (broken && run.length) { runs.push(run); run = []; }
+            if (avg[i] !== null) run.push(i);
+        }
+        if (run.length) runs.push(run);
+        return runs;
     }
 
     function drawChart() {
@@ -106,14 +131,11 @@ window.InternetModule = (function () {
         const rangeMs = RANGE_MS[range];
         const now = Date.now();
         const minT = now - rangeMs;
-        const ts = history ? history.timestamps : [];
-        const avg = history ? history.avg_ms : [];
-        const lo = history ? history.min_ms : [];
-        const hi = history ? history.max_ms : [];
-        const loss = history ? history.loss_pct : [];
+        const dns = history ? history.dns : null;
+        const gate = history ? history.gateway : null;
 
         ctx.font = '11px system-ui, sans-serif';
-        if (!ts.length) {
+        if (!dns || (!dns.timestamps.length && !gate.timestamps.length)) {
             ctx.fillStyle = COLOR.muted;
             ctx.textAlign = 'center';
             const st = history && history.status ? history.status.state : '';
@@ -122,7 +144,8 @@ window.InternetModule = (function () {
             return;
         }
 
-        const maxMs = niceCeil(Math.max(5, ...hi.filter(v => v !== null), ...avg.filter(v => v !== null)) * 1.1);
+        const tops = [...dns.max_ms, ...dns.avg_ms, ...gate.avg_ms].filter(v => v !== null);
+        const maxMs = niceCeil(Math.max(5, ...tops) * 1.1);
         const x = (t) => PAD.left + Math.max(0, Math.min(1, (t - minT) / rangeMs)) * gw;
         const y = (v) => PAD.top + gh - (v / maxMs) * gh;
 
@@ -150,70 +173,97 @@ window.InternetModule = (function () {
         const barW = Math.max(2, (stepMs / rangeMs) * gw);
 
         // lost packets: a red column, stronger the more was lost (a stray lost packet is not drawn)
-        for (let i = 0; i < ts.length; i++) {
-            if (loss[i] < 1) continue;
-            ctx.fillStyle = `rgba(${COLOR.loss}, ${Math.min(0.7, 0.1 + (loss[i] / 100) * 0.9)})`;
-            ctx.fillRect(x(ts[i]) - barW / 2, PAD.top, barW, gh);
+        for (let i = 0; i < dns.timestamps.length; i++) {
+            if (dns.loss_pct[i] < 1) continue;
+            ctx.fillStyle = `rgba(${COLOR.loss}, ${Math.min(0.7, 0.1 + (dns.loss_pct[i] / 100) * 0.9)})`;
+            ctx.fillRect(x(dns.timestamps[i]) - barW / 2, PAD.top, barW, gh);
         }
 
-        // runs of consecutive answered points
-        const runs = [];
-        let run = [];
-        for (let i = 0; i < ts.length; i++) {
-            const broken = avg[i] === null || (run.length && ts[i] - ts[run[run.length - 1]] > gap);
-            if (broken && run.length) { runs.push(run); run = []; }
-            if (avg[i] !== null) run.push(i);
-        }
-        if (run.length) runs.push(run);
-
-        runs.forEach(r => {
+        // the DNS server: best-to-worst band and the average line
+        runsOf(dns.timestamps, dns.avg_ms, gap).forEach(r => {
+            const ts = dns.timestamps;
             if (r.length > 1) {
                 ctx.beginPath();
-                r.forEach((i, k) => (k ? ctx.lineTo(x(ts[i]), y(hi[i])) : ctx.moveTo(x(ts[i]), y(hi[i]))));
-                for (let k = r.length - 1; k >= 0; k--) ctx.lineTo(x(ts[r[k]]), y(lo[r[k]]));
+                r.forEach((i, k) => (k ? ctx.lineTo(x(ts[i]), y(dns.max_ms[i])) : ctx.moveTo(x(ts[i]), y(dns.max_ms[i]))));
+                for (let k = r.length - 1; k >= 0; k--) ctx.lineTo(x(ts[r[k]]), y(dns.min_ms[r[k]]));
                 ctx.closePath();
                 ctx.fillStyle = COLOR.band;
                 ctx.fill();
 
                 ctx.beginPath();
-                r.forEach((i, k) => (k ? ctx.lineTo(x(ts[i]), y(avg[i])) : ctx.moveTo(x(ts[i]), y(avg[i]))));
+                r.forEach((i, k) => (k ? ctx.lineTo(x(ts[i]), y(dns.avg_ms[i])) : ctx.moveTo(x(ts[i]), y(dns.avg_ms[i]))));
                 ctx.strokeStyle = COLOR.avg;
                 ctx.lineWidth = 2;
                 ctx.lineJoin = 'round';
                 ctx.stroke();
             } else {
                 ctx.fillStyle = COLOR.avg;
-                ctx.beginPath(); ctx.arc(x(ts[r[0]]), y(avg[r[0]]), 2.5, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(x(ts[r[0]]), y(dns.avg_ms[r[0]]), 2.5, 0, Math.PI * 2); ctx.fill();
             }
         });
 
-        if (hover >= 0 && hover < ts.length) drawTooltip(ctx, width, x, y);
+        // the gateway: a thinner line on top
+        runsOf(gate.timestamps, gate.avg_ms, gap).forEach(r => {
+            const ts = gate.timestamps;
+            if (r.length > 1) {
+                ctx.beginPath();
+                r.forEach((i, k) => (k ? ctx.lineTo(x(ts[i]), y(gate.avg_ms[i])) : ctx.moveTo(x(ts[i]), y(gate.avg_ms[i]))));
+                ctx.strokeStyle = COLOR.gateway;
+                ctx.lineWidth = 1.5;
+                ctx.lineJoin = 'round';
+                ctx.stroke();
+            } else {
+                ctx.fillStyle = COLOR.gateway;
+                ctx.beginPath(); ctx.arc(x(ts[r[0]]), y(gate.avg_ms[r[0]]), 2, 0, Math.PI * 2); ctx.fill();
+            }
+        });
+
+        if (hoverT !== null) drawTooltip(ctx, width, x, y, gap);
     }
 
-    function drawTooltip(ctx, width, x, y) {
-        const i = hover;
-        const hx = x(history.timestamps[i]);
+    // The point of a series closest to a time, if it is close enough to be the same moment
+    function nearest(series, t, within) {
+        let best = -1, bestD = Infinity;
+        series.timestamps.forEach((v, i) => { const d = Math.abs(v - t); if (d < bestD) { bestD = d; best = i; } });
+        return bestD <= within ? best : -1;
+    }
+
+    function drawTooltip(ctx, width, x, y, gap) {
+        const di = nearest(history.dns, hoverT, gap);
+        const gi = nearest(history.gateway, hoverT, gap);
+        if (di < 0 && gi < 0) return;
+        const t = di >= 0 ? history.dns.timestamps[di] : history.gateway.timestamps[gi];
+        const hx = x(t);
+
         ctx.strokeStyle = COLOR.crosshair;
         ctx.lineWidth = 1;
         ctx.setLineDash([3, 3]);
-        ctx.beginPath(); ctx.moveTo(hx, PAD.top); ctx.lineTo(hx, PAD.top + 230 - PAD.top - PAD.bottom); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(hx, PAD.top); ctx.lineTo(hx, 230 - PAD.bottom); ctx.stroke();
         ctx.setLineDash([]);
 
-        const a = history.avg_ms[i];
-        if (a !== null) {
-            ctx.fillStyle = COLOR.avg;
-            ctx.beginPath(); ctx.arc(hx, y(a), 4.5, 0, Math.PI * 2); ctx.fill();
+        const dot = (v, color) => {
+            if (v === null || v === undefined) return;
+            ctx.fillStyle = color;
+            ctx.beginPath(); ctx.arc(hx, y(v), 4.5, 0, Math.PI * 2); ctx.fill();
             ctx.strokeStyle = '#0F172A'; ctx.lineWidth = 2; ctx.stroke();
+        };
+        const lossText = (p) => (p < 10 ? p.toFixed(1) : p.toFixed(0)) + '%';
+
+        const lines = [{ text: fmtTime(t, range === '30d' || range === '24h' ? 'date-time' : 'time'), color: COLOR.muted, small: true }];
+        if (di >= 0) {
+            const a = history.dns.avg_ms[di];
+            dot(a, COLOR.avg);
+            lines.push({ text: a === null ? 'DNS server: no answer' : `DNS server  ${fmtMs(a)}`, color: '#E2E8F0' });
+            if (a !== null) lines.push({ text: `Best ${fmtMs(history.dns.min_ms[di])}  Worst ${fmtMs(history.dns.max_ms[di])}`, color: COLOR.text });
+            if (history.dns.loss_pct[di]) lines.push({ text: `Lost ${lossText(history.dns.loss_pct[di])}`, color: '#f87171' });
+        }
+        if (gi >= 0) {
+            const g = history.gateway.avg_ms[gi];
+            dot(g, COLOR.gateway);
+            lines.push({ text: g === null ? 'Gateway: no answer' : `Gateway  ${fmtMs(g)}`, color: COLOR.gateway });
         }
 
-        const lines = [
-            fmtTime(history.timestamps[i], range === '30d' || range === '24h' ? 'date-time' : 'time'),
-            a === null ? 'No answer' : `Average ${fmtMs(a)}`,
-            a === null ? '' : `Best ${fmtMs(history.min_ms[i])}  Worst ${fmtMs(history.max_ms[i])}`,
-            history.loss_pct[i] ? `Lost ${history.loss_pct[i] < 10 ? history.loss_pct[i].toFixed(1) : history.loss_pct[i].toFixed(0)}%` : '',
-        ].filter(Boolean);
-
-        const bw = 190, bh = 14 * lines.length + 14;
+        const bw = 200, bh = 15 * lines.length + 12;
         let bx = hx + 12;
         if (bx + bw > width - PAD.right) bx = hx - bw - 12;
         ctx.fillStyle = COLOR.cardBg;
@@ -222,9 +272,9 @@ window.InternetModule = (function () {
         ctx.beginPath(); ctx.roundRect(bx, PAD.top + 8, bw, bh, 6); ctx.fill(); ctx.stroke();
         ctx.textAlign = 'left';
         lines.forEach((l, k) => {
-            ctx.fillStyle = k === 0 ? COLOR.muted : (l.startsWith('Lost') ? '#f87171' : '#E2E8F0');
-            ctx.font = (k === 0 ? '10px' : '11px') + ' system-ui, sans-serif';
-            ctx.fillText(l, bx + 12, PAD.top + 26 + k * 14);
+            ctx.fillStyle = l.color;
+            ctx.font = (l.small ? '10px' : '11px') + ' system-ui, sans-serif';
+            ctx.fillText(l.text, bx + 12, PAD.top + 26 + k * 15);
         });
     }
 
@@ -234,7 +284,7 @@ window.InternetModule = (function () {
         const data = await res.json();
         if (data.range !== range) return; // the person switched ranges while this was loading
         history = data;
-        hover = -1;
+        hoverT = null;
         renderStatus();
         drawChart();
     }
@@ -254,16 +304,20 @@ window.InternetModule = (function () {
     }
 
     function canvasMove(e) {
-        if (!history || !history.timestamps.length) return;
+        if (!history) return;
         const canvas = $('inet-canvas');
         const rect = canvas.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const gw = rect.width - PAD.left - PAD.right;
-        if (mx < PAD.left || mx > rect.width - PAD.right) { hover = -1; drawChart(); return; }
+        if (mx < PAD.left || mx > rect.width - PAD.right) { hoverT = null; drawChart(); return; }
         const t = Date.now() - RANGE_MS[range] + ((mx - PAD.left) / gw) * RANGE_MS[range];
-        let best = -1, bestD = Infinity;
-        history.timestamps.forEach((v, i) => { const d = Math.abs(v - t); if (d < bestD) { bestD = d; best = i; } });
-        hover = best;
+        // snap to the closest measurement of either series
+        let best = null, bestD = Infinity;
+        [history.dns.timestamps, history.gateway.timestamps].forEach(list => list.forEach(v => {
+            const d = Math.abs(v - t);
+            if (d < bestD) { bestD = d; best = v; }
+        }));
+        hoverT = best;
         drawChart();
     }
 
@@ -407,7 +461,7 @@ window.InternetModule = (function () {
         });
         const canvas = $('inet-canvas');
         canvas.addEventListener('mousemove', canvasMove);
-        canvas.addEventListener('mouseleave', () => { hover = -1; drawChart(); });
+        canvas.addEventListener('mouseleave', () => { hoverT = null; drawChart(); });
 
         $('inet-card').addEventListener('input', renderForm);
         $('inet-card').addEventListener('change', renderForm);

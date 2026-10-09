@@ -18,6 +18,8 @@ type Pinger interface {
 	Ping(ctx context.Context, addr netip.Addr, timeout time.Duration) (time.Duration, error)
 	// Method names what the last measurement used: "icmp" or "dns".
 	Method() string
+	// ICMP reports whether real pings are possible (they are until one is found to be forbidden).
+	ICMP() bool
 }
 
 // ErrNoPermission means this process may not open an ICMP socket.
@@ -37,6 +39,12 @@ type AutoPinger struct {
 	// Replaceable in tests; nil means the real thing
 	icmp func(ctx context.Context, addr netip.Addr, timeout time.Duration) (time.Duration, error)
 	dns  func(ctx context.Context, addr netip.Addr, timeout time.Duration) (time.Duration, error)
+}
+
+func (p *AutoPinger) ICMP() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return !p.icmpDenied
 }
 
 func (p *AutoPinger) Method() string {

@@ -6,9 +6,8 @@ import (
 	"time"
 )
 
-type historyResponse struct {
-	Range      string     `json:"range"`
-	Status     Status     `json:"status"`
+// seriesJSON is the chart data of one series: parallel arrays, one entry per point.
+type seriesJSON struct {
 	Summary    Summary    `json:"summary"`
 	Timestamps []int64    `json:"timestamps"` // Unix milliseconds
 	AvgMS      []*float64 `json:"avg_ms"`     // null where every probe was lost
@@ -17,7 +16,26 @@ type historyResponse struct {
 	LossPct    []float64  `json:"loss_pct"`
 }
 
-// HandleHistory serves GET ?range=5m|1h|24h|30d: the status, the summary and the chart points.
+type historyResponse struct {
+	Range   string     `json:"range"`
+	Status  Status     `json:"status"`
+	DNS     seriesJSON `json:"dns"`
+	Gateway seriesJSON `json:"gateway"`
+}
+
+func seriesOf(points []Point, sum Summary) seriesJSON {
+	out := seriesJSON{Summary: sum, Timestamps: []int64{}, AvgMS: []*float64{}, MinMS: []*float64{}, MaxMS: []*float64{}, LossPct: []float64{}}
+	for _, pt := range points {
+		out.Timestamps = append(out.Timestamps, pt.At)
+		out.AvgMS = append(out.AvgMS, pt.AvgMS)
+		out.MinMS = append(out.MinMS, pt.MinMS)
+		out.MaxMS = append(out.MaxMS, pt.MaxMS)
+		out.LossPct = append(out.LossPct, pt.LossPct)
+	}
+	return out
+}
+
+// HandleHistory serves GET ?range=5m|1h|24h|30d: the status and the chart points of both series.
 func (p *Prober) HandleHistory(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -34,20 +52,19 @@ func (p *Prober) HandleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	points, summary, err := p.Store.History(rng, time.Now())
-	if err != nil {
-		http.Error(w, "could not read the history", http.StatusInternalServerError)
-		return
-	}
-
-	resp := historyResponse{Range: name, Status: p.Status(), Summary: summary,
-		Timestamps: []int64{}, AvgMS: []*float64{}, MinMS: []*float64{}, MaxMS: []*float64{}, LossPct: []float64{}}
-	for _, pt := range points {
-		resp.Timestamps = append(resp.Timestamps, pt.At)
-		resp.AvgMS = append(resp.AvgMS, pt.AvgMS)
-		resp.MinMS = append(resp.MinMS, pt.MinMS)
-		resp.MaxMS = append(resp.MaxMS, pt.MaxMS)
-		resp.LossPct = append(resp.LossPct, pt.LossPct)
+	now := time.Now()
+	resp := historyResponse{Range: name, Status: p.Status()}
+	for _, series := range allSeries {
+		points, summary, err := p.Store.History(series, rng, now)
+		if err != nil {
+			http.Error(w, "could not read the history", http.StatusInternalServerError)
+			return
+		}
+		if series == SeriesDNS {
+			resp.DNS = seriesOf(points, summary)
+		} else {
+			resp.Gateway = seriesOf(points, summary)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

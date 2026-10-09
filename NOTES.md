@@ -270,7 +270,18 @@ both `lan_subnet` and `wan_subnet`, so whichever page you are on can show it nex
 the first IPv4 address, the default route in `/proc/net/route`, and the resolvers.
 
 **Health** (`internal/wanhealth`):
-- **What is probed:** the first upstream DNS server: the configured one for a static address, otherwise the
+- **Two series.** `dns` is the upstream DNS server (the internet side) and `gateway` is the router or
+  modem directly in front of this one (the configured gateway for a static address, otherwise the
+  default route in `/proc/net/route`). Showing both tells you where it breaks: gateway fine but DNS
+  gone means the modem, provider or line; both gone means the cable or the modem. The status carries
+  that as a `diagnosis` sentence (also when the DNS server answers but the gateway does not, which
+  usually means a modem that ignores pings). A series keeps its history when the address behind it
+  changes. The gateway is **only probed with a real ping**: many gateways run no DNS server, so the
+  DNS-query fallback would report an outage that is not there (state `unavailable` with an explanation).
+  The two probes run one after the other each cycle (2 s timeout each, inside the 5 s interval).
+  `wan_health.db` rows were first keyed by address; opening an older file renames that column to
+  `series` and treats the rows as DNS history.
+- **What is probed (the DNS series):** the first upstream DNS server: the configured one for a static address, otherwise the
   first non-loopback server in `/etc/resolv.conf` (on systemd-resolved machines, the real servers in
   `/run/systemd/resolve/resolv.conf`; a local stub is not "upstream"). The target is looked up on every
   probe, so a change of provider or a commit is followed. Nothing is probed until a WAN port exists.
@@ -282,7 +293,7 @@ the first IPv4 address, the default route in `/proc/net/route`, and the resolver
   look healthy while the link is down. The ICMP path does not have this problem. On the appliance the
   daemon runs as root today; when it is moved to a normal user (TODO #21) it needs `AmbientCapabilities=CAP_NET_RAW`
   (or `net.ipv4.ping_group_range`) to keep real pings.
-- **State:** `online` if any of the last probes answered, `offline` after 3 failures in a row (15 s),
+- **State:** `online` once a probe answers, `offline` after 3 failures in a row (15 s),
   `unknown` until the first result, `not_configured` without a WAN port or resolver. A probe cancelled
   by shutdown is not counted as lost.
 - **Storage:** probes are folded into one row per target per minute in RAM (sent, lost, RTT sum/min/max)
@@ -295,7 +306,8 @@ the first IPv4 address, the default route in `/proc/net/route`, and the resolver
   whether or not it has been written yet. Average latency is weighted by answered probes, so lost probes
   do not drag it down; a bucket where everything was lost has no latency (null) and shows as a red column.
   Loss under 1 % in a bucket is not drawn, so a stray lost packet does not paint the whole 30-day chart.
-- **Chart** (`internet.js`): canvas, average line with a best-to-worst band, red columns for loss, gaps
+- **Chart** (`internet.js`): canvas, DNS average line with a best-to-worst band, a thinner gateway line,
+  red columns for DNS loss, gaps
   where no probes ran, hover tooltip, drawn at device pixel ratio. It refreshes every 5 to 60 s depending
   on the range.
 
@@ -387,7 +399,7 @@ every future page works on every screen automatically.
 | `GET /api/v1/system/traffic?iface=&range=` | session | history; ranges `1h` (also used for 5m), `24h`, `30d` |
 | `GET /api/v1/uplinks`, `GET /api/v1/uplinks/{id}` | session | the internet connection (today one, id `wan`): `port`, `mode` (dhcp or static), `ip`, `netmask`, `gateway`, `dns`, `pending`, and `live` (what is in effect: `up`, `address`, `gateway`, `dns`) |
 | `PUT /api/v1/uplinks/{id}` | session + CSRF | `{"mode": "dhcp"}` or `{"mode": "static", "ip", "netmask", "gateway", "dns": []}`; stages a draft. Switching to DHCP clears the static values. A static address also requires a gateway and one DNS server |
-| `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (state, target, method, latest latency), `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
+| `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (the DNS series' `state`, `target`, `source`, `rtt_ms`, plus `method`, `gateway` (the same fields for the gateway) and a `diagnosis` sentence), and two series, `dns` and `gateway`, each with `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
 | `GET /api/v1/system/logs?limit=` | session | systemd journal |
 | `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage |
 | `POST /api/v1/cert/upload` | session + `X-CSRF-Token` | multipart `cert` and `key` |
@@ -431,6 +443,7 @@ every future page works on every screen automatically.
 | 2026-10-08 | Editing endpoints validate only their own fields and are refused while a change is applying | partial configuration stays editable; a revert must not overwrite a newer draft |
 | 2026-10-08 | Ports and Networks pages replace the read-only Devices table; Save writes a draft only, never the system | one pipeline for every change; the banner is the single place to commit |
 | 2026-10-08 | WAN health pings the upstream DNS server (ICMP, DNS query only as a fallback), per-minute history in its own SQLite file | what Meraki's appliance status shows; the resolver is what clients actually depend on; same flash-friendly storage as traffic |
+| 2026-10-08 | The gateway is measured as a second series, only with real pings | tells ISP problems from local ones; a DNS query to a gateway is not a valid test |
 | 2026-10-08 | Static WAN needs a gateway and a DNS server in the editor, though the shared validation allows them empty | an address alone cannot reach the internet, and the health chart needs a DNS server to measure |
 | 2026-10-06 | Success messages show ~8 s; failures and reverts stay until dismissed | problems must not be missed, good news should not nag |
 

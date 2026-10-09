@@ -106,3 +106,34 @@ func TestDefaultGateway(t *testing.T) {
 		t.Fatalf("empty: %q", got)
 	}
 }
+
+func TestUpstreamGateway(t *testing.T) {
+	route := "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n" +
+		"eth0\t00000000\t0100A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n"
+	files := reader(map[string]string{"/proc/net/route": route})
+
+	if a, ok := UpstreamGateway(config.NetworkConfig{WanInterface: "eth0", WanMode: "dhcp"}, files); !ok || a.String() != "192.168.0.1" {
+		t.Fatalf("dhcp: %v %v", a, ok)
+	}
+	if a, ok := UpstreamGateway(config.NetworkConfig{WanInterface: "eth0"}, files); !ok || a.String() != "192.168.0.1" {
+		t.Fatalf("empty mode counts as dhcp: %v %v", a, ok)
+	}
+	// static: the configured one, whatever the kernel says
+	if a, ok := UpstreamGateway(config.NetworkConfig{WanInterface: "eth0", WanMode: "static", WanGateway: "203.0.113.1"}, files); !ok || a.String() != "203.0.113.1" {
+		t.Fatalf("static: %v %v", a, ok)
+	}
+	// static without a gateway does not borrow the kernel's
+	if _, ok := UpstreamGateway(config.NetworkConfig{WanInterface: "eth0", WanMode: "static"}, files); ok {
+		t.Fatal("static without a gateway should have none")
+	}
+	// another port, a missing route table, junk
+	if _, ok := UpstreamGateway(config.NetworkConfig{WanInterface: "eth9"}, files); ok {
+		t.Fatal("a port without a default route has no gateway")
+	}
+	if _, ok := UpstreamGateway(config.NetworkConfig{WanInterface: "eth0"}, reader(nil)); ok {
+		t.Fatal("no route table")
+	}
+	if _, ok := UpstreamGateway(config.NetworkConfig{WanMode: "static", WanGateway: "not-an-ip"}, files); ok {
+		t.Fatal("junk gateway accepted")
+	}
+}

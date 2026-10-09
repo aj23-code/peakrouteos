@@ -1469,3 +1469,5 @@ height: 260px;
 .radio:has(input:checked) { border-color: var(--accent-green); background: rgba(16, 185, 129, 0.06); }
 .radio:has(input:disabled) { opacity: 0.6; cursor: not-allowed; }
 #inet-static-fields { margin-top: 1rem; }
+.inet-key--gw { background: #34d399; height: 3px; }
+.inet-diagnosis { margin-top: 0.4rem; font-size: 0.85rem; color: var(--accent-amber); max-width: 46rem; }

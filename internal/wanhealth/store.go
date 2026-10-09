@@ -65,15 +65,24 @@ func (a *agg) merge(b agg) {
 	a.rttSum += b.rttSum
 }
 
+// The two things that are measured. A series keeps its history when the address behind it changes
+// (a new provider, a new gateway), which is what a chart of "the upstream DNS server" should do.
+const (
+	SeriesDNS     = "dns"     // the upstream DNS server: the internet side
+	SeriesGateway = "gateway" // the next hop: the router or modem in front of this one
+)
+
+var allSeries = []string{SeriesDNS, SeriesGateway}
+
 type minuteKey struct {
-	target string
+	series string
 	minute int64
 }
 
 // Probe is one raw measurement.
 type Probe struct {
 	At     time.Time
-	Target string
+	Series string
 	RTT    time.Duration
 	OK     bool
 }
@@ -82,7 +91,7 @@ type Store struct {
 	db    *sql.DB // nil: memory only (tests)
 	mu    sync.Mutex
 	mins  map[minuteKey]*agg
-	ring  []Probe
+	ring  map[string][]Probe // newest raw probes of each series
 	flush time.Duration
 
 	cancel context.CancelFunc
@@ -94,25 +103,29 @@ type Store struct {
 func Open(path string) (*Store, error) { return open(path, time.Minute) }
 
 func open(path string, flush time.Duration) (*Store, error) {
-	s := &Store{mins: map[minuteKey]*agg{}, flush: flush}
+	s := &Store{mins: map[minuteKey]*agg{}, ring: map[string][]Probe{}, flush: flush}
 	if path != "" {
 		db, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=auto_vacuum(2)")
 		if err != nil {
 			return nil, fmt.Errorf("open wan health database: %w", err)
 		}
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS wan_health (
-			target TEXT NOT NULL,
+			series TEXT NOT NULL,
 			minute INTEGER NOT NULL,
 			sent INTEGER NOT NULL,
 			lost INTEGER NOT NULL,
 			rtt_sum_us INTEGER NOT NULL,
 			rtt_min_us INTEGER NOT NULL,
 			rtt_max_us INTEGER NOT NULL,
-			PRIMARY KEY (target, minute)
+			PRIMARY KEY (series, minute)
 		)`)
 		if err != nil {
 			db.Close()
 			return nil, fmt.Errorf("create wan health table: %w", err)
+		}
+		if err := migrate(db); err != nil {
+			db.Close()
+			return nil, err
 		}
 		s.db = db
 		s.purge(time.Now())
@@ -125,13 +138,50 @@ func open(path string, flush time.Duration) (*Store, error) {
 	return s, nil
 }
 
+// migrate brings a database written before there were series up to date: its rows were keyed by
+// the probed address, and were all measurements of the DNS server.
+func migrate(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(wan_health)`)
+	if err != nil {
+		return fmt.Errorf("inspect wan health table: %w", err)
+	}
+	old := false
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "target" {
+			old = true
+		}
+	}
+	rows.Close()
+	if !old {
+		return nil
+	}
+	for _, q := range []string{
+		`ALTER TABLE wan_health RENAME COLUMN target TO series`,
+		// Two addresses measured in the same minute collapse into one row; keep either
+		`UPDATE OR IGNORE wan_health SET series = 'dns' WHERE series NOT IN ('dns', 'gateway')`,
+		`DELETE FROM wan_health WHERE series NOT IN ('dns', 'gateway')`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			return fmt.Errorf("migrate wan health table: %w", err)
+		}
+	}
+	return nil
+}
+
 // Record adds one probe.
 func (s *Store) Record(p Probe) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	us := p.RTT.Microseconds()
-	key := minuteKey{p.Target, p.At.Unix() / minuteSeconds * minuteSeconds}
+	key := minuteKey{p.Series, p.At.Unix() / minuteSeconds * minuteSeconds}
 	a := s.mins[key]
 	if a == nil {
 		a = &agg{}
@@ -139,10 +189,11 @@ func (s *Store) Record(p Probe) {
 	}
 	a.addProbe(us, p.OK)
 
-	s.ring = append(s.ring, p)
-	if len(s.ring) > ringCapacity {
-		s.ring = append(s.ring[:0], s.ring[len(s.ring)-ringCapacity:]...)
+	ring := append(s.ring[p.Series], p)
+	if len(ring) > ringCapacity {
+		ring = append(ring[:0], ring[len(ring)-ringCapacity:]...)
 	}
+	s.ring[p.Series] = ring
 }
 
 func (s *Store) flusher(ctx context.Context) {
@@ -203,8 +254,8 @@ func (s *Store) writeDirty() {
 	}
 	defer tx.Rollback()
 	for _, r := range rows {
-		_, err := tx.Exec(`INSERT OR REPLACE INTO wan_health (target, minute, sent, lost, rtt_sum_us, rtt_min_us, rtt_max_us) VALUES (?,?,?,?,?,?,?)`,
-			r.k.target, r.k.minute, r.a.sent, r.a.lost, r.a.rttSum, r.a.rttMin, r.a.rttMax)
+		_, err := tx.Exec(`INSERT OR REPLACE INTO wan_health (series, minute, sent, lost, rtt_sum_us, rtt_min_us, rtt_max_us) VALUES (?,?,?,?,?,?,?)`,
+			r.k.series, r.k.minute, r.a.sent, r.a.lost, r.a.rttSum, r.a.rttMin, r.a.rttMax)
 		if err != nil {
 			log.Printf("[wanhealth] write: %v", err)
 			redo()
@@ -302,11 +353,11 @@ func pointOf(at time.Time, a agg) Point {
 }
 
 // History returns the chart points of a range, oldest first, and their summary.
-func (s *Store) History(r Range, now time.Time) ([]Point, Summary, error) {
+func (s *Store) History(series string, r Range, now time.Time) ([]Point, Summary, error) {
 	start := now.Add(-r.Window)
 
 	if r.Bucket == 0 {
-		return s.rawHistory(start)
+		return s.rawHistory(series, start)
 	}
 
 	bucket := int64(r.Bucket / time.Second)
@@ -324,12 +375,12 @@ func (s *Store) History(r Range, now time.Time) ([]Point, Summary, error) {
 	s.mu.Lock()
 	oldestRAM := now.Unix()/minuteSeconds*minuteSeconds + minuteSeconds
 	for k := range s.mins {
-		if k.minute < oldestRAM {
+		if k.series == series && k.minute < oldestRAM {
 			oldestRAM = k.minute
 		}
 	}
 	for k, a := range s.mins {
-		if k.minute >= start.Unix() {
+		if k.series == series && k.minute >= start.Unix() {
 			add(k.minute/bucket*bucket, *a)
 		}
 	}
@@ -338,7 +389,7 @@ func (s *Store) History(r Range, now time.Time) ([]Point, Summary, error) {
 	if s.db != nil {
 		rows, err := s.db.Query(`SELECT minute/?*?, SUM(sent), SUM(lost), SUM(rtt_sum_us),
 			MIN(CASE WHEN sent > lost THEN rtt_min_us END), MAX(CASE WHEN sent > lost THEN rtt_max_us END)
-			FROM wan_health WHERE minute >= ? AND minute < ? GROUP BY 1`, bucket, bucket, start.Unix(), oldestRAM)
+			FROM wan_health WHERE series = ? AND minute >= ? AND minute < ? GROUP BY 1`, bucket, bucket, series, start.Unix(), oldestRAM)
 		if err != nil {
 			return nil, Summary{}, fmt.Errorf("query wan health: %w", err)
 		}
@@ -374,12 +425,12 @@ func (s *Store) History(r Range, now time.Time) ([]Point, Summary, error) {
 	return points, summaryOf(total), nil
 }
 
-func (s *Store) rawHistory(start time.Time) ([]Point, Summary, error) {
+func (s *Store) rawHistory(series string, start time.Time) ([]Point, Summary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var points []Point
 	var total agg
-	for _, p := range s.ring {
+	for _, p := range s.ring[series] {
 		if p.At.Before(start) {
 			continue
 		}
@@ -402,12 +453,13 @@ func summaryOf(a agg) Summary {
 	return s
 }
 
-// Recent returns the newest raw probes, oldest first, for judging whether the link is up.
-func (s *Store) Recent(n int) []Probe {
+// Recent returns the newest raw probes of a series, oldest first.
+func (s *Store) Recent(series string, n int) []Probe {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if n > len(s.ring) {
-		n = len(s.ring)
+	ring := s.ring[series]
+	if n > len(ring) {
+		n = len(ring)
 	}
-	return append([]Probe(nil), s.ring[len(s.ring)-n:]...)
+	return append([]Probe(nil), ring[len(ring)-n:]...)
 }

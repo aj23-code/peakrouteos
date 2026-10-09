@@ -304,6 +304,7 @@
             <div>
               <div id="inet-state-text" class="inet-state-text">Checking&hellip;</div>
               <div id="inet-target" class="form-hint"></div>
+              <div id="inet-diagnosis" class="inet-diagnosis hidden"></div>
             </div>
           </div>
           <dl class="inet-stats">
@@ -311,6 +312,7 @@
             <div><dt>Average</dt><dd id="inet-avg">&ndash;</dd></div>
             <div><dt>Best / worst</dt><dd id="inet-range">&ndash;</dd></div>
             <div><dt>Packet loss</dt><dd id="inet-loss">&ndash;</dd></div>
+            <div><dt>Gateway now</dt><dd id="inet-gw">&ndash;</dd></div>
           </dl>
         </section>
 
@@ -371,7 +373,7 @@
           <div class="traffic-card-header">
             <div class="traffic-card-meta">
               <span class="traffic-badge wan">LATENCY</span>
-              <span id="inet-chart-note" class="form-hint">Round trip time to your upstream DNS server</span>
+              <span id="inet-chart-note" class="form-hint">Round trip time to your upstream DNS server and your gateway</span>
             </div>
             <div class="traffic-time-picker time-picker" id="inet-picker">
               <button class="time-btn" data-range="5m">5m</button>
@@ -381,10 +383,11 @@
             </div>
           </div>
           <div class="traffic-chart-container">
-            <canvas id="inet-canvas" class="traffic-canvas" role="img" aria-label="Latency to the upstream DNS server over time"></canvas>
+            <canvas id="inet-canvas" class="traffic-canvas" role="img" aria-label="Latency to the upstream DNS server and the gateway over time"></canvas>
           </div>
           <div class="inet-legend">
-            <span><i class="inet-key inet-key--avg"></i>Average</span>
+            <span><i class="inet-key inet-key--avg"></i>DNS server</span>
+            <span id="inet-gw-key"><i class="inet-key inet-key--gw"></i>Gateway</span>
             <span><i class="inet-key inet-key--band"></i>Best to worst</span>
             <span><i class="inet-key inet-key--loss"></i>Lost packets</span>
           </div>

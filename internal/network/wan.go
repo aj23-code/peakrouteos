@@ -111,3 +111,20 @@ func WANConnection(port string) (up bool, address, gateway string) {
 	}
 	return up, address, gateway
 }
+
+// UpstreamGateway returns the router in front of this one: the configured gateway for a static
+// address, otherwise the default route the kernel learned over DHCP.
+func UpstreamGateway(cfg config.NetworkConfig, read func(string) ([]byte, error)) (netip.Addr, bool) {
+	gw := cfg.WanGateway
+	if !strings.EqualFold(cfg.WanMode, "static") {
+		gw = ""
+		if route, err := read("/proc/net/route"); err == nil {
+			gw = DefaultGateway(route, cfg.WanInterface)
+		}
+	}
+	a, err := netip.ParseAddr(gw)
+	if err != nil || !a.Is4() {
+		return netip.Addr{}, false
+	}
+	return a, true
+}

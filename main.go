@@ -165,6 +165,14 @@ func main() {
 			}
 			return wanhealth.Target{Addr: resolvers[0], Source: source}, true
 		},
+		Gateway: func() (wanhealth.Target, bool) {
+			cfg := cfgMgr.NetworkConfig()
+			if cfg.WanInterface == "" {
+				return wanhealth.Target{}, false
+			}
+			gw, ok := network.UpstreamGateway(cfg, os.ReadFile)
+			return wanhealth.Target{Addr: gw, Source: "default gateway"}, ok
+		},
 	}
 	go wanProbe.Run(pollerCtx)
 
