@@ -46,9 +46,10 @@ window.PortsModule = (function () {
     function netsHtml(p) {
         const cur = netsOf(p.name);
         const off = editable && !saving ? '' : ' disabled';
-        const options = networks.map(n => `<option value="${escapeHtml(n.id)}"${n.id === cur.native ? ' selected' : ''}>${escapeHtml(n.name)}${n.default ? '' : ' (VLAN ' + n.vlan + ')'}</option>`).join('');
+        const label = (n) => `${n.name} (VLAN ${n.vlan})`;
+        const options = networks.map(n => `<option value="${escapeHtml(n.id)}"${n.id === cur.native ? ' selected' : ''}>${escapeHtml(label(n))}</option>`).join('');
         const tagged = networks.filter(n => !n.default && n.id !== cur.native).map(n =>
-            `<label class="toggle toggle--small"><input type="checkbox" class="net-tagged" data-port="${escapeHtml(p.name)}" data-net="${escapeHtml(n.id)}"${cur.tagged.includes(n.id) ? ' checked' : ''}${off}> ${escapeHtml(n.name)}</label>`).join('');
+            `<label class="toggle toggle--small"><input type="checkbox" class="net-tagged" data-port="${escapeHtml(p.name)}" data-net="${escapeHtml(n.id)}"${cur.tagged.includes(n.id) ? ' checked' : ''}${off}> ${escapeHtml(label(n))}</label>`).join('');
         return `<div class="port-nets">
             <label class="port-net-row"><span class="form-hint">Untagged network</span>
                 <select class="role-select net-native" data-port="${escapeHtml(p.name)}" aria-label="Untagged network of ${escapeHtml(p.name)}"${off}>${options}</select></label>

@@ -456,7 +456,9 @@ the default network would be a security change nobody asked for; ids are `net2`,
   seconds) and says why when refused.
 - **Ports** (`ports.js`): when there is more than the default network, a LAN port shows an **Untagged
   network** choice and, under "Also carries, tagged", a checkbox per added network (the untagged one is
-  never offered as tagged). The networks are saved with the roles in one request.
+  never offered as tagged). Every network is shown as `Name (VLAN n)`, the default one as `LAN (VLAN 1)`. Networks are
+  never roles: the role list stays Internet (WAN), LAN and Unassigned, and a LAN port is then given its networks.
+  The networks are saved with the roles in one request.
 - **Overview, Local Networks card:** one block per network with its tags (VLAN, Internet or No internet,
   Isolated, Draft), its ports, router address, how many leases fall inside its subnet and how much of its
   DHCP range is leased.
