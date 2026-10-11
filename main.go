@@ -276,9 +276,9 @@ func main() {
 	presenceTracker.Load()
 	go presenceTracker.Run(pollerCtx)
 	netAPI.Wireless = wifi.Detect
-	mux.HandleFunc("/api/v1/wifi/stations", requireAuth(stations.Handler))
 	mux.HandleFunc("/api/v1/wifi", requireAuth(netAPI.HandleWifi))
-	mux.HandleFunc("/api/v1/wifi/country", requireAuth(netAPI.HandleWifiCountry))
+	mux.HandleFunc("/api/v1/settings", requireAuth(netAPI.HandleSettings))
+	mux.HandleFunc("/api/v1/settings/country", requireAuth(netAPI.HandleSettingsCountry))
 	mux.HandleFunc("/api/v1/wifi/radios/{name}", requireAuth(netAPI.HandleWifiRadio))
 	mux.HandleFunc("/api/v1/wifi/networks", requireAuth(netAPI.HandleWifiNetworks))
 	mux.HandleFunc("/api/v1/wifi/networks/{id}", requireAuth(netAPI.HandleWifiNetwork))

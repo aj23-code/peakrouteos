@@ -519,15 +519,15 @@ This rule is about *where roles are chosen*, not a statement that Wi-Fi is alway
 
 Built in stages: (1) config, validation and review lines, (2) translator and the wifi service, (3) API, (4) page.
 - **Model** (`internal/config/wifi.go`, in `network.json` under `wifi`, so it goes through the same draft, review,
-  commit and confirm steps): `country` (ISO code, from a generated list of 249 in `countries.go`), `radios`
+  commit and confirm steps): `radios`
   (one per adapter used as an access point: `name`, `band` 2.4 or 5 GHz, `channel` (0 = automatic), `width` 20/40/80/160,
   `disabled`) and `networks` (the SSIDs: `id`, `ssid`, `network` (the id of the Local Network it joins, `lan`
   being the default), `security` (`wpa2`, `wpa3` or `wpa2-wpa3`), `passphrase`, `bands`, `band_steering`,
   `hidden`, `client_isolation`, `disabled`). 6 GHz is not offered (it needs WPA3-only and a different set-up).
 - **Band steering** is a flag on an SSID that is broadcast on both bands: devices that can use 5 GHz are pushed
   off 2.4 GHz. It needs both bands (validated).
-- **Validation** (errors on `wifi.country`, `wifi.radios[i].x`, `wifi.networks[i].x`, and `wifi.coverage`):
-  the country must be known and is required once an adapter and a network are both switched on; an adapter is
+- **Validation** (errors on `wifi.radios[i].x`, `wifi.networks[i].x`, `wifi.coverage`, and `country`):
+  the router's country (see below) is required once an adapter and a network are both switched on; an adapter is
   listed once, with a band that allows its width and a channel that exists in the band and **can be the primary
   channel of that width** (40 MHz needs a neighbouring pair, 80 and 160 MHz fixed blocks: `ChannelFitsWidth`,
   `HT40Direction` and `CentreChannel` are the same tables hostapd's settings are computed from); an SSID is
@@ -536,7 +536,7 @@ Built in stages: (1) config, validation and review lines, (2) translator and the
   SSID uses needs a switched-on adapter for it (`wifi.coverage`, a commit-time problem: an SSID can be made before
   its adapter is set up). Open networks are not offered.
 - **Review dialog:** one line per adapter and per Wi-Fi network (added, removed, changed; a rename is one
-  change) and one for the country, naming the local network. **A passphrase never appears:** a changed one is
+  change), naming the local network. **A passphrase never appears:** a changed one is
   reported as "new password" and a new network as "password set".
 - **`network.json` is now written 0600** (it can hold passphrases; it used to be 0644). The staged copy and the
   snapshot kept for a revert (`confirm.json`, already 0600) follow the same rule.
@@ -610,13 +610,21 @@ setting, then AP mode (the limited GUI and a translator that bridges everything 
 
 ### Wireless page: the Wi-Fi editors (stage 4)
 
-- The page (`wireless.js`) has four parts, top to bottom: the country (a dropdown; saved to the draft the moment it
-  changes), **Wi-Fi networks** (a dropdown with one network on show, like Local Networks, plus *Add Wi-Fi network*),
+- The page (`wireless.js`) has three parts, top to bottom: a note (the country in use, with a link to Settings, or a
+  warning that none is set; the regulatory domain in effect), **Wi-Fi networks** (a dropdown with one network on show, like Local Networks, plus *Add Wi-Fi network*),
   and one card per adapter. An adapter that can be an access point gets an **Access point** section: a switch, the
   band, the channel (Automatic or one of the channels the adapter reports) and the width (what the adapter offers
   for that band). Changing the band resets the channel to Automatic and the width to the usual choice (20 MHz on
   2.4 GHz, up to 80 MHz on 5 GHz). Channels the country in effect has closed are still listed, marked as closed:
   the country being edited is only a draft, so the page cannot know yet.
+- **The country is not set on this page** (decided 2026-10-10): it is a router-wide setting, kept in `network.json` as
+  top-level `country` (so it still goes through review and commit) and edited on **System, Settings**
+  (`settings.js`; `GET /api/v1/settings`, `PUT /api/v1/settings/country`). Wi-Fi only *uses* it: `country_code` in
+  the hostapd files, and the commit is refused (error on `country`) when Wi-Fi is on without one. The review shows it
+  as "Country", not as a Wi-Fi line. A change of country alone touches no file and restarts nothing: the review
+  says the system already matches. Anything else that needs a regulatory country later can read the same setting.
+  Not done: setting the kernel's regulatory domain (`iw reg set`) when no Wi-Fi is running, so the channels listed
+  on the Wireless page only open up once Wi-Fi has started with the country.
 - One adapter serves **one band at a time** (the stored radio has a single band); a dual-band adapter is used for
   2.4 GHz *or* 5 GHz. Serving both bands needs two adapters. A Wi-Fi network that ticks a band no adapter is
   switched on for shows a warning, and the commit refuses it (`wifi.coverage`).
@@ -626,11 +634,9 @@ setting, then AP mode (the limited GUI and a translator that bridges everything 
   would be lost); the 10 s refresh only redraws when the list of adapters changed.
 - With no adapter the page is greyed with its message; with adapters but none able to be an access point, the Wi-Fi
   networks card says so and cannot add a network.
-- **Connected devices** card: one row per device connected to one of our Wi-Fi networks (name and address from
-  the DHCP lease with the same MAC, network, band, signal with a word for it, link speed, data, time connected).
-  Refreshes every 5 s on its own, so it does not disturb a form being edited.
+- There is no list of connected devices here: that is what the Clients page is for (see below).
 
-### Connected devices, wired or wireless, and online or offline (added 2026-10-10)
+### Clients: wired or wireless, and online or offline (added 2026-10-10)
 
 - **Wi-Fi stations:** `iw dev` lists the interfaces; every one in AP mode is asked `iw dev <if> station dump`
   (`wireless/stations.go`). hostapd's extra networks are interfaces of their own (`wlan0_1`...), so each station
@@ -783,7 +789,6 @@ every future page works on every screen automatically.
 | `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (the DNS series' `state`, `target`, `source`, `rtt_ms`, plus `method`, `gateway` (the same fields for the gateway) and a `diagnosis` sentence), `availability` (`uptime_24h`, `uptime_30d` in percent or null, `outage_count`, `outages`: newest first, at most 20, each `start` ms, `seconds`, `ongoing`; independent of the charted range), and two series, `dns` and `gateway`, each with `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
 | `GET /api/v1/system/logs?limit=` | session | systemd journal |
 | `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage, how each device is connected (`connection`: `wifi`, `wired` or `unknown`; `ssid` and `band` for Wi-Fi) and whether it is here (`status`: `online`, `offline` or `unknown`; `last_seen_epoch`, 0 if never) |
-| `GET /api/v1/wifi/stations` | session | the devices connected to this router's Wi-Fi networks: `known`, `stations` (`mac`, `interface`, `ssid`, `band`, `channel`, `signal_dbm`, `inactive_seconds`, `rx_bytes` (from the device), `tx_bytes` (to it), `rx_mbps`, `tx_mbps`, `connected_seconds`) |
 | `POST /api/v1/cert/upload` | session + `X-CSRF-Token` | multipart `cert` and `key` |
 | `GET /api/v1/config/status` | session | `state` (idle, applying, awaiting_confirm), `has_changes`, `change_count`, `confirm.seconds_left`, `last` outcome; polled by the banner |
 | `GET /api/v1/config/staged` | session | the review: `changes`, `valid`, per-field `errors`, `plan` (files and service actions), `notes`, `needs_confirm`, `confirm_seconds` |
@@ -793,8 +798,9 @@ every future page works on every screen automatically.
 | `POST /api/v1/config/discard` | session + CSRF | drop the staged changes; 409 while applying or awaiting confirmation |
 | `GET /api/v1/ports` | session | physical ports with hardware details, `role` (wan, lan, unassigned) from the draft, `active_role`, `pending`, `present` (false: configured but the hardware is gone), `editable`; for LAN ports `native` (the id of the untagged network) and `tagged` (ids); and `networks`: what a LAN port can carry (`id`, `name`, `vlan`, `default`) |
 | `PUT /api/v1/ports` | session + CSRF | `{"assignments": {"eth0": "wan", "eth1": "lan", "eth2": "unassigned"}, "networks": {"eth1": {"native": "lan", "tagged": ["net2"]}}}` stages the roles as one atomic change; ports not mentioned keep their role, and a LAN port not named under `networks` keeps its networks; the result must have exactly one WAN and at least one LAN; an entry that says only the default network is dropped; a port that stops being a LAN port loses its networks |
-| `GET /api/v1/wifi` | session | `country`, `country_pending`, `countries` (`code`, `name`), `radios` (`name`, `band`, `channel` (0: automatic), `width`, `enabled`, `ht`, `vht`, `he`, `pending`), `networks` (`id` `wifi1`..., `ssid`, `passphrase`, `network`, `security`, `bands`, `band_steering`, `hidden`, `client_isolation`, `enabled`, `pending`), `editable` |
-| `PUT /api/v1/wifi/country` | session + CSRF | `{"country": "US"}`; an empty string clears it (committing Wi-Fi without a country is refused) |
+| `GET /api/v1/settings` | session | `country` (the draft), `country_pending`, `countries` (`code`, `name`), `editable` |
+| `PUT /api/v1/settings/country` | session + CSRF | `{"country": "US"}`; an empty string clears it (committing Wi-Fi without a country is refused) |
+| `GET /api/v1/wifi` | session | `country` (read only: it is set under settings), `radios` (`name`, `band`, `channel` (0: automatic), `width`, `enabled`, `ht`, `vht`, `he`, `pending`), `networks` (`id` `wifi1`..., `ssid`, `passphrase`, `network`, `security`, `bands`, `band_steering`, `hidden`, `client_isolation`, `enabled`, `pending`), `editable` |
 | `PUT /api/v1/wifi/radios/{name}` | session + CSRF | `{"band", "channel", "width", "enabled"}` checked against the adapter's capabilities; `DELETE` stops using the adapter |
 | `POST /api/v1/wifi/networks` | session + CSRF | `{"ssid", "passphrase", "bands": [...], "network", "security", "band_steering", "hidden", "client_isolation", "enabled"}`; left out: security `wpa2-wpa3`, network `lan`, enabled, band steering on when both bands are chosen; answers 201 |
 | `PUT /api/v1/wifi/networks/{id}`, `DELETE ...` | session + CSRF | fields left out stay as they are (also the passphrase); `DELETE` stages the removal and answers with the whole Wi-Fi setup |
@@ -809,7 +815,6 @@ every future page works on every screen automatically.
 | `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (the DNS series' `state`, `target`, `source`, `rtt_ms`, plus `method`, `gateway` (the same fields for the gateway) and a `diagnosis` sentence), `availability` (`uptime_24h`, `uptime_30d` in percent or null, `outage_count`, `outages`: newest first, at most 20, each `start` ms, `seconds`, `ongoing`; independent of the charted range), and two series, `dns` and `gateway`, each with `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
 | `GET /api/v1/system/logs?limit=` | session | systemd journal |
 | `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage, how each device is connected (`connection`: `wifi`, `wired` or `unknown`; `ssid` and `band` for Wi-Fi) and whether it is here (`status`: `online`, `offline` or `unknown`; `last_seen_epoch`, 0 if never) |
-| `GET /api/v1/wifi/stations` | session | the devices connected to this router's Wi-Fi networks: `known`, `stations` (`mac`, `interface`, `ssid`, `band`, `channel`, `signal_dbm`, `inactive_seconds`, `rx_bytes` (from the device), `tx_bytes` (to it), `rx_mbps`, `tx_mbps`, `connected_seconds`) |
 | `POST /api/v1/cert/upload` | session + `X-CSRF-Token` | multipart `cert` and `key` |
 | `GET /api/v1/config/status` | session | `state` (idle, applying, awaiting_confirm), `has_changes`, `change_count`, `confirm.seconds_left`, `last` outcome; polled by the banner |
 | `GET /api/v1/config/staged` | session | the review: `changes`, `valid`, per-field `errors`, `plan` (files and service actions), `notes`, `needs_confirm`, `confirm_seconds` |

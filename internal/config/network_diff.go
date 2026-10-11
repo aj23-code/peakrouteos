@@ -86,6 +86,7 @@ var networkSettings = []networkSetting{
 	{"dhcp_lease_time", "DHCP lease time", func(c NetworkConfig) string {
 		return dhcpValue(c, func(d *DHCPConfig) string { return text(d.LeaseTime) })
 	}},
+	{"country", "Country", func(c NetworkConfig) string { return text(c.Country) }},
 }
 
 // DiffNetwork lists what differs between the active configuration and a candidate, in a
@@ -338,10 +339,6 @@ func wifiNetworkText(c NetworkConfig, n WifiNetwork) string {
 func diffWifi(active, candidate NetworkConfig) []Change {
 	a, b := active.WifiSettings(), candidate.WifiSettings()
 	var changes []Change
-
-	if a.Country != b.Country {
-		changes = append(changes, Change{Field: "wifi_country", Label: "Wi-Fi country", Old: text(a.Country), New: text(b.Country)})
-	}
 
 	// adapters, by name
 	before := map[string]WifiRadio{}

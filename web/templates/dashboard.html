@@ -73,7 +73,7 @@
               <span class="chevron">▸</span>
             </summary>
             <div class="folder-content">
-              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Settings</span>
+              <a href="#" class="nav-item" data-view="settings">Settings</a>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Administrators</span>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Certificates</span>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Backup and restore</span>
@@ -437,9 +437,7 @@
 
         <div id="wifi-body" class="wifi-body">
           <div id="wifi-notes"></div>
-          <div id="wifi-country"></div>
           <div id="wifi-ssids"></div>
-          <div id="wifi-devices"></div>
           <div id="wifi-adapters" class="wifi-adapters"></div>
         </div>
       </div>
@@ -554,6 +552,19 @@
         <datalist id="net-lease-options"><option value="30m"><option value="1h"><option value="6h"><option value="12h"><option value="1d"><option value="7d"></datalist>
       </div>
 
+      <!-- View: Settings -->
+      <div id="view-settings" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Settings</h1>
+            <p class="subtitle">Choices that apply to the whole router. Changes are saved as a draft until you commit them.</p>
+          </div>
+        </header>
+
+        <div id="settings-message" class="form-message hidden" role="alert"></div>
+        <div id="settings-body"></div>
+      </div>
+
       <!-- View: System Logs -->
       <div id="view-logs" class="view-section hidden">
         <header class="dash-header">
@@ -641,6 +652,7 @@
   <script src="/static/scripts/networks.js"></script>
   <script src="/static/scripts/routes.js"></script>
   <script src="/static/scripts/wireless.js"></script>
+  <script src="/static/scripts/settings.js"></script>
   <script src="/static/scripts/leases.js"></script>
   <script src="/static/scripts/syslogs.js"></script>
 </body>

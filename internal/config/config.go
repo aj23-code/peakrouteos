@@ -112,7 +112,10 @@ type NetworkConfig struct {
 	LanIsolated  bool                    `json:"lan_isolated,omitempty"`
 	Networks     []Network               `json:"networks,omitempty"`
 	PortNetworks map[string]PortNetworks `json:"port_networks,omitempty"`
-	// Wi-Fi: the country, which adapters serve as access points and the Wi-Fi networks (SSIDs)
+	// The country this router is used in (ISO 3166-1 code). A router-wide setting: today Wi-Fi uses it to know
+	// which channels and powers are allowed.
+	Country string `json:"country,omitempty"`
+	// Wi-Fi: which adapters serve as access points and the Wi-Fi networks (SSIDs)
 	Wifi            *WifiConfig           `json:"wifi,omitempty"`
 	Interfaces      []SystemInterface     `json:"interfaces,omitempty"`
 	ManagedSwitches []ManagedSwitchConfig `json:"managed_switches,omitempty"`

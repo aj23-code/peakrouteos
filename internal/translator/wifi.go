@@ -112,12 +112,12 @@ func ensureSafeWifi(cfg config.NetworkConfig) error {
 			return err
 		}
 	}
-	if w.Country != "" && len(w.Country) != 2 {
-		return fmt.Errorf("refusing to render unsafe country %q", w.Country)
+	if cfg.Country != "" && len(cfg.Country) != 2 {
+		return fmt.Errorf("refusing to render unsafe country %q", cfg.Country)
 	}
-	for _, c := range []byte(w.Country) {
+	for _, c := range []byte(cfg.Country) {
 		if c < 'A' || c > 'Z' {
-			return fmt.Errorf("refusing to render unsafe country %q", w.Country)
+			return fmt.Errorf("refusing to render unsafe country %q", cfg.Country)
 		}
 	}
 	for _, n := range nets {
@@ -133,7 +133,7 @@ func ensureSafeWifi(cfg config.NetworkConfig) error {
 
 func renderHostapd(cfg config.NetworkConfig, p radioPlan, firstOn map[string]string) string {
 	r := p.radio
-	country := cfg.WifiSettings().Country
+	country := cfg.Country
 	var b strings.Builder
 	line := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 

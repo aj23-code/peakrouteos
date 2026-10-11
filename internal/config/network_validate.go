@@ -218,6 +218,11 @@ func (c NetworkConfig) Validate() error {
 	// --- Static routes ---
 	c.validateRoutes(add, lanPrefix, lanOK, lanIP, wanPrefix, haveWanPrefix)
 
+	// --- Country ---
+	if c.Country != "" && !IsCountry(c.Country) {
+		add("country", "must be a two-letter country code such as US or DE")
+	}
+
 	// --- Wi-Fi ---
 	c.validateWifi(add)
 

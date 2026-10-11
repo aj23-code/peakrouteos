@@ -2,8 +2,6 @@ package wireless
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,7 +34,7 @@ type Station struct {
 	Connected int64   `json:"connected_seconds"`
 }
 
-// StationReport is what GET /api/v1/wifi/stations returns.
+// StationReport lists the devices connected to the access points.
 type StationReport struct {
 	Stations []Station `json:"stations"`
 	// Known is false when the wireless side could not be read (no `iw`): the list is then empty because
@@ -235,16 +233,4 @@ func (c *StationCache) Get(ctx context.Context) StationReport {
 	c.rep = c.Detector.Stations(ctx)
 	c.at = now()
 	return c.rep
-}
-
-// Handler serves GET /api/v1/wifi/stations.
-func (c *StationCache) Handler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(c.Get(r.Context()))
 }

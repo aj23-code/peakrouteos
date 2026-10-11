@@ -25,7 +25,8 @@ func ssid(id, name string, bands ...string) config.WifiNetwork {
 
 func wifiCfg(radios []config.WifiRadio, nets ...config.WifiNetwork) config.NetworkConfig {
 	c := routerCfg()
-	c.Wifi = &config.WifiConfig{Country: "US", Radios: radios, Networks: nets}
+	c.Country = "US"
+	c.Wifi = &config.WifiConfig{Radios: radios, Networks: nets}
 	return c
 }
 
@@ -351,8 +352,9 @@ func TestWifiValuesAreRefusedAtRenderTimeIfValidationIsBypassed(t *testing.T) {
 		func(c *config.NetworkConfig) { c.Wifi.Networks[0].Passphrase = "pass\rword12" },
 		func(c *config.NetworkConfig) { c.Wifi.Networks[0].SSID = "" },
 		func(c *config.NetworkConfig) { c.Wifi.Radios[0].Name = "wlan0\nbss=evil" },
-		func(c *config.NetworkConfig) { c.Wifi.Country = "US\nieee80211d=0" },
-		func(c *config.NetworkConfig) { c.Wifi.Country = "us" },
+		func(c *config.NetworkConfig) { c.Country = "US\nieee80211d=0" },
+		func(c *config.NetworkConfig) { c.Country = "us" },
+		func(c *config.NetworkConfig) { c.Country = "USA" },
 		func(c *config.NetworkConfig) { c.Wifi.Networks[0].Network = "ghost" },
 	}
 	for i, mutate := range evil {
@@ -466,7 +468,7 @@ func TestAChangedPassphraseRestartsWifiAndNothingElse(t *testing.T) {
 	cfg := wifiCfg([]config.WifiRadio{r24()}, ssid("wifi1", "Home", config.Band24))
 	install(t, string(root), mustRender(t, cfg))
 	changed := cfg
-	changed.Wifi = &config.WifiConfig{Country: "US", Radios: cfg.Wifi.Radios, Networks: []config.WifiNetwork{func() config.WifiNetwork {
+	changed.Wifi = &config.WifiConfig{Radios: cfg.Wifi.Radios, Networks: []config.WifiNetwork{func() config.WifiNetwork {
 		n := ssid("wifi1", "Home", config.Band24)
 		n.Passphrase = "a different one!"
 		return n

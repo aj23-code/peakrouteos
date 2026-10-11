@@ -270,7 +270,7 @@ window.ConfigBanner = (function () {
                 parts.push('<h3>Services affected</h3><ul class="config-review-list">' +
                     rev.plan.actions.map((a) => `<li>${esc(SERVICE_TEXT[a.service] || (a.verb + ' ' + a.service))}</li>`).join('') + '</ul>');
             }
-            if (!rev.plan.files.length && !rev.plan.actions.length) {
+            if (!(rev.plan.files && rev.plan.files.length) && !(rev.plan.actions && rev.plan.actions.length)) {
                 parts.push('<p class="config-review-empty">The system already matches this configuration, so nothing needs restarting.</p>');
             }
         }

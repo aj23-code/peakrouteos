@@ -1,5 +1,5 @@
 // web/static/scripts/wireless.js
-// Wireless page: the Wi-Fi adapters found and what each can do, the country, how each adapter is used
+// Wireless page: the Wi-Fi adapters found and what each can do, how each adapter is used
 // as an access point, and the Wi-Fi networks (one SSID each, joined to a Local Network). Saving only
 // writes a draft. With no adapter the page says so and greys out the rest.
 
@@ -11,8 +11,6 @@ window.WirelessModule = (function () {
     let wifi = null;          // GET /api/v1/wifi: the draft setup
     let localNets = [];       // GET /api/v1/networks: where a Wi-Fi network can be joined
     let lastReport = '';
-    let devices = null;       // GET /api/v1/wifi/stations joined with the DHCP leases (names, addresses)
-    let devicesTimer = null;
     let radios = {};          // adapter name -> { form, errors, message }
     let ssids = [];           // { key, isNew, server, form, errors, message, confirmDelete }
     let selected = null;
@@ -178,11 +176,17 @@ window.WirelessModule = (function () {
 
     function notes(r) {
         const out = [];
+        // the country is a router-wide setting (System, Settings); Wi-Fi only uses it
+        if (wifi && wifi.country) {
+            out.push(`Country: <strong>${escapeHtml(wifi.country)}</strong>. Change it in <a href="#" data-goto="settings">Settings</a>.`);
+        } else {
+            out.push('<strong>No country is set.</strong> Wi-Fi cannot be switched on until you choose one in <a href="#" data-goto="settings">Settings</a>: it decides which channels may be used.');
+        }
         if (!r.iw_available) {
             out.push('The tool that reads what an adapter can do (<code>iw</code>) is not available on this system, so bands and channels cannot be shown.');
         } else if (r.country_known) {
             const world = r.country === '00';
-            out.push(`The country in effect now: <strong>${escapeHtml(r.country)}</strong>${world ? ' (the world setting: the strictest, so most 5 GHz channels are closed).' : ''}`);
+            out.push(`The regulatory country in effect now: <strong>${escapeHtml(r.country)}</strong>${world ? ' (the world setting: the strictest, so most 5 GHz channels are closed until Wi-Fi starts with your country).' : ''}`);
         }
         return out.map(n => `<p class="form-hint wifi-note">${n}</p>`).join('');
     }
@@ -210,40 +214,6 @@ window.WirelessModule = (function () {
         }
         wifi = await res.json();
         radios[a.name] = { form: radioFormOf(a), errors: {}, message: { text: 'Saved as a draft. Review and commit it from the bar at the top when you are ready.', kind: 'ok' } };
-        renderAll();
-        afterSave();
-    }
-
-    // ---------------------------------------------------------------- country
-
-    function renderCountry() {
-        if (!wifi) { $('wifi-country').innerHTML = ''; return; }
-        const lock = !editable() || busy;
-        const options = optionHtml('', 'Choose a country…', wifi.country) +
-            (wifi.countries || []).map(c => optionHtml(c.code, `${c.name} (${c.code})`, wifi.country)).join('');
-        $('wifi-country').innerHTML = `<section class="card">
-            <div class="net-card-head"><h2>Country</h2>${wifi.country_pending ? '<span class="tag tag-draft">Draft</span>' : ''}</div>
-            <div class="form-grid"><div class="form-field"><label for="wifi-country-select">Where this router is used</label>
-                <select id="wifi-country-select" class="role-select"${lock ? ' disabled' : ''}>${options}</select></div></div>
-            <p class="form-hint">The country decides which channels and how much power Wi-Fi may use. It must be set before Wi-Fi can be switched on.</p>
-        </section>`;
-    }
-
-    async function saveCountry(code) {
-        showMessage('');
-        busy = true;
-        renderCountry();
-        const res = await apiFetch('/api/v1/wifi/country', {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ country: code }),
-        });
-        busy = false;
-        if (!res || !res.ok) {
-            const e = await errorOf(res, 'The country could not be saved.');
-            showMessage(e.fields.map(x => x.message).join(' ') || e.general, 'error');
-            await load();
-            return;
-        }
-        wifi = await res.json();
         renderAll();
         afterSave();
     }
@@ -463,61 +433,6 @@ window.WirelessModule = (function () {
         afterSave();
     }
 
-    // ---------------------------------------------------------------- connected devices
-
-    // What a signal strength means to a person
-    function signalHtml(dbm) {
-        if (dbm === null || dbm === undefined) return '\u2013';
-        const label = dbm >= -55 ? 'Excellent' : dbm >= -65 ? 'Good' : dbm >= -75 ? 'Fair' : 'Weak';
-        return `${dbm} dBm <span class="form-hint">${label}</span>`;
-    }
-
-    const mbps = (v) => (v ? (v >= 100 ? v.toFixed(0) : v.toFixed(1)) : '\u2013');
-
-    function renderDevices() {
-        const holder = $('wifi-devices');
-        if (!devices || !report || !report.adapters.length) { holder.innerHTML = ''; return; }
-        const list = devices.stations;
-        let body;
-        if (!devices.known) {
-            body = '<p class="form-hint">The devices connected over Wi-Fi cannot be read on this system (the <code>iw</code> tool is missing).</p>';
-        } else if (!list.length) {
-            body = '<p class="form-hint">No device is connected to a Wi-Fi network of this router right now.</p>';
-        } else {
-            body = `<div class="table-container"><table class="data-table">
-                <thead><tr><th>Device</th><th>IP address</th><th>MAC address</th><th>Network</th><th>Signal</th>
-                    <th title="Link speed in Mbps: download / upload">Speed \u2193/\u2191</th><th title="Data sent to the device / received from it">Data \u2193/\u2191</th><th>Connected</th></tr></thead>
-                <tbody>${list.map(d => `<tr>
-                    <td><strong>${escapeHtml(d.hostname || 'Unknown device')}</strong></td>
-                    <td>${escapeHtml(d.ip || '\u2013')}</td>
-                    <td><code>${escapeHtml(d.mac)}</code></td>
-                    <td>${escapeHtml(d.ssid)}${d.band ? ` <span class="form-hint">${escapeHtml(d.band)}</span>` : ''}</td>
-                    <td>${signalHtml(d.signal_dbm)}</td>
-                    <td>${mbps(d.tx_mbps)} / ${mbps(d.rx_mbps)}</td>
-                    <td>${formatBytes(d.tx_bytes)} / ${formatBytes(d.rx_bytes)}</td>
-                    <td>${escapeHtml(formatUptime(d.connected_seconds))}</td>
-                </tr>`).join('')}</tbody></table></div>`;
-        }
-        holder.innerHTML = `<section class="card card-nopadding wifi-devices">
-            <div class="card-header"><div class="card-header-group"><h2>Connected devices</h2>
-                <span class="card-subtitle">${devices.known ? `${list.length} ${list.length === 1 ? 'device' : 'devices'} connected` : 'Unknown'}</span></div></div>
-            ${body}</section>`;
-    }
-
-    async function loadDevices() {
-        const [st, ls] = await Promise.all([apiFetch('/api/v1/wifi/stations'), apiFetch('/api/v1/dhcp/leases')]);
-        if (!st || !st.ok) return;
-        const data = await st.json();
-        const byMac = new Map();
-        if (ls && ls.ok) ((await ls.json()) || []).forEach(l => byMac.set(String(l.mac_address || '').toLowerCase(), l));
-        data.stations = (data.stations || []).map(s => {
-            const lease = byMac.get(s.mac);
-            return Object.assign({}, s, { hostname: lease && lease.hostname !== 'Unknown Device' ? lease.hostname : '', ip: lease ? lease.ip_address : '' });
-        });
-        devices = data;
-        renderDevices();
-    }
-
     // ---------------------------------------------------------------- loading
 
     function render() {
@@ -532,9 +447,7 @@ window.WirelessModule = (function () {
 
     function renderAll() {
         if (!report) return;
-        renderCountry();
         renderSsids();
-        renderDevices();
         renderAdapters();
     }
 
@@ -587,7 +500,6 @@ window.WirelessModule = (function () {
 
         body.addEventListener('change', (e) => {
             const el = e.target;
-            if (el.id === 'wifi-country-select') { saveCountry(el.value); return; }
             if (el.id === 'wifi-select') { selected = el.value; renderSsids(); return; }
 
             if (el.dataset.radio) {
@@ -697,12 +609,9 @@ window.WirelessModule = (function () {
         radios = {};
         ssids = [];
         selected = null;
-        devices = null;
         load();
-        loadDevices();
         timer = setInterval(poll, 10000);
-        devicesTimer = setInterval(loadDevices, 5000);
-        return () => { clearInterval(timer); clearInterval(devicesTimer); timer = null; devicesTimer = null; };
+        return () => { clearInterval(timer); timer = null; };
     }
 
     return { init };

@@ -55,7 +55,6 @@ type WifiNetwork struct {
 
 // WifiConfig is the whole Wi-Fi setup.
 type WifiConfig struct {
-	Country  string        `json:"country,omitempty"` // ISO 3166-1 code; it decides which channels and powers are allowed
 	Radios   []WifiRadio   `json:"radios,omitempty"`
 	Networks []WifiNetwork `json:"networks,omitempty"`
 }
@@ -266,16 +265,13 @@ func validSecurity(s string) bool {
 	return s == SecurityWPA2 || s == SecurityWPA3 || s == SecurityWPA2WPA3
 }
 
-// validateWifi checks the Wi-Fi setup. Errors are reported on wifi.country, wifi.radios[i].field,
-// wifi.networks[i].field, or wifi.coverage for a network that no radio can carry.
+// validateWifi checks the Wi-Fi setup. Errors are reported on wifi.radios[i].field,
+// wifi.networks[i].field, wifi.coverage for a network that no radio can carry, or country when Wi-Fi
+// is on without one.
 func (c NetworkConfig) validateWifi(add func(field, format string, args ...any)) {
 	w := c.WifiSettings()
 	if c.Wifi == nil {
 		return
-	}
-
-	if w.Country != "" && !IsCountry(w.Country) {
-		add("wifi.country", "must be a two-letter country code such as US or DE")
 	}
 
 	// radios
@@ -410,8 +406,8 @@ func (c NetworkConfig) validateWifi(add func(field, format string, args ...any))
 		sort.Strings(missing)
 		add("wifi.coverage", "no adapter is switched on for: %s", strings.Join(missing, ", "))
 	}
-	if len(radios) > 0 && len(networks) > 0 && w.Country == "" {
-		add("wifi.country", "choose your country before switching Wi-Fi on: it decides which channels may be used")
+	if len(radios) > 0 && len(networks) > 0 && c.Country == "" {
+		add("country", "choose your country in System, Settings before switching Wi-Fi on: it decides which channels may be used")
 	}
 }
 

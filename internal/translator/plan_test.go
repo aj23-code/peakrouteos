@@ -1,6 +1,7 @@
 package translator
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -288,5 +289,17 @@ func TestPlanDoesNotMutateTheDesiredNotes(t *testing.T) {
 	plan.Notes = append(plan.Notes, "extra")
 	if len(d.Notes) != before {
 		t.Error("the plan shares its notes slice with the rendered output")
+	}
+}
+
+func TestAPlanWithNothingToDoSerialisesEmptyListsNotNull(t *testing.T) {
+	root := RootFS(t.TempDir())
+	plan, err := PlanChanges(root, Desired{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(plan)
+	if !strings.Contains(string(b), `"files":[]`) || !strings.Contains(string(b), `"actions":[]`) {
+		t.Fatalf("%s", b)
 	}
 }

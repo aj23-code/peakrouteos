@@ -189,6 +189,11 @@ function loadView(viewName) {
                 activeViewCleanup = window.RoutesModule.init();
             }
             break;
+        case 'settings':
+            if (window.SettingsModule) {
+                activeViewCleanup = window.SettingsModule.init();
+            }
+            break;
         case 'networks':
             if (window.NetworksModule) {
                 activeViewCleanup = window.NetworksModule.init();

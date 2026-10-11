@@ -88,7 +88,8 @@ var (
 // differ and the service actions needed, in the order they must run. Only file contents are
 // compared; permissions are set when a file is written.
 func PlanChanges(fsys FileReader, desired Desired) (Plan, error) {
-	plan := Plan{Notes: append([]string(nil), desired.Notes...)}
+	// empty lists, not null: the review dialog reads their length
+	plan := Plan{Files: []FileChange{}, Actions: []Action{}, Notes: append([]string(nil), desired.Notes...)}
 	changedBy := map[string][]string{} // service -> changed paths
 
 	for _, a := range desired.Artifacts {

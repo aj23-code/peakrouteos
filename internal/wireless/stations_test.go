@@ -2,10 +2,7 @@ package wireless
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -180,24 +177,5 @@ func TestStationCacheKeepsTheAnswerForTheTTL(t *testing.T) {
 	c.Get(context.Background())
 	if len(calls) != 2*first {
 		t.Fatalf("%d calls, want %d", len(calls), 2*first)
-	}
-}
-
-func TestStationHandler(t *testing.T) {
-	var calls []string
-	c := &StationCache{Detector: Detector{SysClassNet: sysWithWifi(t), Run: fakeIW(t, &calls, false)}, TTL: time.Second}
-	rec := httptest.NewRecorder()
-	c.Handler(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
-	var rep StationReport
-	if err := json.Unmarshal(rec.Body.Bytes(), &rep); err != nil || !rep.Known || len(rep.Stations) != 3 {
-		t.Fatalf("%v %s", err, rec.Body)
-	}
-	if !strings.Contains(rec.Body.String(), `"signal_dbm":-44`) || rec.Header().Get("Cache-Control") != "no-store" {
-		t.Fatalf("%s", rec.Body)
-	}
-	rec = httptest.NewRecorder()
-	c.Handler(rec, httptest.NewRequest(http.MethodPost, "/x", nil))
-	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != http.MethodGet {
-		t.Fatalf("%d", rec.Code)
 	}
 }

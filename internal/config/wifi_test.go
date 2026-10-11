@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,8 @@ func homeWifi() WifiNetwork {
 }
 
 func withWifi(c NetworkConfig, country string, radios []WifiRadio, nets ...WifiNetwork) NetworkConfig {
-	c.Wifi = &WifiConfig{Country: country, Radios: radios, Networks: nets}
+	c.Country = country
+	c.Wifi = &WifiConfig{Radios: radios, Networks: nets}
 	return c
 }
 
@@ -87,9 +89,9 @@ func TestInvalidWifi(t *testing.T) {
 		cfg   NetworkConfig
 		field string
 	}{
-		{"unknown country", withWifi(validNet(), "ZZ", nil), "wifi.country"},
-		{"lower-case country", withWifi(validNet(), "us", nil), "wifi.country"},
-		{"no country while switched on", withWifi(validNet(), "", []WifiRadio{radio24(), radio5()}, homeWifi()), "wifi.country"},
+		{"unknown country", withWifi(validNet(), "ZZ", nil), "country"},
+		{"lower-case country", withWifi(validNet(), "us", nil), "country"},
+		{"no country while switched on", withWifi(validNet(), "", []WifiRadio{radio24(), radio5()}, homeWifi()), "country"},
 
 		{"bad adapter name", mutR(func(r *WifiRadio) { r.Name = "wlan1;reboot" }), "wifi.radios[1].name"},
 		{"adapter listed twice", withWifi(validNet(), "US", []WifiRadio{radio24(), radio24()}), "wifi.radios[1].name"},
@@ -133,7 +135,8 @@ func TestInvalidWifi(t *testing.T) {
 		{"the adapter for a band is switched off", withWifi(validNet(), "US", []WifiRadio{radio24(), func() WifiRadio { r := radio5(); r.Disabled = true; return r }()}, homeWifi()), "wifi.coverage"},
 		{"too many networks", func() NetworkConfig {
 			c := validNet()
-			c.Wifi = &WifiConfig{Country: "US", Radios: []WifiRadio{radio24()}}
+			c.Country = "US"
+			c.Wifi = &WifiConfig{Radios: []WifiRadio{radio24()}}
 			for i := 0; i < 17; i++ {
 				c.Wifi.Networks = append(c.Wifi.Networks, WifiNetwork{ID: "w" + itoa(i), SSID: "n" + itoa(i), Network: "lan", Security: SecurityWPA2, Passphrase: "password" + itoa(i), Bands: []string{Band24}})
 			}
@@ -304,7 +307,7 @@ func TestWifiJSONAndClone(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out NetworkConfig
-	if err := json.Unmarshal(b, &out); err != nil || out.Wifi == nil || len(out.Wifi.Radios) != 2 || out.Wifi.Networks[0].SSID != "Home" || !out.Wifi.Networks[0].BandSteering || out.Wifi.Country != "US" {
+	if err := json.Unmarshal(b, &out); err != nil || out.Wifi == nil || len(out.Wifi.Radios) != 2 || out.Wifi.Networks[0].SSID != "Home" || !out.Wifi.Networks[0].BandSteering || out.Country != "US" {
 		t.Fatalf("%v %+v", err, out.Wifi)
 	}
 	if plain, _ := json.Marshal(validNet()); strings.Contains(string(plain), "wifi") {
@@ -312,18 +315,17 @@ func TestWifiJSONAndClone(t *testing.T) {
 	}
 
 	c := a.clone()
-	c.Wifi.Country = "DE"
 	c.Wifi.Radios[0].Channel = 11
 	c.Wifi.Networks[0].Bands[0] = "x"
 	c.Wifi.Networks[0].SSID = "changed"
-	if a.Wifi.Country != "US" || a.Wifi.Radios[0].Channel != 6 || a.Wifi.Networks[0].Bands[0] != Band24 || a.Wifi.Networks[0].SSID != "Home" {
+	if a.Wifi.Radios[0].Channel != 6 || a.Wifi.Networks[0].Bands[0] != Band24 || a.Wifi.Networks[0].SSID != "Home" {
 		t.Fatalf("the copy shares its Wi-Fi settings with the original: %+v", a.Wifi)
 	}
 	if validNet().clone().Wifi != nil {
 		t.Error("a copy of a configuration without Wi-Fi gained some")
 	}
 
-	if (NetworkConfig{}).WifiSettings().Country != "" || len(WifiConfig{}.Networks) != 0 {
+	if len((NetworkConfig{}).WifiSettings().Networks) != 0 || len(WifiConfig{}.Networks) != 0 {
 		t.Error("an absent section reads as empty")
 	}
 	if n, ok := a.Wifi.FindNetwork("wifi1"); !ok || !n.Has(Band5) || n.Has("6 GHz") {
@@ -367,18 +369,24 @@ func wifiChanges(a, b NetworkConfig) []Change {
 func TestWifiDiff(t *testing.T) {
 	base := validNet()
 
-	if got := wifiChanges(base, goodWifi()); len(got) != 4 { // country, two adapters, one network
+	if got := wifiChanges(base, goodWifi()); len(got) != 3 { // two adapters, one network
 		t.Fatalf("%+v", got)
 	}
 	if got := wifiChanges(goodWifi(), goodWifi().clone()); len(got) != 0 {
 		t.Fatalf("%+v", got)
 	}
 
-	// country
+	// the country is a router-wide setting: it is reviewed as "Country", not as part of Wi-Fi
 	de := goodWifi()
-	de.Wifi.Country = "DE"
-	ch := wifiChanges(goodWifi(), de)
-	if len(ch) != 1 || ch[0].Field != "wifi_country" || ch[0].Old != "US" || ch[0].New != "DE" {
+	de.Country = "DE"
+	if got := wifiChanges(goodWifi(), de); len(got) != 0 {
+		t.Fatalf("a country change is not a Wi-Fi line: %+v", got)
+	}
+	ch := DiffNetwork(goodWifi(), de)
+	if len(ch) != 1 || ch[0].Field != "country" || ch[0].Label != "Country" || ch[0].Old != "US" || ch[0].New != "DE" {
+		t.Fatalf("%+v", ch)
+	}
+	if ch := DiffNetwork(validNet(), withCountry(validNet(), "US")); len(ch) != 1 || ch[0].Old != valueNone || ch[0].New != "US" {
 		t.Fatalf("%+v", ch)
 	}
 
@@ -470,6 +478,27 @@ func TestALongAdapterNameCanCarryOnlyOneNetwork(t *testing.T) {
 	for _, e := range func() ValidationError { e := off.Validate(); v, _ := e.(ValidationError); return v }() {
 		if strings.Contains(e.Field, ".name") {
 			t.Errorf("%v", e)
+		}
+	}
+}
+
+func withCountry(c NetworkConfig, country string) NetworkConfig {
+	c.Country = country
+	return c
+}
+
+func TestTheCountryIsValidatedWithoutAnyWifi(t *testing.T) {
+	if err := withCountry(validNet(), "DE").Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := withCountry(validNet(), "").Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"ZZ", "de", "DEU", "1"} {
+		err := withCountry(validNet(), bad).Validate()
+		var ve ValidationError
+		if !errors.As(err, &ve) || len(ve) != 1 || ve[0].Field != "country" {
+			t.Errorf("%q: %v", bad, err)
 		}
 	}
 }

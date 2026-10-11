@@ -41,12 +41,11 @@ type WifiNetwork struct {
 }
 
 type wifiResponse struct {
-	Country        string           `json:"country"`
-	CountryPending bool             `json:"country_pending"`
-	Countries      []config.Country `json:"countries"`
-	Radios         []WifiRadio      `json:"radios"`
-	Networks       []WifiNetwork    `json:"networks"`
-	Editable       bool             `json:"editable"`
+	// Country is the router-wide country setting (System, Settings), shown here because Wi-Fi needs it.
+	Country  string        `json:"country"`
+	Radios   []WifiRadio   `json:"radios"`
+	Networks []WifiNetwork `json:"networks"`
+	Editable bool          `json:"editable"`
 }
 
 func (a *API) wifiView() wifiResponse {
@@ -54,7 +53,7 @@ func (a *API) wifiView() wifiResponse {
 	staged, _ := a.Manager.StagedNetworkConfig()
 	draft := staged.WifiSettings()
 
-	resp := wifiResponse{Country: draft.Country, CountryPending: draft.Country != active.Country, Countries: config.Countries,
+	resp := wifiResponse{Country: staged.Country,
 		Radios: []WifiRadio{}, Networks: []WifiNetwork{}, Editable: a.editable()}
 
 	oldRadios := map[string]config.WifiRadio{}
@@ -89,7 +88,7 @@ func wifiOf(c *config.NetworkConfig) *config.WifiConfig {
 
 // tidyWifi drops an empty Wi-Fi section, so that undoing every change leaves no draft.
 func tidyWifi(c *config.NetworkConfig) {
-	if w := c.Wifi; w != nil && w.Country == "" && len(w.Radios) == 0 && len(w.Networks) == 0 {
+	if w := c.Wifi; w != nil && len(w.Radios) == 0 && len(w.Networks) == 0 {
 		c.Wifi = nil
 	}
 }
@@ -101,7 +100,7 @@ func (a *API) hardware(ctx context.Context) (wireless.Report, bool) {
 	return a.Wireless(ctx), true
 }
 
-func (a *API) wifiAnswer(w http.ResponseWriter, err error, status int, summary string, body any) {
+func (a *API) answerStaged(w http.ResponseWriter, err error, status int, summary string, body any) {
 	var ve config.ValidationError
 	if errors.As(err, &ve) {
 		fieldErrors(w, http.StatusBadRequest, summary+ve.Error(), ve)
@@ -119,32 +118,6 @@ func (a *API) HandleWifi(w http.ResponseWriter, r *http.Request) {
 	if allowMethods(w, r, http.MethodGet) {
 		writeJSON(w, http.StatusOK, a.wifiView())
 	}
-}
-
-// ---- country ---------------------------------------------------------------------------------------
-
-// HandleWifiCountry: PUT /api/v1/wifi/country {"country": "US"}.
-func (a *API) HandleWifiCountry(w http.ResponseWriter, r *http.Request) {
-	if !allowMethods(w, r, http.MethodPut) || !a.requireEditable(w) {
-		return
-	}
-	var req struct {
-		Country string `json:"country"`
-	}
-	if !decode(w, r, &req) {
-		return
-	}
-	country := strings.TrimSpace(req.Country)
-	if country != "" && !config.IsCountry(country) {
-		fieldErrors(w, http.StatusBadRequest, "That is not a country code.", []config.FieldError{{Field: "country", Message: "choose a country from the list"}})
-		return
-	}
-	err := a.Manager.StageNetwork(func(c *config.NetworkConfig) error {
-		wifiOf(c).Country = country
-		tidyWifi(c)
-		return nil
-	})
-	a.wifiAnswer(w, err, http.StatusOK, "", a.wifiView())
 }
 
 // ---- adapters --------------------------------------------------------------------------------------
@@ -175,7 +148,7 @@ func (a *API) HandleWifiRadio(w http.ResponseWriter, r *http.Request) {
 			tidyWifi(c)
 			return nil
 		})
-		a.wifiAnswer(w, err, http.StatusOK, "", a.wifiView())
+		a.answerStaged(w, err, http.StatusOK, "", a.wifiView())
 		return
 	}
 
@@ -263,7 +236,7 @@ func (a *API) HandleWifiRadio(w http.ResponseWriter, r *http.Request) {
 		}
 		return capacityProblems(*c, report, haveHardware, "band")
 	})
-	a.wifiAnswer(w, err, http.StatusOK, "This adapter cannot be set up like this: ", a.wifiView())
+	a.answerStaged(w, err, http.StatusOK, "This adapter cannot be set up like this: ", a.wifiView())
 }
 
 // ---- Wi-Fi networks ----------------------------------------------------------------------------------
@@ -414,7 +387,7 @@ func (a *API) HandleWifiNetworks(w http.ResponseWriter, r *http.Request) {
 		n, _ := draft.WifiSettings().FindNetwork(id)
 		body = wifiNetworkView(n, true)
 	}
-	a.wifiAnswer(w, err, http.StatusCreated, "This Wi-Fi network cannot be added: ", body)
+	a.answerStaged(w, err, http.StatusCreated, "This Wi-Fi network cannot be added: ", body)
 }
 
 // HandleWifiNetwork: PUT /api/v1/wifi/networks/{id} changes a Wi-Fi network; DELETE removes it.
@@ -445,7 +418,7 @@ func (a *API) HandleWifiNetwork(w http.ResponseWriter, r *http.Request) {
 			tidyWifi(c)
 			return nil
 		})
-		a.wifiAnswer(w, err, http.StatusOK, "", a.wifiView())
+		a.answerStaged(w, err, http.StatusOK, "", a.wifiView())
 		return
 	}
 
@@ -476,5 +449,5 @@ func (a *API) HandleWifiNetwork(w http.ResponseWriter, r *http.Request) {
 		old, had := active.FindNetwork(id)
 		body = wifiNetworkView(n, !had || !reflect.DeepEqual(old, n))
 	}
-	a.wifiAnswer(w, err, http.StatusOK, "These settings cannot be saved: ", body)
+	a.answerStaged(w, err, http.StatusOK, "These settings cannot be saved: ", body)
 }

@@ -60,7 +60,7 @@ func (e *env) wifi() wifiResponse {
 }
 
 func (e *env) setCountry(body string) *httptest.ResponseRecorder {
-	return e.wifiCall(e.api.HandleWifiCountry, http.MethodPut, "", "", body)
+	return e.do(e.api.HandleSettingsCountry, http.MethodPut, body, "application/json")
 }
 
 func (e *env) setRadio(name, body string) *httptest.ResponseRecorder {
@@ -79,50 +79,15 @@ const radio24 = `{"band":"2.4 GHz","channel":6,"width":20}`
 const radio5 = `{"band":"5 GHz","channel":0,"width":80}`
 const home = `{"ssid":"Home","passphrase":"correct horse battery","bands":["2.4 GHz","5 GHz"]}`
 
-func TestWifiStartsEmptyAndListsTheCountries(t *testing.T) {
+func TestWifiStartsEmpty(t *testing.T) {
 	e := wifiEnv(t)
 	w := e.wifi()
-	if w.Country != "" || w.CountryPending || len(w.Radios) != 0 || w.Networks == nil || len(w.Networks) != 0 || !w.Editable {
+	if w.Country != "" || len(w.Radios) != 0 || w.Networks == nil || len(w.Networks) != 0 || !w.Editable {
 		t.Fatalf("%+v", w)
 	}
-	if len(w.Countries) < 200 {
-		t.Fatalf("%d countries", len(w.Countries))
-	}
-}
-
-func TestSettingTheCountryStagesIt(t *testing.T) {
-	e := wifiEnv(t)
-	rec := e.setCountry(`{"country":"US"}`)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("%d %s", rec.Code, rec.Body)
-	}
-	w := decodeInto[wifiResponse](t, rec)
-	if w.Country != "US" || !w.CountryPending {
-		t.Fatalf("%+v", w)
-	}
-	if e.mgr.NetworkConfig().WifiSettings().Country != "" {
-		t.Fatal("the active configuration changed")
-	}
-	if e.draft().Wifi.Country != "US" {
-		t.Fatal("not staged")
-	}
-	// put back: no draft is left behind
-	e.setCountry(`{"country":""}`)
-	if _, staged := e.mgr.StagedNetworkConfig(); staged {
-		t.Fatalf("a draft is left behind: %+v", e.draft().Wifi)
-	}
-}
-
-func TestACountryThatIsNotOneIsRefused(t *testing.T) {
-	e := wifiEnv(t)
-	for _, c := range []string{"XX", "us", "USA", "1", " "} {
-		rec := e.setCountry(`{"country":"` + c + `"}`)
-		if c != " " && (rec.Code != http.StatusBadRequest || !errorFields(t, rec)["country"]) {
-			t.Errorf("%q: %d %s", c, rec.Code, rec.Body)
-		}
-	}
-	if e.draft().Wifi != nil {
-		t.Fatal("something was staged")
+	e.setCountry(`{"country":"DE"}`)
+	if got := e.wifi().Country; got != "DE" {
+		t.Fatalf("the Wi-Fi page shows the router's country (set elsewhere), got %q", got)
 	}
 }
 
@@ -465,8 +430,6 @@ func TestAnAdapterIsPendingOnlyWhileItDiffersFromTheRunningSetup(t *testing.T) {
 func TestUndoingEveryWifiChangeLeavesNoEmptySectionInTheDraft(t *testing.T) {
 	e := wifiEnv(t)
 	e.create(newGuest) // another change keeps the draft alive
-	e.setCountry(`{"country":"US"}`)
-	e.setCountry(`{"country":""}`)
 	e.setRadio("wlan1", radio5)
 	e.wifiCall(e.api.HandleWifiRadio, http.MethodDelete, "wlan1", "", "")
 	e.setRadio("wlan1", radio5)
@@ -478,14 +441,14 @@ func TestUndoingEveryWifiChangeLeavesNoEmptySectionInTheDraft(t *testing.T) {
 	}
 }
 
-func TestAWifiNetworkSurvivesClearingTheCountryAndAdapters(t *testing.T) {
+func TestAWifiNetworkSurvivesRemovingTheAdapters(t *testing.T) {
 	e := wifiEnv(t)
 	// a network can be drafted before an adapter is chosen: the commit is what insists on one
 	if rec := e.addSSID(`{"ssid":"A","passphrase":"correct horse battery","bands":["5 GHz"]}`); rec.Code != http.StatusCreated {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
-	e.setCountry(`{"country":"US"}`)
-	e.setCountry(`{"country":""}`)
+	e.setRadio("wlan1", radio5)
+	e.wifiCall(e.api.HandleWifiRadio, http.MethodDelete, "wlan1", "", "")
 	if w := e.draft().Wifi; w == nil || len(w.Networks) != 1 {
 		t.Fatalf("%+v", w)
 	}
