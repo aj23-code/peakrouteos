@@ -384,6 +384,19 @@ sent with DHCP, and DNS servers that replace the provider's. IPv4 only: nothing 
   RFC 4638 "baby jumbo" frames (a PPPoE MTU of 1500), IPoE/DS-Lite/MAP-E tunnels, a second internet connection (failover or
   load balancing), and a button to renew the lease or redial.
 
+## 7h. Firewall (started 2026-10-11)
+
+The design, the order rules are applied in, the reasons (per-interface rules written "from, to" rather than zones; the
+Local Networks switches kept as a fixed policy layer; an always-on anti-lockout) and the build plan are in
+**`docs/firewall.md`**, which every firewall commit updates; it is meant to become the user documentation. Built so far:
+
+- **Stage 1, model** (`config/firewall.go`): `firewall.rules` and `firewall.forwards` in `network.json`, validation (errors on
+  `firewall.rules[i].field`, `firewall.forwards[i].field`), review lines in words, shadow detection.
+- **Stage 2, ruleset** (`translator/firewall.go`): rules and forwards written into `/etc/nftables.conf` at fixed places; with none
+  the file is byte-for-byte unchanged. Checked with real packets between network namespaces
+  (`firewall_behaviour_test.go`, no privileges needed), the real `nft -c`, and exact-text tests.
+- Not yet: the API, the pages (Rules, Port forwarding, Connections), logging in the Logs page. See the build plan in the document.
+
 ## 7e. Static routes (built 2026-10-08)
 
 **Model.** `NetworkConfig.Routes` is a list of `{name, destination, gateway, metric, disabled}` (JSON keys

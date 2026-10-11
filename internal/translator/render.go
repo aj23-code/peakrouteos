@@ -110,6 +110,9 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	if err := ensureSafeWan(cfg); err != nil {
 		return Desired{}, err
 	}
+	if err := ensureSafeFirewall(cfg); err != nil {
+		return Desired{}, err
+	}
 	tokens = append(tokens, cfg.WanLink())
 	if strings.EqualFold(cfg.WanMode, "static") {
 		tokens = append(tokens, cfg.WanIP, cfg.WanSubnet)
@@ -300,6 +303,7 @@ func renderDnsmasqUpstream(cfg config.NetworkConfig) string {
 
 func renderNftables(cfg config.NetworkConfig, lan string) string {
 	inputExtra, forwardExtra := nftablesNetworkRules(cfg, lan)
+	fwParts := renderFirewall(cfg)
 	return fmt.Sprintf(`#!/usr/sbin/nft -f
 flush ruleset
 
@@ -309,13 +313,13 @@ table inet filter {
         iifname "lo" accept
         ct state established,related accept
         ct state invalid drop
-        iifname "%[1]s" accept
+%[6]s        iifname "%[1]s" accept
 %[3]s    }
     chain forward {
         type filter hook forward priority filter; policy drop;
         ct state established,related accept
         ct state invalid drop
-%[5]s        iifname "%[1]s" oifname "%[2]s" accept
+%[5]s%[7]s        iifname "%[1]s" oifname "%[2]s" accept
 %[4]s    }
     chain output {
         type filter hook output priority filter; policy accept;
@@ -323,10 +327,10 @@ table inet filter {
 }
 
 table ip nat {
-    chain postrouting {
+%[8]s    chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
         oifname "%[2]s" masquerade
     }
 }
-`, lan, cfg.WanDevice(), inputExtra, forwardExtra, mssClamp(cfg))
+`, lan, cfg.WanDevice(), inputExtra, forwardExtra, mssClamp(cfg), fwParts.input, fwParts.forward, fwParts.preroute)
 }

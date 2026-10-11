@@ -1,7 +1,7 @@
 # PeakRoute OS firewall
 
-Status: **design (2026-10-11), not built yet.** This file is written first and kept up to date as each stage is
-built; every stage's commit updates it. It is meant to become the firewall chapter of the user documentation, so it
+Status (2026-10-11): **stages 1 and 2 built** (the model and the ruleset; there is no page or API yet, so rules cannot be
+entered by a person). This file was written first and every stage's commit updates it. It is meant to become the firewall chapter of the user documentation, so it
 is written for a person who runs the router, with the developer details in the sections marked *Internals*.
 
 Contents: 1 What exists today, 2 The model (and why not zones), 3 Rules, 4 Order of evaluation, 5 Port forwarding,
@@ -164,27 +164,115 @@ connection tracking table, which the kernel keeps for the stateful rules anyway;
 
 ## 10. Internals
 
-*(Filled in as it is built. The planned layout:)*
+**Storage.** `network.json` gets a top-level `firewall` object, written only when there is something in it:
 
-- **Storage:** `network.json` gets a top-level `firewall` object: `rules` (an ordered list) and `forwards`. Rule ids
-  are `fw1`, `fw2`...; forward ids `pf1`...
-- **Interface names:** rules name networks by id (`lan`, `net2`) and the Internet as `wan`; the translator turns them
-  into interfaces (`LanTarget`, `br20`, `WanDevice()`), so a renamed port or a VLAN on the WAN needs no rule edits.
-- **nftables layout:** the existing `inet filter` table keeps its `input` and `forward` chains; `inet filter` gets the
-  rules in the order of section 4, each with `counter` and `comment "fw:<id> <name>"` so the page can read the hit
-  counts back (`nft -j`). Port forwards add a `prerouting` chain to the `ip nat` table. With no rules and no forwards
-  **the file is byte-for-byte what it is today** (tested).
-- **Rejects** use `reject with tcp reset` / `reject with icmp port-unreachable`.
-- **Testing:** the file is checked with the real `nft -c`; behaviour is tested with real packets between network
-  namespaces (a client, the router and a server): what each rule must let through and keep out is asserted by
-  actually trying to connect.
+```json
+"firewall": {
+  "rules": [
+    {"id": "fw1", "name": "Printer", "from": "lan", "action": "allow", "protocol": "tcp",
+     "to": "iot", "destination": "10.30.0.20", "ports": "9100,631"},
+    {"id": "fw2", "name": "Camera", "from": "iot", "action": "block", "protocol": "any",
+     "source": "10.30.0.40", "to": "internet", "log": true}
+  ],
+  "forwards": [
+    {"id": "pf1", "name": "Web", "protocol": "tcp", "external_ports": "443", "to_ip": "192.168.1.50",
+     "internal_ports": "8443", "sources": ["203.0.113.7", "198.51.100.0/24"]}
+  ]
+}
+```
+
+Rules name networks by id (`lan`, `net2`...) and the internet as `wan`, never by interface, so a renamed port or a VLAN on
+the internet connection needs no rule edits. The list order is the rule order. Disabled rules are kept and not written to
+the ruleset. The code is `internal/config/firewall.go` (model, validation, review text, shadow detection) and
+`internal/translator/firewall.go` (the ruleset).
+
+**What the ruleset looks like.** With no rules and no forwards the file is exactly what it was before the firewall pages
+existed (a test compares the bytes). With rules, lines are *added at fixed places*; here is a real one (the rules of the
+test configuration: LAN `eth1`, Guest `br20`, IoT `br30`, internet `eth0`):
+
+```
+    chain input {
+        type filter hook input priority filter; policy drop;
+        iifname "lo" accept
+        ct state established,related accept                       # 1 basics
+        ct state invalid drop
+        # always allowed, whatever the rules say: DHCP, and the default network's way into this router
+        iifname { "eth1", "br20", "br30" } udp dport 67 accept     # 2 DHCP
+        iifname "eth1" tcp dport { 22, 443, 8443 } accept          # 3 anti-lockout
+        # firewall rules, in order
+        # fw3: Allow ICMP, from the internet to this router
+        iifname "eth0" meta l4proto icmp counter accept comment "fw:fw3"      # 5 your rules
+        # fw4: Reject TCP and UDP 53, from Guest to anywhere
+        iifname "br20" meta l4proto { tcp, udp } th dport 53 counter reject comment "fw:fw4"
+        iifname "eth1" accept                                     # 6 network policy (unchanged)
+        iifname "br20" udp dport { 53, 67 } accept
+        ...
+    }
+    chain forward {
+        ...
+        # port forwards: the traffic they translate is let through   # 4
+        iifname "eth0" ip daddr 192.168.1.50 meta l4proto tcp th dport 8443 ct status dnat counter accept comment "fw:pf1"
+        # firewall rules, in order
+        # fw1: Allow TCP 9100,631, from LAN to IoT (10.30.0.20)
+        iifname "eth1" oifname "br30" ip daddr 10.30.0.20 tcp dport { 9100, 631 } counter accept comment "fw:fw1"
+        iifname "eth1" oifname "eth0" accept                      # 6 network policy
+        ...
+    }
+table ip nat {
+    chain prerouting {
+        type nat hook prerouting priority dstnat; policy accept;
+        # pf1: TCP 443 from the internet to 192.168.1.50:8443, only from 203.0.113.7, 198.51.100.0/24
+        iifname "eth0" ip saddr { 198.51.100.0/24, 203.0.113.7 } meta l4proto tcp th dport 443 counter dnat to 192.168.1.50:8443 comment "fw:pf1"
+    }
+```
+
+(The numbers and `#` notes on the right are only for this document.) Points worth knowing:
+
+- A rule going **to this router** is written once, in the input chain; one going **through** (to the internet or to a
+  network) once, in the forward chain; **to anywhere** twice, one in each.
+- Every rule has a `counter` and `comment "fw:<id>"`. The id is the only thing from the configuration that is used as a
+  tag; the readable sentence is a `#` comment line above, made of plain ASCII (anything else becomes `?`). **Rule names are
+  not written to the file at all.**
+- A **reject** of TCP sends a reset (`reject with tcp reset`); of anything else the default `reject`, which sends an ICMP
+  "unreachable". Both make the sender fail at once; a **block** is silence.
+- **log** adds `log prefix "fw:<id> " limit rate 5/second`.
+- The DHCP and anti-lockout lines (steps 2 and 3) appear **only when at least one rule is switched on**, so the file stays
+  as it was for everyone who does not use rules. The anti-lockout ports are SSH (22) and the web interface (443, or 8443 in
+  development).
+- A port forward is a translation (`dnat`) in the `ip nat` table's new `prerouting` chain, plus a line in the forward chain
+  that accepts exactly the translated traffic (`ct status dnat`, the inside address and port). A single port is rewritten to
+  the internal port; a range keeps its numbers. Both lines follow `WanDevice()`, so they work over a VLAN or PPPoE.
+- A forward is only valid for an address on one of the Local Networks (not the router's own, not a network or broadcast
+  address); two enabled forwards may not claim the same external port with the same protocol (TCP and UDP are separate;
+  "both" claims both).
+- Rules that can never be reached (an earlier rule on the same tab already covers everything they match) are detected
+  (`NetworkConfig.Shadows`) for the page to flag; they are still written, harmlessly.
+
+**Review lines.** One line per rule or forward added, removed or changed ("Allow TCP 9100,631, from LAN to IoT
+(10.30.0.20)" with the old text beside it), a rename is one change, and one line "Firewall rule order" when the order of
+rules that exist before and after differs.
+
+**Checks, in order of how much they prove.**
+
+1. *Real packets.* `TestTheRulesDecideWhatRealConnectionsDo` builds three network namespaces joined by virtual cables (a LAN
+   client and a guest client, the router with the generated ruleset loaded into a real kernel, and a server playing the
+   internet) and tries real TCP and UDP connections and pings: that an allow opens only what it names, that a block beats
+   the Internet switch, that reject refuses at once while block is silent, that the first matching rule wins, that
+   switched-off rules do nothing, that source and destination narrow a rule, that a rule can reach the router but not
+   the anti-lockout ports, that "anywhere" covers the router and what is behind it, and that port forwards translate,
+   keep ranges, honour allowed sources and leave everything else closed. It needs no privileges (`unshare -rn`) and skips
+   itself where namespaces or the needed kernel modules are missing.
+2. *The real `nft -c`* accepts the ruleset in every variant (with and without rules, forwards, and over PPPoE).
+3. *Exact text* of the whole ruleset, and of each kind of rule line, is compared in tests.
+4. *Safety at the last moment:* even if the validation were bypassed, the writer refuses ids, addresses, ports and network
+   names that are not plain.
 
 ## 11. Build plan
 
 Each stage is its own commit with tests and updates this document.
 
-1. **Model**: rules and forwards in the configuration, validation, review lines, shadow detection.
-2. **Ruleset**: the translator writes the rules; checked with `nft -c` and with real packets between namespaces.
+1. **Model** (done): rules and forwards in the configuration, validation, review lines, shadow detection.
+2. **Ruleset** (done): the translator writes the rules; checked with `nft -c` and with real packets between namespaces.
 3. **API**: list, add, change, delete, reorder and switch rules and forwards; hit counters.
 4. **Rules page**: a tab per network and the Internet, the fixed policy lines, add / edit / reorder / switch.
 5. **Port forwarding page**.
