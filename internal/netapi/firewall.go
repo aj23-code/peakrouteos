@@ -126,12 +126,12 @@ func firewallPolicy(c config.NetworkConfig) map[string]FirewallPolicy {
 			internet = n.Internet
 		}
 		if internet {
-			p.After = append(p.After, PolicyLine{"Allow to the internet", "allow"})
+			p.After = append(p.After, PolicyLine{"Allow to the internet (set on Local Networks)", "allow"})
 		} else {
-			p.After = append(p.After, PolicyLine{"No access to the internet (switched off on Local Networks)", "off"})
+			p.After = append(p.After, PolicyLine{"No access to the internet (set on Local Networks)", "off"})
 		}
 		if networkIsolated(c, t.ID) {
-			p.After = append(p.After, PolicyLine{"Isolated from the other networks (switched on on Local Networks)", "off"})
+			p.After = append(p.After, PolicyLine{"Isolated from the other Local Networks (set on Local Networks)", "off"})
 		} else {
 			// one line for the others that can be reached: those that are not isolated themselves
 			var reachable []string
@@ -147,9 +147,9 @@ func firewallPolicy(c config.NetworkConfig) map[string]FirewallPolicy {
 			}
 			switch {
 			case len(reachable) > 0:
-				p.After = append(p.After, PolicyLine{"Allow to the other Local Networks that are not isolated (" + strings.Join(reachable, ", ") + ")", "allow"})
+				p.After = append(p.After, PolicyLine{"Allow to the other Local Networks that are not isolated: " + strings.Join(reachable, ", ") + " (set on Local Networks)", "allow"})
 			case others > 0:
-				p.After = append(p.After, PolicyLine{"No other Local Network can be reached: they are all isolated (switched on on Local Networks)", "off"})
+				p.After = append(p.After, PolicyLine{"No other Local Network can be reached: they are all isolated (set on Local Networks)", "off"})
 			}
 		}
 		p.After = append(p.After, block)

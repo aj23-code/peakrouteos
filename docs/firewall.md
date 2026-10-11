@@ -95,8 +95,8 @@ router (the input path) the same order applies with the lines marked *router*.
 4. **Port forwards** (section 5): the traffic they forward is allowed.
 5. **Your rules**, from the tab the traffic comes from, top to bottom.
 6. **Network policy (the defaults)**: what the switches on Local Networks mean, shown under the rules on each tab as fixed lines:
-   - *Allow to the Internet*, if that network's **Internet access** is on
-   - *Allow to the other Local Networks that are not isolated (LAN, IoT)*, one line naming the networks it can reach: a
+   - *Allow to the internet (set on Local Networks)*, if that network's **Internet access** is on
+   - *Allow to the other Local Networks that are not isolated: LAN, IoT (set on Local Networks)*, one line naming the networks it can reach: a
      network is reachable when neither it nor this one is isolated; when none is, the line says that they are all isolated
    - *Allow the router's DNS and ping* (other networks), or *Allow everything on the router* (the default network)
 7. **Everything else is blocked.** This line is also shown, at the bottom of every tab, so that "why doesn't this
