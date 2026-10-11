@@ -1,11 +1,15 @@
 package netapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"peakroute/internal/network"
 )
 
 func (e *env) settings() Settings {
@@ -194,3 +198,114 @@ func TestTheHostNameCanAlsoBeSentToTheProvider(t *testing.T) {
 }
 
 func jsonString(s string) string { b, _ := json.Marshal(s); return string(b) }
+
+func TestTheTimeIsSetOnTheSettingsPage(t *testing.T) {
+	e := standard(t)
+	s := e.settings()
+	if s.Timezone != "" || !s.NTPEnabled || len(s.NTPServers) != 0 || s.NTPServers == nil || len(s.NTPDefault) != 1 || s.NTPDefault[0] != "pool.ntp.org" || s.TimePending || len(s.Timezones) < 400 {
+		t.Fatalf("%+v", s)
+	}
+	set := func(body string) (*httptest.ResponseRecorder, Settings) {
+		rec := e.do(e.api.HandleSettingsTime, http.MethodPut, body, "application/json")
+		var s Settings
+		if rec.Code == http.StatusOK {
+			s = decodeInto[Settings](t, rec)
+		}
+		return rec, s
+	}
+	rec, s := set(`{"timezone":" Europe/Berlin ","ntp_servers":[" Time.Cloudflare.com ","", "192.168.1.5"]}`)
+	if rec.Code != http.StatusOK || s.Timezone != "Europe/Berlin" || strings.Join(s.NTPServers, ",") != "time.cloudflare.com,192.168.1.5" || !s.TimePending || !s.NTPEnabled {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if e.mgr.NetworkConfig().Timezone != "" {
+		t.Fatal("the active configuration changed")
+	}
+	for _, f := range []string{"timezone", "ntp_servers"} {
+		if !e.changed(f) {
+			t.Errorf("no review line for %s: %+v", f, e.staged())
+		}
+	}
+	// a field left out stays
+	if _, s := set(`{"ntp_enabled":false}`); s.NTPEnabled || s.Timezone != "Europe/Berlin" || len(s.NTPServers) != 2 || !e.changed("ntp_disabled") {
+		t.Fatalf("%+v", s)
+	}
+	if _, s := set(`{"ntp_servers":[]}`); len(s.NTPServers) != 0 || s.NTPServers == nil || s.NTPEnabled {
+		t.Fatalf("%+v", s)
+	}
+	e.commit()
+	if s := e.settings(); s.TimePending || s.Timezone != "Europe/Berlin" || s.NTPEnabled {
+		t.Fatalf("%+v", s)
+	}
+	// switching only the time servers on is a pending change of the time settings by itself
+	if _, s := set(`{"ntp_enabled":true}`); !s.TimePending {
+		t.Fatalf("%+v", s)
+	}
+	// put back: no draft is left behind
+	set(`{"timezone":"","ntp_enabled":true}`)
+	set(`{"timezone":"Europe/Berlin","ntp_enabled":false}`)
+	if e.changed("timezone") || e.changed("ntp_disabled") || e.changed("ntp_servers") || e.stageFileExists() {
+		t.Fatalf("putting it back left a draft: %+v", e.staged())
+	}
+	for name, body := range map[string]string{
+		"a made up zone":     `{"timezone":"Mars/Olympus"}`,
+		"a zone in a path":   `{"timezone":"../etc/passwd"}`,
+		"a bad server":       `{"ntp_servers":["not a server"]}`,
+		"an address":         `{"ntp_servers":["300.1.1.1"]}`,
+		"a server twice":     `{"ntp_servers":["a.example","A.example"]}`,
+		"five servers":       `{"ntp_servers":["a.example","b.example","c.example","d.example","e.example"]}`,
+		"an unknown field":   `{"timezone":"UTC","x":1}`,
+		"a number as a zone": `{"timezone":5}`,
+	} {
+		rec, _ := set(body)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body)
+		}
+	}
+	if rec, _ := set(`{"timezone":"Mars/Olympus"}`); !errorFields(t, rec)["timezone"] {
+		t.Errorf("%s", rec.Body)
+	}
+	if rec, _ := set(`{"ntp_servers":["x y"]}`); !errorFields(t, rec)["ntp_servers"] {
+		t.Errorf("%s", rec.Body)
+	}
+	if e.changed("timezone") || e.changed("ntp_servers") {
+		t.Fatal("a refused change was staged")
+	}
+	if rec := e.do(e.api.HandleSettingsTime, http.MethodPost, `{}`, "application/json"); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("method: %d", rec.Code)
+	}
+	e.editable = false
+	if rec, _ := set(`{"timezone":"UTC"}`); rec.Code != http.StatusConflict {
+		t.Errorf("while applying: %d", rec.Code)
+	}
+}
+
+func TestTheSettingsSuggestTheZonesOfTheCountry(t *testing.T) {
+	e := standard(t)
+	if s := e.settings(); len(s.Suggested) != 0 {
+		t.Fatalf("%v", s.Suggested)
+	}
+	e.do(e.api.HandleSettingsCountry, http.MethodPut, `{"country":"DE"}`, "application/json")
+	if s := e.settings(); strings.Join(s.Suggested, ",") != "Europe/Berlin,Europe/Busingen" {
+		t.Fatalf("%v", s.Suggested)
+	}
+}
+
+func TestTheSettingsShowTheClockWhenItCanBeRead(t *testing.T) {
+	e := standard(t)
+	if s := e.settings(); s.Time != nil {
+		t.Fatalf("%+v", s.Time)
+	}
+	e.api.TimeStatus = func(context.Context) (network.TimeStatus, bool) {
+		return network.TimeStatus{Timezone: "Europe/Berlin", NTPEnabled: true, Synchronized: true, Server: "162.159.200.1 (time.cloudflare.com)"}, true
+	}
+	before := time.Now().UnixMilli()
+	s := e.settings()
+	if s.Time == nil || s.Time.Timezone != "Europe/Berlin" || !s.Time.NTPEnabled || !s.Time.Synchronized || s.Time.Server != "162.159.200.1 (time.cloudflare.com)" ||
+		s.Time.Now < before || s.Time.Now > time.Now().UnixMilli() {
+		t.Fatalf("%+v", s.Time)
+	}
+	e.api.TimeStatus = func(context.Context) (network.TimeStatus, bool) { return network.TimeStatus{}, false }
+	if s := e.settings(); s.Time != nil {
+		t.Fatalf("an unreadable clock reported as known: %+v", s.Time)
+	}
+}

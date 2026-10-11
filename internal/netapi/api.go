@@ -42,6 +42,8 @@ type API struct {
 	ProviderDNS func() []string
 	// DNSAddr is where the router's own DNS server is asked by the lookup test (default 127.0.0.1:53); tests point it elsewhere.
 	DNSAddr string
+	// TimeStatus reads how the router's clock stands (the time zone, whether it follows a time server). Nil means it is not reported.
+	TimeStatus func(ctx context.Context) (network.TimeStatus, bool)
 	// FirewallLog is the store of the packets that firewall rules with logging matched. Nil means it is not reported.
 	FirewallLog FirewallLogStore
 	// Connections reads the kernel's table of connections passing through the router: the connections, how many are

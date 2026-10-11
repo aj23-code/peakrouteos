@@ -228,6 +228,7 @@ func (c NetworkConfig) Validate() error {
 
 	// --- DNS ---
 	c.validateDNS(add)
+	c.validateSettings(add)
 
 	if len(errs) == 0 {
 		return nil

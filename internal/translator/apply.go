@@ -168,7 +168,11 @@ var preChecks = map[string]command{
 
 // serviceCommands carry out an action.
 var serviceCommands = map[string]command{
-	SvcHostname:   {"hostname", []string{"-F", PathHostname}},
+	SvcHostname: {"hostname", []string{"-F", PathHostname}},
+	// the zone file was validated against the list when it was rendered; it must also exist on this machine
+	SvcTimezone: {"sh", []string{"-c", `tz=$(cat ` + PathTimezone + `); if [ -f "/usr/share/zoneinfo/$tz" ]; then ln -sf "/usr/share/zoneinfo/$tz" /etc/localtime; else echo "unknown time zone $tz" >&2; exit 1; fi`}},
+	// no file, or one without the "switched off" line: keep the time with time servers; otherwise stop
+	SvcNTP:        {"sh", []string{"-c", `if grep -q '` + ntpOffMarker + `' ` + PathTimesyncd + ` 2>/dev/null; then systemctl disable --now systemd-timesyncd; else systemctl enable systemd-timesyncd && systemctl restart systemd-timesyncd; fi`}},
 	SvcSysctl:     {"sysctl", []string{"-p", PathSysctl}},
 	SvcNetworking: {"systemctl", []string{"restart", "networking"}},
 	SvcNftables:   {"systemctl", []string{"reload", "nftables"}},

@@ -327,6 +327,8 @@ func main() {
 	mux.HandleFunc("/api/v1/settings", requireAuth(netAPI.HandleSettings))
 	mux.HandleFunc("/api/v1/settings/country", requireAuth(netAPI.HandleSettingsCountry))
 	mux.HandleFunc("/api/v1/settings/domain", requireAuth(netAPI.HandleSettingsDomain))
+	netAPI.TimeStatus = network.ReadTimeStatus
+	mux.HandleFunc("/api/v1/settings/time", requireAuth(netAPI.HandleSettingsTime))
 	mux.HandleFunc("/api/v1/settings/hostname", requireAuth(netAPI.HandleSettingsHostname))
 	netAPI.ProviderDNS = func() []string {
 		var out []string

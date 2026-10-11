@@ -89,6 +89,19 @@ var networkSettings = []networkSetting{
 	}},
 	{"hostname", "Host name", func(c NetworkConfig) string { return text(c.Hostname) }},
 	{"send_hostname", "Host name sent to the provider", func(c NetworkConfig) string { return onOff(c.SendHostname, "yes (with DHCP)", "no") }},
+	{"timezone", "Time zone", func(c NetworkConfig) string {
+		if c.Timezone == "" {
+			return "not set (the machine keeps its own)"
+		}
+		return c.Timezone
+	}},
+	{"ntp_disabled", "Time from time servers", func(c NetworkConfig) string { return onOff(c.NTPDisabled, "off", "on") }},
+	{"ntp_servers", "Time servers", func(c NetworkConfig) string {
+		if len(c.NTPServers) == 0 {
+			return "the default (" + strings.Join(DefaultNTPServers, ", ") + ")"
+		}
+		return strings.Join(c.NTPServers, ", ")
+	}},
 	{"country", "Country", func(c NetworkConfig) string { return text(c.Country) }},
 	{"domain", "Local domain", func(c NetworkConfig) string { return text(c.Domain) }},
 	{"lan_dns_servers", "DNS told to the default network", func(c NetworkConfig) string { return serversText(c.LanDNSServers) }},

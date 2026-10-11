@@ -108,6 +108,9 @@ type NetworkConfig struct {
 	WanMAC        string       `json:"wan_mac,omitempty"`       // hardware address to present instead of the port's own
 	Hostname      string       `json:"hostname,omitempty"`      // the router's host name (System, Settings): written to /etc/hostname
 	SendHostname  bool         `json:"send_hostname,omitempty"` // tell the provider's DHCP server the name (only a DHCP connection sends it)
+	Timezone      string       `json:"timezone,omitempty"`      // an IANA name such as Europe/Berlin; empty: the machine keeps its own
+	NTPDisabled   bool         `json:"ntp_disabled,omitempty"`  // do not keep the time with time servers
+	NTPServers    []string     `json:"ntp_servers,omitempty"`   // empty: the default (pool.ntp.org)
 	WanPPPoE      *PPPoEConfig `json:"wan_pppoe,omitempty"`
 	LanInterfaces []string     `json:"lan_interfaces,omitempty"`
 	LanIP         string       `json:"lan_ip,omitempty"`
@@ -213,6 +216,7 @@ func (c NetworkConfig) clone() NetworkConfig {
 		c.DHCP = &d
 	}
 	c.WanDNS = append([]string(nil), c.WanDNS...)
+	c.NTPServers = append([]string(nil), c.NTPServers...)
 	if c.WanPPPoE != nil {
 		p := *c.WanPPPoE
 		c.WanPPPoE = &p

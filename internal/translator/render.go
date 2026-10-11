@@ -28,6 +28,11 @@ const (
 
 	// The machine's name, written while the configuration has a host name (an empty one leaves the file as it is).
 	PathHostname = "/etc/hostname"
+
+	// The time zone (Debian's own file for it; the action also points /etc/localtime at the zone) and the time servers.
+	PathTimezone  = "/etc/timezone"
+	PathTimesyncd = "/etc/systemd/timesyncd.conf.d/peakroute.conf"
+	ntpOffMarker  = "NTP is switched off"
 )
 
 // RouteProto is the routing protocol number the translator tags its routes with, so it can
@@ -37,6 +42,8 @@ const RouteProto = "77"
 // Services that pick up those files, in the order changes must be applied.
 const (
 	SvcHostname   = "hostname"
+	SvcTimezone   = "timezone"
+	SvcNTP        = "ntp"
 	SvcSysctl     = "sysctl"
 	SvcNetworking = "networking"
 	SvcRoutes     = "routes"
@@ -120,6 +127,9 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	if err := ensureSafeDNS(cfg); err != nil {
 		return Desired{}, err
 	}
+	if err := ensureSafeSettings(cfg); err != nil {
+		return Desired{}, err
+	}
 	tokens = append(tokens, cfg.WanLink())
 	if strings.EqualFold(cfg.WanMode, "static") {
 		tokens = append(tokens, cfg.WanIP, cfg.WanSubnet)
@@ -192,11 +202,6 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathDnsmasqLocal, Remove: true, Service: SvcDnsmasq})
 	}
 
-	// The router's host name
-	if cfg.Hostname != "" {
-		d.Artifacts = append(d.Artifacts, Artifact{Path: PathHostname, Content: []byte(cfg.Hostname + "\n"), Mode: 0644, Service: SvcHostname})
-	}
-
 	d.Notes = append(d.Notes, networkNotes(cfg)...)
 
 	// Wi-Fi access points
@@ -216,6 +221,21 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 		})
 	} else {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathDnsmasqDNS, Remove: true, Service: SvcDnsmasq})
+	}
+
+	// The router's host name
+	if cfg.Hostname != "" {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathHostname, Content: []byte(cfg.Hostname + "\n"), Mode: 0644, Service: SvcHostname})
+	}
+
+	// The time zone, and the time servers (a file only while they are not the defaults)
+	if cfg.Timezone != "" {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathTimezone, Content: []byte(cfg.Timezone + "\n"), Mode: 0644, Service: SvcTimezone})
+	}
+	if content, ok := renderTimesyncd(cfg); ok {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathTimesyncd, Content: []byte(content), Mode: 0644, Service: SvcNTP})
+	} else {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathTimesyncd, Remove: true, Service: SvcNTP})
 	}
 
 	return d, nil

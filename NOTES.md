@@ -454,6 +454,7 @@ syslog forwarding, a Power card (restart, shut down), and a regrouped page. Buil
   first in the apply order, restarts nothing else) and the Overview shows it. `send_hostname` (default off) decides whether a DHCP
   connection also tells the provider (before, any set name was sent). An empty name leaves the machine alone; sending needs a name.
   `/etc/hosts` is deliberately not edited (dnsmasq would serve its entries to the LAN); the image gets `libnss-myhostname` instead.
+- **Time** (`config/settings.go`, `translator/settings.go`, `network/timestatus.go`). `timezone` (from the generated `config/timezones.go`: zone.tab's 418 zones plus UTC, each with its country, so the page can suggest the chosen country's zones), `ntp_disabled`, `ntp_servers` (up to four names or addresses; empty is `pool.ntp.org`). Applied by two new services: `timezone` (`/etc/timezone` plus a one-liner that points `/etc/localtime` at the zone and fails on a zone this machine lacks) and `ntp` (a drop-in for `systemd-timesyncd`, present only while not default, with `enable`+`restart` or `disable --now`; last in the order, after DNS). The page shows the live clock from `timedatectl`. The two shell one-liners are tested by running them for real against a sandbox directory with a stub `systemctl`. Artifacts must stay grouped by service (the applier relies on it), so the new files come last in `Render`. The image gets `systemd-timesyncd` and `tzdata`.
 
 ## 7e. Static routes (built 2026-10-08)
 

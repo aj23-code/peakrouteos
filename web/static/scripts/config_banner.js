@@ -11,11 +11,14 @@ window.ConfigBanner = (function () {
     const SUCCESS_SHOWN_MS = 8000;   // how long good news ("the change was confirmed") stays up
 
     const SERVICE_TEXT = {
+        hostname: 'Set the host name',
         sysctl: 'Apply kernel settings (IP forwarding)',
         networking: 'Restart networking (a brief interruption)',
         routes: 'Apply the static routes',
         wifi: 'Restart Wi-Fi (devices reconnect)',
         nftables: 'Reload the firewall rules',
+        timezone: 'Set the time zone',
+        ntp: 'Set up the time servers',
         dnsmasq: 'Restart the DHCP and DNS server',
     };
     const FILE_KIND_TEXT = { create: 'Create', update: 'Update', remove: 'Remove' };
