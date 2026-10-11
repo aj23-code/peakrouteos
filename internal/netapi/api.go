@@ -34,6 +34,9 @@ type API struct {
 	Live func(active config.NetworkConfig) *Live
 	// RoutingTable lists the routes the kernel is using now. Nil means it is not reported.
 	RoutingTable func() []LiveRoute
+	// FirewallCounters reports how often each firewall rule and port forward in effect has matched (by id). The
+	// second result is false when it cannot be read. Nil means it is not reported.
+	FirewallCounters func() (map[string]Counter, bool)
 	// Wireless reports the Wi-Fi adapters and what they can do. Nil means they cannot be read.
 	Wireless func(ctx context.Context) wireless.Report
 }

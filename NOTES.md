@@ -395,7 +395,8 @@ Local Networks switches kept as a fixed policy layer; an always-on anti-lockout)
 - **Stage 2, ruleset** (`translator/firewall.go`): rules and forwards written into `/etc/nftables.conf` at fixed places; with none
   the file is byte-for-byte unchanged. Checked with real packets between network namespaces
   (`firewall_behaviour_test.go`, no privileges needed), the real `nft -c`, and exact-text tests.
-- Not yet: the API, the pages (Rules, Port forwarding, Connections), logging in the Logs page. See the build plan in the document.
+- **Stage 3, API** (`netapi/firewall.go`, `network/firewall_counters.go`): rules and forwards (add, change, delete, switch off), reordering one tab, the fixed policy lines per tab, hit counters read from `nft -j`, and a guard so a Local Network used by a rule or forward cannot be deleted. Endpoints are in the document.
+- Not yet: the pages (Rules, Port forwarding, Connections) and logging in the Logs page. See the build plan in the document.
 
 ## 7e. Static routes (built 2026-10-08)
 
@@ -869,6 +870,10 @@ every future page works on every screen automatically.
 | `POST /api/v1/config/discard` | session + CSRF | drop the staged changes; 409 while applying or awaiting confirmation |
 | `GET /api/v1/ports` | session | physical ports with hardware details, `role` (wan, lan, unassigned) from the draft, `active_role`, `pending`, `present` (false: configured but the hardware is gone), `editable`; for LAN ports `native` (the id of the untagged network) and `tagged` (ids); and `networks`: what a LAN port can carry (`id`, `name`, `vlan`, `default`) |
 | `PUT /api/v1/ports` | session + CSRF | `{"assignments": {"eth0": "wan", "eth1": "lan", "eth2": "unassigned"}, "networks": {"eth1": {"native": "lan", "tagged": ["net2"]}}}` stages the roles as one atomic change; ports not mentioned keep their role, and a LAN port not named under `networks` keeps its networks; the result must have exactly one WAN and at least one LAN; an entry that says only the default network is dropped; a port that stops being a LAN port loses its networks |
+| `GET /api/v1/firewall` | session | `tabs`, `rules` (with `text`, `pending`, `shadowed_by`), `forwards`, `policy` (the fixed lines per tab), `editable` |
+| `GET /api/v1/firewall/counters` | session | `known`, `counters` by rule or forward id: `packets`, `bytes` |
+| `POST /api/v1/firewall/rules`, `PUT`/`DELETE /api/v1/firewall/rules/{id}`, `PUT /api/v1/firewall/order` | session + CSRF | rules and their order within a tab (see `docs/firewall.md`) |
+| `POST /api/v1/firewall/forwards`, `PUT`/`DELETE /api/v1/firewall/forwards/{id}` | session + CSRF | port forwards |
 | `GET /api/v1/settings` | session | `country` (the draft), `country_pending`, `countries` (`code`, `name`), `editable` |
 | `PUT /api/v1/settings/country` | session + CSRF | `{"country": "US"}`; an empty string clears it (committing Wi-Fi without a country is refused) |
 | `GET /api/v1/wifi` | session | `country` (read only: it is set under settings), `radios` (`name`, `band`, `channel` (0: automatic), `width`, `enabled`, `ht`, `vht`, `he`, `pending`), `networks` (`id` `wifi1`..., `ssid`, `passphrase`, `network`, `security`, `bands`, `band_steering`, `hidden`, `client_isolation`, `enabled`, `pending`), `editable` |

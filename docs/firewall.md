@@ -1,7 +1,7 @@
 # PeakRoute OS firewall
 
-Status (2026-10-11): **stages 1 and 2 built** (the model and the ruleset; there is no page or API yet, so rules cannot be
-entered by a person). This file was written first and every stage's commit updates it. It is meant to become the firewall chapter of the user documentation, so it
+Status (2026-10-11): **stages 1 to 3 built** (the model, the ruleset and the API; there are no pages yet, so rules cannot
+be entered by a person). This file was written first and every stage's commit updates it. It is meant to become the firewall chapter of the user documentation, so it
 is written for a person who runs the router, with the developer details in the sections marked *Internals*.
 
 Contents: 1 What exists today, 2 The model (and why not zones), 3 Rules, 4 Order of evaluation, 5 Port forwarding,
@@ -248,6 +248,25 @@ table ip nat {
 - Rules that can never be reached (an earlier rule on the same tab already covers everything they match) are detected
   (`NetworkConfig.Shadows`) for the page to flag; they are still written, harmlessly.
 
+**The API** (`internal/netapi/firewall.go`; all need a session, changes also the CSRF token, and are refused with 409 while
+a change is being applied; everything is saved as a draft):
+
+| Request | What it does |
+|---|---|
+| `GET /api/v1/firewall` | the **tabs** (`lan`, each network's id, `wan`), the **rules** (every field plus `text`, the rule in words; `pending`, differs from what is running; `shadowed_by`, the earlier rule that makes it unreachable), the **forwards**, the **policy** (the fixed lines of every tab: `before` the rules and `after` them, each with a `kind` of `allow`, `block` or `off`), and `editable` |
+| `GET /api/v1/firewall/counters` | `known` and `counters` by id (`fw1`, `pf1`): packets and bytes since the ruleset was last loaded; read from `nft -j list ruleset` |
+| `POST /api/v1/firewall/rules` | adds a rule at the end of the list: `name`, `from`, `action`, `to` are required; `protocol` defaults to `any`, `enabled` to on |
+| `PUT /api/v1/firewall/rules/{id}` | changes a rule; fields left out stay. `from` cannot change (a rule stays on its tab) |
+| `DELETE /api/v1/firewall/rules/{id}` | removes it |
+| `PUT /api/v1/firewall/order` | `{"from": "lan", "ids": [...]}` puts one tab's rules in that order; the ids must be exactly that tab's rules; the other tabs' rules keep their places |
+| `POST /api/v1/firewall/forwards`, `PUT` / `DELETE /api/v1/firewall/forwards/{id}` | the same for port forwards (`sources` left out stays, `[]` clears it) |
+
+Ports are accepted with spaces (`80, 443`) and stored without. Errors name the field (`name`, `to`, `ports`, `to_ip`, ...)
+and only concern the rule being edited: another rule's problem does not stop you saving this one. Ids are `fw1`, `fw2`... and
+`pf1`...; the lowest free one is used. A Local Network cannot be deleted while a rule uses it (as the source or the
+destination) or a forward sends to a device on it. The fixed lines are written by the API (not the page) so that the words
+always match what the ruleset does.
+
 **Review lines.** One line per rule or forward added, removed or changed ("Allow TCP 9100,631, from LAN to IoT
 (10.30.0.20)" with the old text beside it), a rename is one change, and one line "Firewall rule order" when the order of
 rules that exist before and after differs.
@@ -273,7 +292,7 @@ Each stage is its own commit with tests and updates this document.
 
 1. **Model** (done): rules and forwards in the configuration, validation, review lines, shadow detection.
 2. **Ruleset** (done): the translator writes the rules; checked with `nft -c` and with real packets between namespaces.
-3. **API**: list, add, change, delete, reorder and switch rules and forwards; hit counters.
+3. **API** (done): list, add, change, delete, reorder and switch rules and forwards; hit counters.
 4. **Rules page**: a tab per network and the Internet, the fixed policy lines, add / edit / reorder / switch.
 5. **Port forwarding page**.
 6. **Connections page** (connection table, filters).

@@ -283,6 +283,24 @@ func main() {
 	go presenceTracker.Run(pollerCtx)
 	netAPI.Wireless = wifi.Detect
 	mux.HandleFunc("/api/v1/wifi", requireAuth(netAPI.HandleWifi))
+	netAPI.FirewallCounters = func() (map[string]netapi.Counter, bool) {
+		raw, ok := network.ReadFirewallCounters()
+		if !ok {
+			return nil, false
+		}
+		out := map[string]netapi.Counter{}
+		for id, c := range raw {
+			out[id] = netapi.Counter{Packets: c.Packets, Bytes: c.Bytes}
+		}
+		return out, true
+	}
+	mux.HandleFunc("/api/v1/firewall", requireAuth(netAPI.HandleFirewall))
+	mux.HandleFunc("/api/v1/firewall/counters", requireAuth(netAPI.HandleFirewallCounters))
+	mux.HandleFunc("/api/v1/firewall/order", requireAuth(netAPI.HandleFirewallOrder))
+	mux.HandleFunc("/api/v1/firewall/rules", requireAuth(netAPI.HandleFirewallRules))
+	mux.HandleFunc("/api/v1/firewall/rules/{id}", requireAuth(netAPI.HandleFirewallRule))
+	mux.HandleFunc("/api/v1/firewall/forwards", requireAuth(netAPI.HandleFirewallForwards))
+	mux.HandleFunc("/api/v1/firewall/forwards/{id}", requireAuth(netAPI.HandleFirewallForward))
 	mux.HandleFunc("/api/v1/settings", requireAuth(netAPI.HandleSettings))
 	mux.HandleFunc("/api/v1/settings/country", requireAuth(netAPI.HandleSettingsCountry))
 	mux.HandleFunc("/api/v1/wifi/radios/{name}", requireAuth(netAPI.HandleWifiRadio))

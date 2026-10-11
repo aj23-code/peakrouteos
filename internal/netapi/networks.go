@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"strings"
 
 	"peakroute/internal/config"
@@ -348,6 +349,20 @@ func (a *API) deleteNetwork(w http.ResponseWriter, id string) {
 			if wn.Network == id {
 				problems = append(problems, config.FieldError{Field: "wifi",
 					Message: fmt.Sprintf("the Wi-Fi network %q still joins this network; move or delete it first", wn.SSID)})
+			}
+		}
+		for _, r := range c.FirewallSettings().Rules {
+			if r.From == id || r.To == id {
+				problems = append(problems, config.FieldError{Field: "firewall",
+					Message: fmt.Sprintf("the firewall rule %q uses this network; delete or change it first", r.Name)})
+			}
+		}
+		if np, ok := c.NetworkPrefix(id); ok {
+			for _, p := range c.FirewallSettings().Forwards {
+				if ip, err := netip.ParseAddr(p.ToIP); err == nil && np.Contains(ip) {
+					problems = append(problems, config.FieldError{Field: "firewall",
+						Message: fmt.Sprintf("the port forward %q sends to a device on this network; delete or change it first", p.Name)})
+				}
 			}
 		}
 		if len(problems) > 0 {
