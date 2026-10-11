@@ -4,7 +4,7 @@
 
 window.SettingsModule = (function () {
     let settings = null;
-    let typed = { hostname: null, domain: null };   // what is typed in each text box (null: what the router has)
+    let typed = { hostname: null, domain: null, send: null };   // what is typed in each text box, and the sending box (null: what the router has)
     let busy = false;
     let wired = false;
 
@@ -12,8 +12,14 @@ window.SettingsModule = (function () {
 
     // the two settings that are a line of text: where they are saved, and how the router keeps them
     const TEXT = {
-        hostname: { url: '/api/v1/settings/hostname', fail: 'The host name could not be saved.', tidy: (v) => v.trim() },
-        domain: { url: '/api/v1/settings/domain', fail: 'The domain could not be saved.', tidy: (v) => v.trim().toLowerCase() },
+        hostname: {
+            url: '/api/v1/settings/hostname', fail: 'The host name could not be saved.', tidy: (v) => v.trim(),
+            body: () => ({ hostname: TEXT.hostname.tidy(shown('hostname')), send_hostname: sendNow() }),
+        },
+        domain: {
+            url: '/api/v1/settings/domain', fail: 'The domain could not be saved.', tidy: (v) => v.trim().toLowerCase(),
+            body: () => ({ domain: TEXT.domain.tidy(shown('domain')) }),
+        },
     };
     const keys = Object.keys(TEXT);
 
@@ -29,8 +35,9 @@ window.SettingsModule = (function () {
 
     const draftTag = (on) => (on ? '<span class="tag tag-draft">Draft</span>' : '');
     const shown = (k) => (typed[k] !== null ? typed[k] : settings[k] || '');
+    const sendNow = () => (typed.send !== null ? typed.send : !!settings.send_hostname);
 
-    function textCard(k, title, label, placeholder, pending, hint) {
+    function textCard(k, title, label, placeholder, pending, hint, extra) {
         const lock = busy || settings.editable === false;
         return `<section class="card">
             <div class="net-card-head"><h2>${title}</h2>${draftTag(pending)}</div>
@@ -38,6 +45,7 @@ window.SettingsModule = (function () {
                 <input type="text" id="settings-${k}" value="${escapeHtml(shown(k))}" placeholder="${placeholder}" autocomplete="off" spellcheck="false" autocapitalize="off"${lock ? ' disabled' : ''}>
                 <p class="field-error hidden" id="settings-${k}-error"></p></div></div>
             <p class="form-hint">${hint}</p>
+            ${extra || ''}
             <div class="form-actions">
                 <button type="button" class="cfg-btn cfg-btn--primary" id="settings-${k}-save" disabled>Save to draft</button>
             </div>
@@ -52,7 +60,8 @@ window.SettingsModule = (function () {
         $('settings-body').innerHTML =
             textCard('hostname', 'Host name', 'Name of this router', 'none',
                 settings.hostname_pending,
-                'Letters, digits and hyphens, such as <code>my-router</code>. When the internet connection gets its address by DHCP, the router sends this name to the provider, and a few providers want a particular one. Empty: no name is sent. It is not used for anything else yet.') +
+                'The name of this router, such as <code>my-router</code>: letters, digits and hyphens. It is written to the machine itself and shown on the Overview. Empty: the machine keeps the name it has.',
+                `<label class="toggle toggle--block settings-send"><input type="checkbox" id="settings-send"${sendNow() ? ' checked' : ''}${busy || settings.editable === false ? ' disabled' : ''}><span><strong>Tell my internet provider this name</strong><span class="form-hint">Only a connection that gets its address by DHCP sends it, and only a few providers care. Off by default.</span></span></label>`) +
             `<section class="card">
             <div class="net-card-head"><h2>Country</h2>${draftTag(settings.country_pending)}</div>
             <div class="form-grid"><div class="form-field"><label for="settings-country">Where this router is used</label>
@@ -67,7 +76,9 @@ window.SettingsModule = (function () {
     }
 
     function dirty(k) {
-        return settings && typed[k] !== null && TEXT[k].tidy(typed[k]) !== (settings[k] || '');
+        if (!settings) return false;
+        const text = typed[k] !== null && TEXT[k].tidy(typed[k]) !== (settings[k] || '');
+        return text || (k === 'hostname' && typed.send !== null && typed.send !== !!settings.send_hostname);
     }
 
     function updateButton(k) {
@@ -82,7 +93,7 @@ window.SettingsModule = (function () {
         busy = true;
         updateButton(k);
         const res = await apiFetch(TEXT[k].url, {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [k]: TEXT[k].tidy(typed[k]) }),
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(TEXT[k].body()),
         });
         busy = false;
         if (!res || !res.ok) {
@@ -96,6 +107,7 @@ window.SettingsModule = (function () {
         }
         settings = await res.json();
         typed[k] = null;
+        if (k === 'hostname') typed.send = null;
         render();
         showMessage('Saved as a draft. Review and commit it from the bar at the top when you are ready.', 'ok');
         if (window.ConfigBanner) window.ConfigBanner.refresh();
@@ -137,6 +149,7 @@ window.SettingsModule = (function () {
         const body = $('settings-body');
         body.addEventListener('change', (e) => {
             if (e.target.id === 'settings-country') saveCountry(e.target.value);
+            else if (e.target.id === 'settings-send') { typed.send = e.target.checked; updateButton('hostname'); }
         });
         body.addEventListener('input', (e) => {
             const k = keyOf(e.target);
@@ -160,7 +173,7 @@ window.SettingsModule = (function () {
         wire();
         showMessage('');
         settings = null;
-        typed = { hostname: null, domain: null };
+        typed = { hostname: null, domain: null, send: null };
         load();
         return () => {};
     }

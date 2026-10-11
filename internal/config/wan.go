@@ -143,6 +143,9 @@ func (c NetworkConfig) validateWan(add func(field, format string, args ...any)) 
 	if c.Hostname != "" && !hostnamePattern.MatchString(c.Hostname) {
 		add("hostname", "must be a host name: letters, digits and '-', up to 63 characters")
 	}
+	if c.SendHostname && c.Hostname == "" {
+		add("send_hostname", "needs a host name to send")
+	}
 
 	if kind == WanPPPoE {
 		p := c.WanPPPoE

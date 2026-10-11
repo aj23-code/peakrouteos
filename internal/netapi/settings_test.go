@@ -145,4 +145,52 @@ func TestTheHostNameIsSetOnTheSettingsPage(t *testing.T) {
 	}
 }
 
+func TestTheHostNameCanAlsoBeSentToTheProvider(t *testing.T) {
+	e := standard(t)
+	set := func(body string) (*httptest.ResponseRecorder, Settings) {
+		rec := e.do(e.api.HandleSettingsHostname, http.MethodPut, body, "application/json")
+		var s Settings
+		if rec.Code == http.StatusOK {
+			s = decodeInto[Settings](t, rec)
+		}
+		return rec, s
+	}
+	// sending needs a name
+	if rec, _ := set(`{"send_hostname":true}`); rec.Code != http.StatusBadRequest || !errorFields(t, rec)["send_hostname"] {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if rec, _ := set(`{"hostname":"","send_hostname":true}`); rec.Code != http.StatusBadRequest || !errorFields(t, rec)["send_hostname"] {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if e.stageFileExists() {
+		t.Fatal("a refused change left a draft")
+	}
+	_, s := set(`{"hostname":"gw","send_hostname":true}`)
+	if s.Hostname != "gw" || !s.SendHostname || !s.HostnamePending || !e.changed("send_hostname") || !e.changed("hostname") {
+		t.Fatalf("%+v %+v", s, e.staged())
+	}
+	// a field left out stays
+	if _, s := set(`{"hostname":"gw2"}`); s.Hostname != "gw2" || !s.SendHostname {
+		t.Fatalf("the sending went with a rename: %+v", s)
+	}
+	if _, s := set(`{"send_hostname":false}`); s.Hostname != "gw2" || s.SendHostname {
+		t.Fatalf("%+v", s)
+	}
+	// clearing the name stops the sending too, unless the request insists
+	set(`{"send_hostname":true}`)
+	if _, s := set(`{"hostname":""}`); s.Hostname != "" || s.SendHostname {
+		t.Fatalf("%+v", s)
+	}
+	e.commit()
+	if s := e.settings(); s.HostnamePending || s.Hostname != "" || s.SendHostname {
+		t.Fatalf("%+v", s)
+	}
+	// only the sending changed: it is still a pending change
+	set(`{"hostname":"gw"}`)
+	e.commit()
+	if _, s := set(`{"send_hostname":true}`); !s.HostnamePending {
+		t.Fatalf("%+v", s)
+	}
+}
+
 func jsonString(s string) string { b, _ := json.Marshal(s); return string(b) }

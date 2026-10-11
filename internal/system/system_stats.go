@@ -213,6 +213,9 @@ func GetSystemStats(src ConfigSource) (SystemStats, error) {
 	netCfg := src.NetworkConfig()
 
 	stats.Hostname = sysCfg.Hostname
+	if netCfg.Hostname != "" { // the name set on System, Settings is the machine's name
+		stats.Hostname = netCfg.Hostname
+	}
 	stats.PeakRouteBuild = sysCfg.PeakRouteBuild
 	stats.Arch = sysCfg.Arch
 	stats.Kernel = sysCfg.Kernel

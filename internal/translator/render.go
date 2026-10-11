@@ -25,6 +25,9 @@ const (
 	// Static routes. ifupdown runs every script in if-up.d whenever an interface comes up, so
 	// the routes come back after a reboot or a networking restart without touching /etc/network/interfaces.
 	PathRoutes = "/etc/network/if-up.d/peakroute-routes"
+
+	// The machine's name, written while the configuration has a host name (an empty one leaves the file as it is).
+	PathHostname = "/etc/hostname"
 )
 
 // RouteProto is the routing protocol number the translator tags its routes with, so it can
@@ -33,6 +36,7 @@ const RouteProto = "77"
 
 // Services that pick up those files, in the order changes must be applied.
 const (
+	SvcHostname   = "hostname"
 	SvcSysctl     = "sysctl"
 	SvcNetworking = "networking"
 	SvcRoutes     = "routes"
@@ -186,6 +190,11 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathDnsmasqLocal, Content: []byte(content), Mode: 0644, Service: SvcDnsmasq})
 	} else {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathDnsmasqLocal, Remove: true, Service: SvcDnsmasq})
+	}
+
+	// The router's host name
+	if cfg.Hostname != "" {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathHostname, Content: []byte(cfg.Hostname + "\n"), Mode: 0644, Service: SvcHostname})
 	}
 
 	d.Notes = append(d.Notes, networkNotes(cfg)...)

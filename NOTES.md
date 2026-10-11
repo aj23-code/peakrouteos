@@ -445,6 +445,16 @@ network configuration).
 - Not built: more roles, two-factor, RADIUS/LDAP, past sign-ins, a console tool to recover when every administrator has forgotten the
   password (TODO, longer-term gaps).
 
+## 7k. Settings round two (started 2026-10-11)
+
+Design and rules are in **`docs/settings.md`** (updated by each commit). Plan: host name as the machine's name, time zone and NTP,
+syslog forwarding, a Power card (restart, shut down), and a regrouped page. Built so far:
+
+- **Host name.** `hostname` is now the machine's name: `/etc/hostname` is written (service `hostname`, action `hostname -F /etc/hostname`,
+  first in the apply order, restarts nothing else) and the Overview shows it. `send_hostname` (default off) decides whether a DHCP
+  connection also tells the provider (before, any set name was sent). An empty name leaves the machine alone; sending needs a name.
+  `/etc/hosts` is deliberately not edited (dnsmasq would serve its entries to the LAN); the image gets `libnss-myhostname` instead.
+
 ## 7e. Static routes (built 2026-10-08)
 
 **Model.** `NetworkConfig.Routes` is a list of `{name, destination, gateway, metric, disabled}` (JSON keys

@@ -87,6 +87,8 @@ var networkSettings = []networkSetting{
 	{"dhcp_lease_time", "DHCP lease time", func(c NetworkConfig) string {
 		return dhcpValue(c, func(d *DHCPConfig) string { return text(d.LeaseTime) })
 	}},
+	{"hostname", "Host name", func(c NetworkConfig) string { return text(c.Hostname) }},
+	{"send_hostname", "Host name sent to the provider", func(c NetworkConfig) string { return onOff(c.SendHostname, "yes (with DHCP)", "no") }},
 	{"country", "Country", func(c NetworkConfig) string { return text(c.Country) }},
 	{"domain", "Local domain", func(c NetworkConfig) string { return text(c.Domain) }},
 	{"lan_dns_servers", "DNS told to the default network", func(c NetworkConfig) string { return serversText(c.LanDNSServers) }},
@@ -108,7 +110,6 @@ var wanCarrierSettings = []networkSetting{
 		}
 		return c.WanMAC
 	}},
-	{"hostname", "Host name", func(c NetworkConfig) string { return text(c.Hostname) }},
 	{"pppoe_username", "PPPoE user name", func(c NetworkConfig) string {
 		if c.WanPPPoE == nil {
 			return valueNone

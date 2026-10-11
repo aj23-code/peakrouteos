@@ -14,7 +14,8 @@ type Settings struct {
 	Countries       []config.Country `json:"countries"`
 	Domain          string           `json:"domain"` // the local domain; empty until one is set
 	DomainPending   bool             `json:"domain_pending"`
-	Hostname        string           `json:"hostname"` // the router's host name; sent to the provider with DHCP addressing; empty: none
+	Hostname        string           `json:"hostname"`      // the router's host name, written to the machine; empty: the machine's name is left as it is
+	SendHostname    bool             `json:"send_hostname"` // also tell the provider's DHCP server (an internet connection with DHCP addressing only)
 	HostnamePending bool             `json:"hostname_pending"`
 	Editable        bool             `json:"editable"`
 }
@@ -24,7 +25,8 @@ func (a *API) settingsView() Settings {
 	draft, _ := a.Manager.StagedNetworkConfig()
 	return Settings{Country: draft.Country, Pending: draft.Country != active.Country, Countries: config.Countries,
 		Domain: draft.Domain, DomainPending: draft.Domain != active.Domain,
-		Hostname: draft.Hostname, HostnamePending: draft.Hostname != active.Hostname, Editable: a.editable()}
+		Hostname: draft.Hostname, SendHostname: draft.SendHostname,
+		HostnamePending: draft.Hostname != active.Hostname || draft.SendHostname != active.SendHostname, Editable: a.editable()}
 }
 
 // HandleSettings: GET /api/v1/settings returns the router-wide settings (the draft).
@@ -95,22 +97,32 @@ func (a *API) HandleSettingsDomain(w http.ResponseWriter, r *http.Request) {
 	a.answerStaged(w, err, http.StatusOK, "", a.settingsView())
 }
 
-// HandleSettingsHostname: PUT /api/v1/settings/hostname {"hostname": "my-router"} sets the router's host name; an empty
-// string clears it. Only an internet connection with DHCP addressing sends it (to the provider); the others keep it.
+// HandleSettingsHostname: PUT /api/v1/settings/hostname {"hostname": "my-router", "send_hostname": true} sets the router's
+// host name, which is written to the machine, and whether the provider's DHCP server is told it (only an internet
+// connection with DHCP addressing does; the others keep the setting). An empty name clears it (and, unless the request
+// says otherwise, the sending); a field left out stays.
 func (a *API) HandleSettingsHostname(w http.ResponseWriter, r *http.Request) {
 	if !allowMethods(w, r, http.MethodPut) || !a.requireEditable(w) {
 		return
 	}
 	var req struct {
-		Hostname string `json:"hostname"`
+		Hostname *string `json:"hostname"`
+		Send     *bool   `json:"send_hostname"`
 	}
 	if !decode(w, r, &req) {
 		return
 	}
-	name := strings.TrimSpace(req.Hostname)
 	err := a.Manager.StageNetwork(func(c *config.NetworkConfig) error {
-		c.Hostname = name
-		if errs := ownedErrors(c.Validate(), "hostname"); len(errs) > 0 {
+		if req.Hostname != nil {
+			c.Hostname = strings.TrimSpace(*req.Hostname)
+			if c.Hostname == "" && req.Send == nil {
+				c.SendHostname = false
+			}
+		}
+		if req.Send != nil {
+			c.SendHostname = *req.Send
+		}
+		if errs := ownedErrors(c.Validate(), "hostname", "send_hostname"); len(errs) > 0 {
 			return errs
 		}
 		return nil

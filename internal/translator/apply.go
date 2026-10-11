@@ -168,6 +168,7 @@ var preChecks = map[string]command{
 
 // serviceCommands carry out an action.
 var serviceCommands = map[string]command{
+	SvcHostname:   {"hostname", []string{"-F", PathHostname}},
 	SvcSysctl:     {"sysctl", []string{"-p", PathSysctl}},
 	SvcNetworking: {"systemctl", []string{"restart", "networking"}},
 	SvcNftables:   {"systemctl", []string{"reload", "nftables"}},

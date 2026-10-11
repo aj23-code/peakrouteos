@@ -107,7 +107,7 @@ func writeWanStanza(b *strings.Builder, cfg config.NetworkConfig) {
 		stanza("static", extra...)
 	default:
 		var extra []string
-		if cfg.Hostname != "" {
+		if cfg.Hostname != "" && cfg.SendHostname {
 			extra = append(extra, "hostname "+cfg.Hostname)
 		}
 		stanza("dhcp", extra...)
