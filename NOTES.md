@@ -608,6 +608,27 @@ setting, then AP mode (the limited GUI and a translator that bridges everything 
   review lines. On `PUT`, leaving `passphrase` out keeps the stored one.
 - A Local Network cannot be deleted while a Wi-Fi network joins it.
 
+### Wireless page: the Wi-Fi editors (stage 4)
+
+- The page (`wireless.js`) has four parts, top to bottom: the country (a dropdown; saved to the draft the moment it
+  changes), **Wi-Fi networks** (a dropdown with one network on show, like Local Networks, plus *Add Wi-Fi network*),
+  and one card per adapter. An adapter that can be an access point gets an **Access point** section: a switch, the
+  band, the channel (Automatic or one of the channels the adapter reports) and the width (what the adapter offers
+  for that band). Changing the band resets the channel to Automatic and the width to the usual choice (20 MHz on
+  2.4 GHz, up to 80 MHz on 5 GHz). Channels the country in effect has closed are still listed, marked as closed:
+  the country being edited is only a draft, so the page cannot know yet.
+- One adapter serves **one band at a time** (the stored radio has a single band); a dual-band adapter is used for
+  2.4 GHz *or* 5 GHz. Serving both bands needs two adapters. A Wi-Fi network that ticks a band no adapter is
+  switched on for shows a warning, and the commit refuses it (`wifi.coverage`).
+- A Wi-Fi network has: name, password (hidden, with a Show button), security (WPA2 + WPA3, WPA3 only or WPA2 only),
+  the Local Network it joins, bands, band steering (only offered when both bands are ticked, switched on when the
+  second band is ticked), switched on, hidden name and client isolation. Typing does not redraw the card (the focus
+  would be lost); the 10 s refresh only redraws when the list of adapters changed.
+- With no adapter the page is greyed with its message; with adapters but none able to be an access point, the Wi-Fi
+  networks card says so and cannot add a network.
+- **Not built yet:** a list of connected devices (needs `iw dev <if> station dump` or hostapd's control socket, and
+  a way to put names to them from the DHCP leases).
+
 ## 7b. Navigation (decided 2026-10-08)
 
 An OPNsense-style sidebar (grouped by function, quick search, clear two-level navigation) holding
