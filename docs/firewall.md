@@ -281,9 +281,12 @@ always match what the ruleset does.
 **The Rules page** (`web/static/scripts/firewall_rules.js`, in the menu under Firewall, Rules):
 
 - The dropdown at the top chooses where the traffic comes from; it shows how many rules each source has.
-- The list is the fixed lines above (grey, with a lock: replies, DHCP, and for the default network the anti-lockout), then your
-  rules, then the fixed lines below (what the Internet and isolation switches on Local Networks mean, ending in "Block
-  everything else"). Your rules are the only part that can be edited.
+- **Your rules** come first, **numbered by priority** from 1 downward: rule 1 is checked first, and the first rule that matches
+  decides. Moving a rule with the arrows renumbers them. Below them, in their own section, are the **built-in rules** (grey,
+  with a lock; they have no number and cannot be edited): first those *checked before your rules* (replies to connections that
+  were started, DHCP, and for the default network the anti-lockout), then those *checked after your rules, if none of them
+  matched* (what the Internet and isolation switches on Local Networks mean, ending in "Block everything else"). The built-in
+  rules are shown below your rules to keep your own rules in focus; the two headings say which of them actually come first.
 - Each rule shows its name, what it does (Allow green, Block red, Reject amber), a **Draft** tag until it is committed, a
   **Logged** tag, the rule in words, and its **hit count** (packets since the rules were last loaded; a dash for a rule that is not
   running yet; refreshed every 5 seconds without redrawing the list). A rule that no traffic can reach shows an amber

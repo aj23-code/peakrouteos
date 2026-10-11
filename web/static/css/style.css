@@ -1619,3 +1619,10 @@ height: 260px;
 .cx-table td { vertical-align: top; }
 .cx-more { margin-top: 0.75rem; }
 .net-toolbar input.role-select { min-width: 14rem; }
+.fw-heading { margin: 1.25rem 0 0; font-size: 0.95rem; font-weight: 600; }
+.fw-heading .form-hint { font-weight: 400; margin-left: 0.5rem; }
+.fw-num { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 1.7rem; height: 1.7rem; padding: 0 0.3rem;
+    border-radius: 999px; background: var(--accent-blue-bg); border: 1px solid rgba(56, 189, 248, 0.35); color: var(--accent-blue); font-weight: 700; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.fw-group { padding: 0.4rem 0.9rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); background: rgba(255, 255, 255, 0.045); border-top: 1px solid var(--border-color); }
+.fw-group:first-child { border-top: 0; }
+.fw-builtin { margin-bottom: 0.25rem; }

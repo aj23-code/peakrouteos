@@ -70,6 +70,7 @@ window.FirewallRulesModule = (function () {
             ? `<div class="fw-warn">Never matches: the rule <strong>${escapeHtml((data.rules.find(x => x.id === r.shadowed_by) || {}).name || r.shadowed_by)}</strong> above already decides all of this traffic.</div>` : '';
         const armed = confirmDelete === r.id;
         return `<div class="fw-row fw-rule${r.enabled ? '' : ' fw-rule--off'}" data-id="${escapeHtml(r.id)}">
+            <span class="fw-num" title="Priority: rules are checked from 1 downward" aria-label="Rule ${i + 1}">${i + 1}</span>
             <div class="fw-move">
                 <button type="button" class="fw-icon-btn fw-up" data-id="${escapeHtml(r.id)}" aria-label="Move up"${lock || i === 0 ? ' disabled' : ''}>▲</button>
                 <button type="button" class="fw-icon-btn fw-down" data-id="${escapeHtml(r.id)}" aria-label="Move down"${lock || i === all.length - 1 ? ' disabled' : ''}>▼</button>
@@ -163,9 +164,15 @@ window.FirewallRulesModule = (function () {
             <div class="net-card-head"><h2>Traffic from ${escapeHtml(t.name)}</h2><span class="tag">${rules.length} ${rules.length === 1 ? 'rule' : 'rules'}</span></div>
             <p class="form-hint">${switches}</p>
             ${!editable() ? '<p class="form-hint">A change is being applied or waits for confirmation: rules cannot be edited right now.</p>' : ''}
+            <h3 class="fw-heading">Your rules <span class="form-hint">checked from 1 downward; the first that matches decides</span></h3>
             <div class="fw-list">
-                ${policy.before.map(lineHtml).join('')}
                 ${rules.length ? rules.map(ruleHtml).join('') : '<div class="fw-row fw-empty">No rules of your own yet. Add one to let something through or to keep something out.</div>'}
+            </div>
+            <h3 class="fw-heading">Built-in rules <span class="form-hint">always there, cannot be changed here</span></h3>
+            <div class="fw-list fw-builtin">
+                <div class="fw-group">Checked before your rules</div>
+                ${policy.before.map(lineHtml).join('')}
+                <div class="fw-group">Checked after your rules, if none of them matched</div>
                 ${policy.after.map(lineHtml).join('')}
             </div>
         </section>${logCardHtml(t, rules)}${editing ? editorHtml() : ''}`;
