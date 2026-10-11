@@ -40,6 +40,8 @@ type API struct {
 	FirewallCounters func() (map[string]Counter, bool)
 	// ProviderDNS lists the DNS servers the internet connection's provider hands out right now. Nil means not reported.
 	ProviderDNS func() []string
+	// DNSAddr is where the router's own DNS server is asked by the lookup test (default 127.0.0.1:53); tests point it elsewhere.
+	DNSAddr string
 	// FirewallLog reads the most recent packets that firewall rules with logging matched (oldest first, at most the
 	// given number). The second result is false when the log cannot be read. Nil means it is not reported.
 	FirewallLog func(limit int) ([]network.FirewallLogEntry, bool)

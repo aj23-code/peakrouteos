@@ -1,6 +1,6 @@
 # PeakRoute OS DNS
 
-Status (2026-10-11): **stages 1 to 4 built** (the model, the files dnsmasq reads, the API and the page; the lookup test is still to come). This file was written first and every stage's commit updates it. It is meant to become the DNS chapter of the user documentation.
+Status (2026-10-11): **stages 1 to 5 built** (the model, the files dnsmasq reads, the API, the page and the lookup test; polish and screenshots are left). This file was written first and every stage's commit updates it. It is meant to become the DNS chapter of the user documentation.
 
 Contents: 1 What exists today, 2 Two sides: what the router asks, what the devices are told, 3 What each network is told,
 4 The router's own DNS server, 5 The local domain, 6 Local names, 7 Domain forwarding, 8 Staying out of trouble, 9 Recipes,
@@ -127,6 +127,12 @@ under it go to the servers listed (up to three), instead of the upstream servers
 3. **Local names**: a list with a switch, Edit and a two-click Delete per entry, and *Add name*. The local domain is shown here
    but changed under **System, Settings** (the link is on the page).
 4. **Domain forwarding**: the same, with *Add domain*.
+5. **Look a name up**: type a name (`nas`, `www.example.com`) or an IPv4 address and press *Ask*. The router's own DNS server is
+   asked, the way a device would ask it, and the page shows *Answered*, *Not found*, *No answer* (the server did not reply in
+   three seconds: it may be stopped, restarting or waiting for an upstream server) or *Error* (the server could not get an
+   answer), with the addresses (or names, for an address) and how long it took. The last five questions stay on the page. It
+   tests what is **running now**; changes still in the draft are not included, so commit first and then ask. A short name is
+   asked exactly as typed (a device's own search domain is not added); use `nas.lan` to see the domain at work.
 
 The Internet page only shows a *DNS servers* field for a fixed address; otherwise it says that the DNS page decides. Errors
 appear under the field they belong to; a draft entry carries a *Draft* tag until it is committed.
@@ -187,6 +193,7 @@ being applied; everything is saved as a draft):
 | `PUT /api/v1/dns/networks/{id}` | `{"servers": [...]}` sets what the network is told to use (`lan` is the default network); an empty list goes back to the router |
 | `POST /api/v1/dns/hosts`, `PUT` / `DELETE /api/v1/dns/hosts/{id}` | local names: `name`, `address`, `enabled` (left out stays); names are kept in lower case |
 | `POST /api/v1/dns/forwards`, `PUT` / `DELETE /api/v1/dns/forwards/{id}` | forwarded domains: `domain`, `servers`, `enabled` |
+| `GET /api/v1/dns/lookup?name=` | asks the router's own DNS server (127.0.0.1, port 53) one question and returns `query`, `kind` (`name` or `address`), `server`, `status` (`answered`, `not_found`, `timeout`, `error`), `answers`, `millis` and `message`. Read only, needs a session only. A name is up to 253 characters of letters, digits, `-`, `_` and `.`; anything else is refused with 400 |
 | `PUT /api/v1/settings/domain` | `{"domain": "lan"}` sets the local domain (kept in lower case); empty clears it. Refused when it would swallow a forwarded domain |
 
 *Notes on a network's servers* (in `notes`, advice, not errors): the router runs no DHCP server there, so nothing tells the devices;
@@ -207,7 +214,11 @@ DNS name, a forwarded domain with a slash or a newline in it, and any server or 
    the upstream), any other name (the upstream), and a reverse lookup.
 2. *The real `dnsmasq --test`* accepts the files (with a control: it refuses a line it does not know).
 3. *Exact text* of the files and of the DHCP lines, and the plan: a DNS change restarts only dnsmasq.
-4. What dnsmasq would tell a DHCP client is *not* checked with a real client (no DHCP client is available to the tests); the
+4. *The lookup test* is checked against a small fake DNS server (answers, not found, SERVFAIL, silence, reverse lookups, and the
+   exact name the router is asked) and by hand against a real dnsmasq started the way the router starts it (`interface=`
+   lines, no `bind-interfaces`): it does answer on 127.0.0.1, which the lookup test relies on (the web server's own firewall
+   rule accepts everything on the loopback interface).
+5. What dnsmasq would tell a DHCP client is *not* checked with a real client (no DHCP client is available to the tests); the
    lines are compared as text and accepted by `dnsmasq --test`.
 
 ## 12. Build plan
@@ -218,7 +229,7 @@ Each stage is its own commit with tests and updates this document.
 2. **Files** (done): the translator writes them; checked with `dnsmasq --test` and with real queries to the real dnsmasq in a namespace.
 3. **API** (done): the DNS settings, the local names, the forwards, per-network choice, the domain on Settings.
 4. **DNS page** (done, Services, DNS) and the domain field on Settings.
-5. **Lookup test** on the page: ask the router a name and see the answer and how long it took.
+5. **Lookup test** (done) on the page: ask the router a name and see the answer and how long it took.
 6. Polish; screenshots in this document.
 
 ## 13. Not planned (yet)

@@ -11,6 +11,7 @@ window.DNSModule = (function () {
     let confirmDelete = null;    // 'host:h1' / 'forward:f1'
     let busy = false;
     let wired = false;
+    let lk = { text: '', busy: false, results: [] };   // the lookup test: what was typed, and the latest answers (newest first)
 
     const $ = (id) => document.getElementById(id);
     const editable = () => !data || data.editable !== false;
@@ -211,9 +212,50 @@ window.DNSModule = (function () {
             ${editorFooter(editing.id ? 'Save to draft' : 'Add domain')}</section>`;
     }
 
+    const millisText = (ms) => (ms < 10 ? ms.toFixed(1) : ms.toFixed(0)) + ' ms';
+
+    function lookupHtml() {
+        const tagOf = { answered: ['tag tag-ok', 'Answered'], not_found: ['tag', 'Not found'], timeout: ['tag tag-warn', 'No answer'], error: ['tag tag-warn', 'Error'] };
+        const rows = lk.results.map(r => {
+            const [cls, label] = tagOf[r.status] || ['tag', r.status];
+            const what = r.kind === 'address' ? 'Names of' : 'Addresses of';
+            const answers = r.answers.length ? r.answers.map(a => `<code>${escapeHtml(a)}</code>`).join(', ') : `<span class="form-hint">${escapeHtml(r.message)}</span>`;
+            return `<div class="fw-row dns-lk-row"><span class="${cls}">${label}</span>
+                <div class="fw-main"><div class="fw-name">${what} <strong>${escapeHtml(r.query)}</strong></div><div class="fw-text">${answers}</div></div>
+                <span class="form-hint dns-lk-ms">${millisText(r.millis)}</span></div>`;
+        }).join('');
+        return `<section class="card" id="dns-lookup">
+            <div class="net-card-head"><h2>Look a name up</h2></div>
+            <p class="form-hint">Asks the router&rsquo;s own DNS server, the way a device would, and shows what came back and how long it took. Type a name such as <code>nas</code> or <code>www.example.com</code>, or an address to see its name. It asks what is running now: changes still in the draft are not included.</p>
+            <div class="dns-lk-ask">
+                <input type="text" id="dns-lk-text" value="${escapeHtml(lk.text)}" placeholder="nas, www.example.com or 192.168.1.50" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Name or address to look up"${lk.busy ? ' disabled' : ''}>
+                <button type="button" class="cfg-btn cfg-btn--primary" id="dns-lk-ask"${lk.busy || !lk.text.trim() ? ' disabled' : ''}>${lk.busy ? 'Asking…' : 'Ask'}</button>
+            </div>
+            ${lk.error ? `<div class="form-message" role="alert">${escapeHtml(lk.error)}</div>` : ''}
+            <div class="fw-list">${rows}</div>
+        </section>`;
+    }
+
+    async function ask() {
+        const text = lk.text.trim();
+        if (!text || lk.busy) return;
+        lk.busy = true; lk.error = null; render();
+        const res = await apiFetch('/api/v1/dns/lookup?name=' + encodeURIComponent(text));
+        lk.busy = false;
+        if (res && res.ok) {
+            lk.results.unshift(await res.json());
+            lk.results = lk.results.slice(0, 5);
+        } else {
+            lk.error = (await errorOf(res, 'The lookup failed.')).general;
+        }
+        render();
+        const box = $('dns-lk-text');
+        if (box) { box.focus(); box.select(); }
+    }
+
     function render() {
         if (!data) return;
-        $('dns-body').innerHTML = upstreamHtml() + networksHtml() + hostsHtml() + forwardsHtml() +
+        $('dns-body').innerHTML = upstreamHtml() + networksHtml() + hostsHtml() + forwardsHtml() + lookupHtml() +
             (!editable() ? '<p class="form-hint">A change is being applied or waits for confirmation: DNS cannot be edited right now.</p>' : '');
     }
 
@@ -361,7 +403,8 @@ window.DNSModule = (function () {
             const btn = e.target.closest('button');
             if (!btn) return;
             const { kind, id } = btn.dataset;
-            if (btn.id === 'dns-up-save') saveUpstream();
+            if (btn.id === 'dns-lk-ask') ask();
+            else if (btn.id === 'dns-up-save') saveUpstream();
             else if (btn.id === 'dns-up-reset') { upstream = upstreamFormOf(data.upstream); render(); }
             else if (btn.classList.contains('dns-net-save')) saveNetwork(id);
             else if (btn.classList.contains('dns-net-reset')) { nets[id] = netFormOf(data.networks.find(n => n.id === id)); render(); }
@@ -380,6 +423,7 @@ window.DNSModule = (function () {
         });
         body.addEventListener('input', (e) => {
             const el = e.target;
+            if (el.id === 'dns-lk-text') { lk.text = el.value; $('dns-lk-ask').disabled = !lk.text.trim(); return; }
             if (el.dataset.up === 'servers') { upstream.servers = el.value; delete upstream.errors.servers; refreshButtons(); }
             else if (el.dataset.net && el.dataset.field === 'servers') { nets[el.dataset.net].servers = el.value; delete nets[el.dataset.net].errors.servers; refreshButtons(); }
             else if (el.dataset.ed && editing && el.type !== 'checkbox') {
@@ -396,6 +440,7 @@ window.DNSModule = (function () {
             }
         });
         body.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.target.id === 'dns-lk-text') { e.preventDefault(); ask(); return; }
             if (e.key !== 'Enter' || e.target.tagName !== 'INPUT' || e.target.type !== 'text' || busy || !editable()) return;
             if (editing && e.target.dataset.ed) { e.preventDefault(); saveEditor(); }
             else if (e.target.dataset.up && upstreamDirty()) { e.preventDefault(); saveUpstream(); }
@@ -406,7 +451,7 @@ window.DNSModule = (function () {
     function init() {
         wire();
         showMessage('');
-        data = null; upstream = null; nets = {}; editing = null; confirmDelete = null;
+        data = null; upstream = null; nets = {}; editing = null; confirmDelete = null; lk = { text: '', busy: false, results: [] };
         load();
         return () => {};
     }

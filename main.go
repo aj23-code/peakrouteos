@@ -321,6 +321,7 @@ func main() {
 		return out
 	}
 	mux.HandleFunc("/api/v1/dns", requireAuth(netAPI.HandleDNS))
+	mux.HandleFunc("/api/v1/dns/lookup", requireAuth(netAPI.HandleDNSLookup))
 	mux.HandleFunc("/api/v1/dns/upstream", requireAuth(netAPI.HandleDNSUpstream))
 	mux.HandleFunc("/api/v1/dns/networks/{id}", requireAuth(netAPI.HandleDNSNetwork))
 	mux.HandleFunc("/api/v1/dns/hosts", requireAuth(netAPI.HandleDNSHosts))
