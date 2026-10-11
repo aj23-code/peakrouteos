@@ -43,7 +43,11 @@ window.InternetModule = (function () {
     let resizeHandler = null;
 
     const $ = (id) => document.getElementById(id);
-    const FIELD_INPUTS = { ip: 'inet-ip', netmask: 'inet-netmask', gateway: 'inet-gateway', dns: 'inet-dns' };
+    const FIELD_INPUTS = {
+        ip: 'inet-ip', netmask: 'inet-netmask', gateway: 'inet-gateway', dns: 'inet-dns',
+        vlan: 'inet-vlan', mtu: 'inet-mtu', mac: 'inet-mac', hostname: 'inet-hostname',
+        'pppoe.username': 'inet-pppoe-user', 'pppoe.password': 'inet-pppoe-pass', 'pppoe.service': 'inet-pppoe-service',
+    };
 
     // ---------------------------------------------------------------- health
 
@@ -476,8 +480,10 @@ window.InternetModule = (function () {
         return leftovers;
     }
 
-    const mode = () => ($('inet-mode-static').checked ? 'static' : 'dhcp');
+    const MODES = ['dhcp', 'static', 'pppoe'];
+    const mode = () => (MODES.find(m => $('inet-mode-' + m).checked) || 'dhcp');
     const dnsList = () => $('inet-dns').value.split(/[\s,]+/).filter(Boolean);
+    const intOf = (v) => (/^\d+$/.test(v.trim()) ? parseInt(v.trim(), 10) : (v.trim() === '' ? 0 : NaN));
 
     function formValues() {
         return {
@@ -486,33 +492,72 @@ window.InternetModule = (function () {
             netmask: $('inet-netmask').value.trim(),
             gateway: $('inet-gateway').value.trim(),
             dns: dnsList(),
+            vlan: $('inet-vlan').value.trim(),
+            mtu: $('inet-mtu').value.trim(),
+            mac: $('inet-mac').value.trim(),
+            hostname: $('inet-hostname').value.trim(),
+            pppoeUser: $('inet-pppoe-user').value.trim(),
+            pppoePass: $('inet-pppoe-pass').value, // empty: the saved one stays
+            pppoeService: $('inet-pppoe-service').value.trim(),
         };
     }
 
     function fillForm(u) {
-        $('inet-mode-static').checked = u.mode === 'static';
-        $('inet-mode-dhcp').checked = u.mode !== 'static';
+        MODES.forEach(m => { $('inet-mode-' + m).checked = u.mode === m; });
         $('inet-ip').value = u.ip || '';
         $('inet-netmask').value = u.netmask || '';
         $('inet-gateway').value = u.gateway || '';
         $('inet-dns').value = (u.dns || []).join(', ');
+        $('inet-vlan').value = u.vlan ? String(u.vlan) : '';
+        $('inet-mtu').value = u.mtu ? String(u.mtu) : '';
+        $('inet-mac').value = u.mac || '';
+        $('inet-hostname').value = u.hostname || '';
+        $('inet-pppoe-user').value = (u.pppoe && u.pppoe.username) || '';
+        $('inet-pppoe-pass').value = '';
+        $('inet-pppoe-service').value = (u.pppoe && u.pppoe.service) || '';
+        // the advanced settings open by themselves when any is in use
+        if (u.vlan || u.mtu || u.mac) $('inet-advanced').open = true;
     }
 
+    // What differs from the saved draft. Only the settings of the chosen type count.
     function isDirty() {
         if (!uplink) return false;
         const v = formValues();
         if (v.mode !== uplink.mode) return true;
-        if (v.mode === 'dhcp') return false; // the static values do not matter
-        return v.ip !== (uplink.ip || '') || v.netmask !== (uplink.netmask || '') ||
-            v.gateway !== (uplink.gateway || '') || v.dns.join(',') !== (uplink.dns || []).join(',');
+        const same = (a, b) => String(a) === String(b);
+        if (!same(v.vlan, uplink.vlan || '') || !same(v.mtu, uplink.mtu || '') || v.mac !== (uplink.mac || '')) return true;
+        if (v.dns.join(',') !== (uplink.dns || []).join(',')) return true;
+        if (v.mode === 'static') {
+            return v.ip !== (uplink.ip || '') || v.netmask !== (uplink.netmask || '') || v.gateway !== (uplink.gateway || '');
+        }
+        if (v.mode === 'dhcp') return v.hostname !== (uplink.hostname || '');
+        const p = uplink.pppoe || {};
+        return v.pppoeUser !== (p.username || '') || v.pppoeService !== (p.service || '') || v.pppoePass !== '';
+    }
+
+    function body() {
+        const v = formValues();
+        const out = { mode: v.mode, vlan: intOf(v.vlan), mtu: intOf(v.mtu), mac: v.mac };
+        if (v.mode === 'static') {
+            Object.assign(out, { ip: v.ip, netmask: v.netmask, gateway: v.gateway, dns: v.dns });
+        } else {
+            out.dns = v.dns; // replaces the provider's servers; empty puts them back
+            if (v.mode === 'dhcp') out.hostname = v.hostname;
+            else out.pppoe = Object.assign({ username: v.pppoeUser, service: v.pppoeService }, v.pppoePass !== '' ? { password: v.pppoePass } : {});
+        }
+        return out;
     }
 
     function renderLive() {
         const live = uplink && uplink.live;
-        $('inet-live-link').textContent = live ? (live.up ? 'Connected' : 'No link') : '–';
-        $('inet-live-address').textContent = (live && live.address) || '–';
-        $('inet-live-gateway').textContent = (live && live.gateway) || '–';
-        $('inet-live-dns').textContent = (live && live.dns && live.dns.length) ? live.dns.join(', ') : '–';
+        const pppoe = uplink && uplink.mode === 'pppoe';
+        $('inet-live-link').textContent = live ? (live.up ? 'Connected' : (pppoe ? 'Not connected' : 'No link')) : '\u2013';
+        $('inet-live-address').textContent = (live && live.address) || '\u2013';
+        $('inet-live-gateway').textContent = (live && live.gateway) || '\u2013';
+        $('inet-live-dns').textContent = (live && live.dns && live.dns.length) ? live.dns.join(', ') : '\u2013';
+        $('inet-live-device').textContent = (live && live.device) || '\u2013';
+        $('inet-live-mac').textContent = (live && live.mac) || '\u2013';
+        $('inet-live-mtu').textContent = (live && live.mtu) ? String(live.mtu) : '\u2013';
     }
 
     function renderForm() {
@@ -521,16 +566,38 @@ window.InternetModule = (function () {
         $('inet-draft').classList.toggle('hidden', !uplink.pending);
         renderLive();
 
-        const isStatic = mode() === 'static';
-        $('inet-static-fields').classList.toggle('hidden', !isStatic);
-        const lock = !editable || saving;
-        ['inet-mode-dhcp', 'inet-mode-static', 'inet-ip', 'inet-netmask', 'inet-gateway', 'inet-dns'].forEach(id => { $(id).disabled = lock; });
+        const m = mode();
+        $('inet-static-fields').classList.toggle('hidden', m !== 'static');
+        $('inet-pppoe-fields').classList.toggle('hidden', m !== 'pppoe');
+        $('inet-dhcp-fields').classList.toggle('hidden', m !== 'dhcp');
 
+        // DNS: needed with a static address, an option otherwise
+        $('inet-dns-label').textContent = m === 'static' ? 'DNS servers' : 'DNS servers instead of the provider\'s (optional)';
+        $('inet-dns-hint').textContent = m === 'static'
+            ? 'Up to three, separated by commas. The first one is also what the health chart pings.'
+            : 'Up to three, separated by commas. Leave empty to use the servers your provider hands out.';
+        // the MTU the connection uses when this is empty
+        const usual = m === 'pppoe' ? 1492 : 1500;
+        $('inet-mtu').placeholder = String(usual);
+        $('inet-mtu-hint').textContent = m === 'pppoe'
+            ? 'PPPoE uses 1492 unless you set another (at most 1492).'
+            : 'Empty means the usual 1500. A smaller value is for connections that lose part of each packet to a tunnel.';
+
+        const saved = uplink.pppoe && uplink.pppoe.password_set;
+        $('inet-pppoe-pass').placeholder = saved ? 'unchanged' : '';
+        $('inet-pppoe-pass-hint').textContent = saved ? 'A password is saved. Leave this empty to keep it.' : '';
+
+        const lock = !editable || saving;
+        ['inet-mode-dhcp', 'inet-mode-static', 'inet-mode-pppoe', 'inet-ip', 'inet-netmask', 'inet-gateway', 'inet-dns',
+            'inet-vlan', 'inet-mtu', 'inet-mac', 'inet-hostname', 'inet-pppoe-user', 'inet-pppoe-pass', 'inet-pppoe-service', 'inet-pppoe-reveal']
+            .forEach(id => { $(id).disabled = lock; });
+
+        const bad = ['vlan', 'mtu'].filter(k => Number.isNaN(intOf(formValues()[k])));
         const dirty = isDirty();
         $('inet-hint').textContent = !editable
             ? 'A change is being applied or waits for confirmation: the connection cannot be edited right now.'
             : (dirty ? 'You have unsaved changes.' : '');
-        $('inet-save').disabled = lock || !dirty;
+        $('inet-save').disabled = lock || !dirty || bad.length > 0;
         $('inet-reset').disabled = saving || !dirty;
     }
 
@@ -548,15 +615,19 @@ window.InternetModule = (function () {
     async function save() {
         clearFieldErrors();
         showMessage('');
-        const v = formValues();
-        const body = v.mode === 'dhcp' ? { mode: 'dhcp' } : v;
+        const bad = ['vlan', 'mtu'].filter(k => Number.isNaN(intOf(formValues()[k])));
+        if (bad.length) {
+            bad.forEach(k => showFieldErrors([{ field: k, message: 'must be a whole number' }]));
+            showMessage('Some settings need attention.', 'error');
+            return;
+        }
 
         saving = true;
         renderForm();
         const res = await apiFetch('/api/v1/uplinks/' + encodeURIComponent(uplink.id), {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
+            body: JSON.stringify(body()),
         });
         saving = false;
 
@@ -594,6 +665,13 @@ window.InternetModule = (function () {
         $('inet-card').addEventListener('input', renderForm);
         $('inet-card').addEventListener('change', renderForm);
         $('inet-save').addEventListener('click', save);
+        $('inet-pppoe-reveal').addEventListener('click', () => {
+            const f = $('inet-pppoe-pass');
+            const show = f.type === 'password';
+            f.type = show ? 'text' : 'password';
+            $('inet-pppoe-reveal').textContent = show ? 'Hide' : 'Show';
+            $('inet-pppoe-reveal').setAttribute('aria-pressed', String(show));
+        });
         $('inet-reset').addEventListener('click', () => {
             clearFieldErrors();
             showMessage('');
@@ -601,7 +679,7 @@ window.InternetModule = (function () {
             renderForm();
         });
         $('inet-card').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type === 'text' && !$('inet-save').disabled) {
+            if (e.key === 'Enter' && e.target.tagName === 'INPUT' && (e.target.type === 'text' || e.target.type === 'password') && !$('inet-save').disabled) {
                 e.preventDefault();
                 save();
             }

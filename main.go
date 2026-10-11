@@ -227,10 +227,16 @@ func main() {
 	// Editing the network: port roles and per-network settings. Saving stages a draft; edits are
 	// refused while a change is being applied or waits for confirmation.
 	netAPI := &netapi.API{Manager: cfgMgr, Ports: network.GetPhysicalInterfaces, Editable: configSvc.Idle,
-		Live: func(port string) *netapi.Live {
-			up, addr, gw := network.WANConnection(port)
-			live := &netapi.Live{Up: up, Address: addr, Gateway: gw, DNS: []string{}}
-			resolvers, _ := network.UpstreamResolvers(cfgMgr.NetworkConfig(), os.ReadFile)
+		Live: func(active config.NetworkConfig) *netapi.Live {
+			dev := active.WanDevice()
+			up, addr, gw := network.WANConnection(dev)
+			if gw == "" && active.WanKind() == config.WanPPPoE {
+				gw = network.PPPPeer(dev) // the provider's end of the session
+			}
+			live := &netapi.Live{Up: up, Address: addr, Gateway: gw, DNS: []string{}, Device: dev}
+			live.MAC, _ = network.LinkDetails(active.WanLink())
+			_, live.MTU = network.LinkDetails(dev)
+			resolvers, _ := network.UpstreamResolvers(active, os.ReadFile)
 			for _, r := range resolvers {
 				live.DNS = append(live.DNS, r.String())
 			}

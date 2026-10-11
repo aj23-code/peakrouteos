@@ -1577,3 +1577,5 @@ height: 260px;
 .client-status--online .status-pip { box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); }
 .row-offline td:not(:first-child) { opacity: 0.6; }
 .client-status + .form-hint { white-space: nowrap; }
+.inet-advanced { margin-top: 1.25rem; }
+.inet-advanced summary { cursor: pointer; color: var(--text-muted); font-size: 0.9rem; }

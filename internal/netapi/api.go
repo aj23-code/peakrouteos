@@ -29,9 +29,9 @@ type API struct {
 	// Editable reports whether edits are allowed right now. They are not while a change is being
 	// applied or waiting for confirmation: a revert would overwrite a newer draft. Nil means always.
 	Editable func() bool
-	// Live reports how the given port is connected right now (its address, gateway and DNS
-	// servers). Nil means it is not reported.
-	Live func(port string) *Live
+	// Live reports how the internet connection of the given (active) configuration is up right now: its
+	// address, gateway and DNS servers. Nil means it is not reported.
+	Live func(active config.NetworkConfig) *Live
 	// RoutingTable lists the routes the kernel is using now. Nil means it is not reported.
 	RoutingTable func() []LiveRoute
 	// Wireless reports the Wi-Fi adapters and what they can do. Nil means they cannot be read.
@@ -61,6 +61,14 @@ var errorField = map[string]string{
 	"wan_subnet":       "netmask",
 	"wan_gateway":      "gateway",
 	"wan_dns":          "dns",
+	"wan_vlan":         "vlan",
+	"wan_mtu":          "mtu",
+	"wan_mac":          "mac",
+	"wan_hostname":     "hostname",
+	"wan_pppoe":        "pppoe",
+	"pppoe_username":   "pppoe.username",
+	"pppoe_password":   "pppoe.password",
+	"pppoe_service":    "pppoe.service",
 }
 
 type errorBody struct {

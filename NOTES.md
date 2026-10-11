@@ -261,7 +261,7 @@ Decisions for the remaining steps (9c to 9e):
 
 ## 7d. Internet connection and its health (built 2026-10-08)
 
-**Settings** (`netapi/uplinks.go`, same rules as 7a): DHCP or static (IP, netmask, gateway, DNS). Saving
+**Settings** (`netapi/uplinks.go`, same rules as 7a): DHCP or static (IP, netmask, gateway, DNS); PPPoE, VLAN, MTU, MAC clone and the DHCP host name are described in *The complete WAN page* below. Saving
 only stages. Choosing DHCP clears the static fields so no stale values stay in `network.json`. The
 shared validation lets a static gateway and DNS be empty (the wizard allows it); the editor requires both
 because a static address without them cannot reach anything. The LAN/WAN subnet overlap is reported on
@@ -325,6 +325,64 @@ the first IPv4 address, the default route in `/proc/net/route`, and the resolver
   dot per row): the DNS average in blue and the gateway in green, red columns for DNS loss, gaps where no
   probes ran. Best and worst latency are in the tooltip and the figures above the chart rather than a band.
   Drawn at device pixel ratio; refreshes every 5 to 60 s depending on the range.
+
+### The complete WAN page (built 2026-10-10)
+
+**What it does.** Connection type (**DHCP**, **static**, **PPPoE**), plus VLAN ID, MTU, MAC address to present, the host name
+sent with DHCP, and DNS servers that replace the provider's. IPv4 only: nothing about IPv6 exists anywhere in the router yet.
+
+- **Model** (`config/wan.go`, flat fields in `network.json`): `wan_mode` (`dhcp`/`static`/`pppoe`), `wan_vlan` (0: none),
+  `wan_mtu` (0: the usual 1500, or 1492 for PPPoE), `wan_mac`, `wan_hostname`, `wan_pppoe` (`username`, `password`, `service`)
+  and `wan_dns`. `WanLink()` is the interface the connection runs over (`eth0`, or `eth0.835` with a VLAN) and `WanDevice()` the
+  one that carries the address and the traffic (the link, or `ppp0` for PPPoE). **Everything that used to read `WanInterface`
+  for traffic now reads `WanDevice()`**: the firewall, the masquerade rule, the other networks' internet rule, the gateway the
+  health chart pings. `WanInterface` stays the physical port (the Ports page, the traffic charts).
+- **Validation:** VLAN 1 to 4094 (and the port name must still fit 15 characters with `.vlan` added); MTU 576 to 9000 (to 1492
+  with PPPoE); MAC lower case, not a group address, not all zeros; host name an RFC 1123 label and only with DHCP; PPPoE needs a
+  user name and password, plain printable ASCII without quotes or backslashes (they go into a quoted option file), up to 64
+  characters; PPPoE settings are refused with another type. DNS servers (up to three) are checked for every type: required with a
+  static address, optional (an override) otherwise.
+- **How it is written** (`translator/wan.go`; **plain DHCP and static configurations render byte-for-byte as before**):
+  - *Options on the port's stanza:* `hwaddress ether` (MAC clone), `hostname` (read by udhcpc, which the image uses), and an MTU
+    other than the usual one. **ifupdown's DHCP method has no `mtu` option and would silently ignore it**, so DHCP gets
+    `post-up ip link set dev $IFACE mtu N`; a static address uses the native `mtu`. A VLAN interface cannot be larger than its
+    port, so a jumbo MTU over a VLAN also raises the port first (`pre-up`).
+  - *VLAN:* a VLAN interface (`eth0.835`, `vlan-raw-device eth0`) holds the connection; the vlan package brings the port up. A
+    cloned MAC goes on the VLAN interface, which is what the provider sees.
+  - *PPPoE:* a link stanza (`inet manual`; ifupdown brings it up by itself) and a `ppp` stanza (`provider peakroute-wan`, which
+    runs `pon`). The login is `/etc/ppp/peers/peakroute-wan`, **mode 0600, only present while the connection is PPPoE**: `plugin
+    rp-pppoe.so`, `nic-<link>`, `user`, `password`, `noauth`, `unit 0` (so the session is always `ppp0`), `mtu`/`mru`,
+    `defaultroute`, `usepeerdns`, `persist` with `maxfail 0` and `holdoff 10` (dial again forever, ten seconds apart), and LCP
+    echo to notice a dead line. The image needs the `ppp` package (added to `buildISO.sh`; **ISO rebuild needed**).
+  - *MSS clamping:* when the connection's MTU is below 1500 (PPPoE, or one set by hand) the firewall lowers the TCP maximum segment
+    size to MTU minus 40 in both directions (`oifname`/`iifname <wan> tcp flags syn tcp option maxseg size > N ... set N`), placed
+    before the accept rules. Without it pages stall on full-size packets. Nothing is added at 1500 or above.
+  - *DNS:* servers set by hand are written to the dnsmasq upstream file (`no-resolv` and `server=`) for **every** type, not only
+    static. The interface stanza's `dns-nameservers` stays static-only. With PPPoE and nothing set, pppd's `usepeerdns` (the
+    ppp package's `0000usepeerdns` hook) updates resolv.conf and dnsmasq follows it.
+- **API** (`netapi/uplinks.go`): `PUT /api/v1/uplinks/wan` takes `mode` and, optionally, `vlan`, `mtu`, `mac`, `hostname`, `dns`
+  and `pppoe` (`username`, `password`, `service`). Fields left out stay as they are; `0`, `""` or `[]` clear. Changing the type
+  drops what belongs to the old one (static values for DHCP and PPPoE; the host name for static and PPPoE; the PPPoE login for
+  the others). **Leaving static does not turn its DNS servers into an override** unless the request sends some. **The PPPoE
+  password is write-only**: it is accepted, saved in `network.json` (0600) and written to the peer file, and never returned
+  (`password_set` says whether one is saved; leaving it out keeps it). The review shows "PPPoE password: (none) -> set" or
+  "set -> changed". Error fields: `vlan`, `mtu`, `mac`, `hostname`, `dns`, `pppoe.username`, `pppoe.password`, `pppoe.service`.
+- **Live** (`GET /api/v1/uplinks`, `live`): the *active* configuration's device, MAC and MTU as the kernel reports them, with the
+  address, gateway and DNS. A PPP interface reports its state as "unknown", so it counts as up when the kernel says it is up and
+  it has an address. A PPPoE session has no gateway address: the provider's end of the link (`ip addr`'s `peer`) is shown, and is
+  what the health chart pings as the gateway.
+- **Page** (`internet.js`): the Connection card has the three types as cards, the fields of the chosen type, one DNS field whose
+  wording follows the type, and an *Advanced* section (VLAN, MTU, MAC) that opens by itself when any is in use. The MTU
+  placeholder shows the usual value for the type. A saved password shows as "unchanged".
+- **Checked with real tools:** the real `ifupdown`, `vlan` and `iproute2` in a network namespace (static over a VLAN with a MAC and
+  MTU came up as written and went down cleanly; the DHCP, jumbo-MTU and `ppp` stanzas were run with `ifup --no-act` and produced
+  the expected commands, including `pon peakroute-wan`); the real `nft -c` on every variant (a test); the real `pppd` parsing the
+  peer file (a test, with a bad option as the control; the lines the PPPoE plugin reads are checked separately, because the
+  plugin needs kernel support to start and this machine's `pppd` stops there). The real `/dev/ppp`/`pppoe` kernel path and a real
+  PPPoE server have **not** been tried: needs a box that can load the `pppoe` module.
+- **Not built:** IPv6 (including a delegated prefix for the LAN), 802.1p VLAN priority (some providers want it on DHCP packets),
+  RFC 4638 "baby jumbo" frames (a PPPoE MTU of 1500), IPoE/DS-Lite/MAP-E tunnels, a second internet connection (failover or
+  load balancing), and a button to renew the lease or redial.
 
 ## 7e. Static routes (built 2026-10-08)
 
@@ -784,8 +842,8 @@ every future page works on every screen automatically.
 | `GET /api/v1/wireless` | session | `adapters` (`name`, `phy`, `mac`, `driver`, `state`, `capabilities_known`, `ap_capable`, `modes`, `bands`: `name`, `widths`, `channels` with `number`, `mhz`, `disabled`, `no_ir`, `dfs`), `iw_available`, `country`, `country_known` |
 | `GET /api/v1/routes` | session | `routes` (the draft: `name`, `destination`, `gateway`, `metric`, `enabled`), `pending`, `editable`, and `table`: the kernel's routing table in effect (`destination`, `gateway`, `interface`, `metric`, `kind`: default, connected, static (one of ours, matched against the *active* config) or via) |
 | `PUT /api/v1/routes` | session + CSRF | `{"routes": [...]}` replaces the whole list in the draft (`enabled` omitted means on); field errors come back as `routes[2].gateway` and so on |
-| `GET /api/v1/uplinks`, `GET /api/v1/uplinks/{id}` | session | the internet connection (today one, id `wan`): `port`, `mode` (dhcp or static), `ip`, `netmask`, `gateway`, `dns`, `pending`, and `live` (what is in effect: `up`, `address`, `gateway`, `dns`) |
-| `PUT /api/v1/uplinks/{id}` | session + CSRF | `{"mode": "dhcp"}` or `{"mode": "static", "ip", "netmask", "gateway", "dns": []}`; stages a draft. Switching to DHCP clears the static values. A static address also requires a gateway and one DNS server |
+| `GET /api/v1/uplinks`, `GET /api/v1/uplinks/{id}` | session | the internet connection (today one, id `wan`): `port`, `mode` (`dhcp`, `static` or `pppoe`), `ip`, `netmask`, `gateway`, `dns`, `vlan`, `mtu`, `usual_mtu`, `mac`, `hostname`, `pppoe` (`username`, `service`, `password_set`: never the password), `device`, `pending`, and `live` (what is in effect: `up`, `address`, `gateway`, `dns`, `device`, `mac`, `mtu`) |
+| `PUT /api/v1/uplinks/{id}` | session + CSRF | `mode` and, as needed, static `ip`, `netmask`, `gateway`, `dns`; `vlan`, `mtu`, `mac`, `hostname`; `pppoe` (`username`, `password`, `service`); stages a draft. Fields left out stay; the old type's settings are dropped. A static address also requires a gateway and one DNS server; the PPPoE password is write-only |
 | `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (the DNS series' `state`, `target`, `source`, `rtt_ms`, plus `method`, `gateway` (the same fields for the gateway) and a `diagnosis` sentence), `availability` (`uptime_24h`, `uptime_30d` in percent or null, `outage_count`, `outages`: newest first, at most 20, each `start` ms, `seconds`, `ongoing`; independent of the charted range), and two series, `dns` and `gateway`, each with `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
 | `GET /api/v1/system/logs?limit=` | session | systemd journal |
 | `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage, how each device is connected (`connection`: `wifi`, `wired` or `unknown`; `ssid` and `band` for Wi-Fi) and whether it is here (`status`: `online`, `offline` or `unknown`; `last_seen_epoch`, 0 if never) |
@@ -810,8 +868,8 @@ every future page works on every screen automatically.
 | `DELETE /api/v1/networks/{id}` | session + CSRF | stages the removal and answers with the list; refused for the default network and while a port still carries the network untagged (a network that is only tagged is taken off those ports) |
 | `GET /api/v1/routes` | session | `routes` (the draft: `name`, `destination`, `gateway`, `metric`, `enabled`), `pending`, `editable`, and `table`: the kernel's routing table in effect (`destination`, `gateway`, `interface`, `metric`, `kind`: default, connected, static (one of ours, matched against the *active* config) or via) |
 | `PUT /api/v1/routes` | session + CSRF | `{"routes": [...]}` replaces the whole list in the draft (`enabled` omitted means on); field errors come back as `routes[2].gateway` and so on |
-| `GET /api/v1/uplinks`, `GET /api/v1/uplinks/{id}` | session | the internet connection (today one, id `wan`): `port`, `mode` (dhcp or static), `ip`, `netmask`, `gateway`, `dns`, `pending`, and `live` (what is in effect: `up`, `address`, `gateway`, `dns`) |
-| `PUT /api/v1/uplinks/{id}` | session + CSRF | `{"mode": "dhcp"}` or `{"mode": "static", "ip", "netmask", "gateway", "dns": []}`; stages a draft. Switching to DHCP clears the static values. A static address also requires a gateway and one DNS server |
+| `GET /api/v1/uplinks`, `GET /api/v1/uplinks/{id}` | session | the internet connection (today one, id `wan`): `port`, `mode` (`dhcp`, `static` or `pppoe`), `ip`, `netmask`, `gateway`, `dns`, `vlan`, `mtu`, `usual_mtu`, `mac`, `hostname`, `pppoe` (`username`, `service`, `password_set`: never the password), `device`, `pending`, and `live` (what is in effect: `up`, `address`, `gateway`, `dns`, `device`, `mac`, `mtu`) |
+| `PUT /api/v1/uplinks/{id}` | session + CSRF | `mode` and, as needed, static `ip`, `netmask`, `gateway`, `dns`; `vlan`, `mtu`, `mac`, `hostname`; `pppoe` (`username`, `password`, `service`); stages a draft. Fields left out stay; the old type's settings are dropped. A static address also requires a gateway and one DNS server; the PPPoE password is write-only |
 | `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (the DNS series' `state`, `target`, `source`, `rtt_ms`, plus `method`, `gateway` (the same fields for the gateway) and a `diagnosis` sentence), `availability` (`uptime_24h`, `uptime_30d` in percent or null, `outage_count`, `outages`: newest first, at most 20, each `start` ms, `seconds`, `ongoing`; independent of the charted range), and two series, `dns` and `gateway`, each with `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
 | `GET /api/v1/system/logs?limit=` | session | systemd journal |
 | `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage, how each device is connected (`connection`: `wifi`, `wired` or `unknown`; `ssid` and `band` for Wi-Fi) and whether it is here (`status`: `online`, `offline` or `unknown`; `last_seen_epoch`, 0 if never) |

@@ -53,8 +53,8 @@ func TestEmptyModeCountsAsDHCP(t *testing.T) {
 func TestUplinkLiveStatusDescribesTheActivePort(t *testing.T) {
 	e := standard(t)
 	var asked string
-	e.api.Live = func(port string) *Live {
-		asked = port
+	e.api.Live = func(c config.NetworkConfig) *Live {
+		asked = c.WanInterface
 		return &Live{Up: true, Address: "203.0.113.7/24", Gateway: "203.0.113.1", DNS: []string{"1.1.1.1"}}
 	}
 	// the draft moves the WAN to another port; the live view must still describe the one in effect
@@ -70,7 +70,7 @@ func TestUplinkLiveStatusDescribesTheActivePort(t *testing.T) {
 func TestUplinkWithoutAnActivePortHasNoLiveStatus(t *testing.T) {
 	e := newEnv(t, nil)
 	called := false
-	e.api.Live = func(string) *Live { called = true; return &Live{} }
+	e.api.Live = func(config.NetworkConfig) *Live { called = true; return &Live{} }
 	if u := decodeInto[Uplink](t, e.uplink(http.MethodGet, "")); u.Live != nil || called {
 		t.Fatalf("%+v called=%v", u, called)
 	}
@@ -105,7 +105,7 @@ func TestSwitchingBackToDHCPClearsTheStaticValues(t *testing.T) {
 	c.WanMode, c.WanIP, c.WanSubnet, c.WanGateway, c.WanDNS = "static", "203.0.113.10", "255.255.255.0", "203.0.113.1", []string{"9.9.9.9"}
 	e := newEnv(t, &c)
 
-	rec := e.uplink(http.MethodPut, `{"mode":"dhcp","ip":"1.2.3.4","netmask":"x","gateway":"y","dns":["z"]}`) // values sent along are ignored
+	rec := e.uplink(http.MethodPut, `{"mode":"dhcp","ip":"1.2.3.4","netmask":"x","gateway":"y"}`) // the static values sent along are ignored
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
@@ -132,7 +132,7 @@ func TestStaticAddressErrorsNameTheRightFields(t *testing.T) {
 		"only blank dns":     {`{"mode":"static","ip":"203.0.113.10","netmask":"255.255.255.0","gateway":"203.0.113.1","dns":["  ",""]}`, "dns"},
 		"four dns":           {`{"mode":"static","ip":"203.0.113.10","netmask":"255.255.255.0","gateway":"203.0.113.1","dns":["1.1.1.1","8.8.8.8","9.9.9.9","8.8.4.4"]}`, "dns"},
 		"no mode":            {`{"ip":"203.0.113.10"}`, "mode"},
-		"unknown mode":       {`{"mode":"pppoe"}`, "mode"},
+		"unknown mode":       {`{"mode":"l2tp"}`, "mode"},
 		"overlaps the LAN":   {`{"mode":"static","ip":"192.168.1.50","netmask":"255.255.255.0","gateway":"192.168.1.1","dns":["9.9.9.9"]}`, "netmask"},
 		"newline in the dns": {`{"mode":"static","ip":"203.0.113.10","netmask":"255.255.255.0","gateway":"203.0.113.1","dns":["9.9.9.9\nnameserver 6.6.6.6"]}`, "dns"},
 	} {

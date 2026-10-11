@@ -341,12 +341,16 @@
             <div><dt>Address</dt><dd id="inet-live-address">&ndash;</dd></div>
             <div><dt>Gateway</dt><dd id="inet-live-gateway">&ndash;</dd></div>
             <div><dt>DNS</dt><dd id="inet-live-dns">&ndash;</dd></div>
+            <div><dt>Interface</dt><dd id="inet-live-device">&ndash;</dd></div>
+            <div><dt>MAC address</dt><dd id="inet-live-mac">&ndash;</dd></div>
+            <div><dt>MTU</dt><dd id="inet-live-mtu">&ndash;</dd></div>
           </dl>
 
-          <h3 class="form-section">How to get an address</h3>
+          <h3 class="form-section">How to connect</h3>
           <div class="radio-row" role="radiogroup" aria-label="Connection type">
             <label class="radio"><input type="radio" name="inet-mode" value="dhcp" id="inet-mode-dhcp"> Automatic (DHCP)<span class="form-hint">The provider or upstream router assigns the address.</span></label>
             <label class="radio"><input type="radio" name="inet-mode" value="static" id="inet-mode-static"> Static address<span class="form-hint">You enter the address your provider gave you.</span></label>
+            <label class="radio"><input type="radio" name="inet-mode" value="pppoe" id="inet-mode-pppoe"> PPPoE<span class="form-hint">You log in with a user name and password (common with DSL and some fibre).</span></label>
           </div>
 
           <div class="form-grid" id="inet-static-fields">
@@ -365,13 +369,72 @@
               <input type="text" id="inet-gateway" inputmode="decimal" autocomplete="off" placeholder="203.0.113.1" spellcheck="false">
               <p class="field-error hidden" data-error="gateway"></p>
             </div>
-            <div class="form-field" data-field="dns">
-              <label for="inet-dns">DNS servers</label>
+          </div>
+
+          <div class="form-grid" id="inet-pppoe-fields">
+            <div class="form-field" data-field="pppoe.username">
+              <label for="inet-pppoe-user">User name</label>
+              <input type="text" id="inet-pppoe-user" autocomplete="off" placeholder="name@provider.example" spellcheck="false" autocapitalize="off">
+              <p class="field-error hidden" data-error="pppoe.username"></p>
+            </div>
+            <div class="form-field" data-field="pppoe.password">
+              <label for="inet-pppoe-pass">Password</label>
+              <div class="pass-row">
+                <input type="password" id="inet-pppoe-pass" autocomplete="new-password" spellcheck="false" autocapitalize="off">
+                <button type="button" id="inet-pppoe-reveal" class="cfg-btn cfg-btn--ghost" aria-pressed="false">Show</button>
+              </div>
+              <p class="form-hint" id="inet-pppoe-pass-hint"></p>
+              <p class="field-error hidden" data-error="pppoe.password"></p>
+            </div>
+            <div class="form-field" data-field="pppoe.service">
+              <label for="inet-pppoe-service">Service name <span class="form-hint">(optional)</span></label>
+              <input type="text" id="inet-pppoe-service" autocomplete="off" spellcheck="false" autocapitalize="off">
+              <p class="form-hint">Leave empty unless your provider gave you one.</p>
+              <p class="field-error hidden" data-error="pppoe.service"></p>
+            </div>
+          </div>
+
+          <div class="form-grid" id="inet-dhcp-fields">
+            <div class="form-field" data-field="hostname">
+              <label for="inet-hostname">Host name to send <span class="form-hint">(optional)</span></label>
+              <input type="text" id="inet-hostname" autocomplete="off" placeholder="my-router" spellcheck="false" autocapitalize="off">
+              <p class="form-hint">A few providers want to see a particular name when the router asks for an address.</p>
+              <p class="field-error hidden" data-error="hostname"></p>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-field form-field--wide" data-field="dns">
+              <label for="inet-dns" id="inet-dns-label">DNS servers</label>
               <input type="text" id="inet-dns" autocomplete="off" placeholder="9.9.9.9, 149.112.112.112" spellcheck="false">
-              <p class="form-hint">Up to three, separated by commas. The first one is also what the health chart pings.</p>
+              <p class="form-hint" id="inet-dns-hint"></p>
               <p class="field-error hidden" data-error="dns"></p>
             </div>
           </div>
+
+          <details class="inet-advanced" id="inet-advanced">
+            <summary>Advanced</summary>
+            <div class="form-grid">
+              <div class="form-field" data-field="vlan">
+                <label for="inet-vlan">VLAN ID <span class="form-hint">(optional)</span></label>
+                <input type="text" id="inet-vlan" inputmode="numeric" autocomplete="off" placeholder="none" spellcheck="false">
+                <p class="form-hint">Some providers, mostly fibre, carry the internet on a tagged VLAN (835, 10, 201...). Leave empty if yours does not.</p>
+                <p class="field-error hidden" data-error="vlan"></p>
+              </div>
+              <div class="form-field" data-field="mtu">
+                <label for="inet-mtu">MTU <span class="form-hint">(optional)</span></label>
+                <input type="text" id="inet-mtu" inputmode="numeric" autocomplete="off" placeholder="1500" spellcheck="false">
+                <p class="form-hint" id="inet-mtu-hint"></p>
+                <p class="field-error hidden" data-error="mtu"></p>
+              </div>
+              <div class="form-field" data-field="mac">
+                <label for="inet-mac">MAC address to present <span class="form-hint">(optional)</span></label>
+                <input type="text" id="inet-mac" autocomplete="off" placeholder="the port's own" spellcheck="false" autocapitalize="off">
+                <p class="form-hint">If your provider only accepts one known device, enter that device's MAC address (like 00:11:22:33:44:55). Empty uses the port's own address.</p>
+                <p class="field-error hidden" data-error="mac"></p>
+              </div>
+            </div>
+          </details>
 
           <div class="form-actions">
             <span id="inet-hint" class="form-hint"></span>
