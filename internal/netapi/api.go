@@ -17,6 +17,7 @@ import (
 
 	"peakroute/internal/auth"
 	"peakroute/internal/config"
+	"peakroute/internal/network"
 	"peakroute/internal/wireless"
 )
 
@@ -37,6 +38,9 @@ type API struct {
 	// FirewallCounters reports how often each firewall rule and port forward in effect has matched (by id). The
 	// second result is false when it cannot be read. Nil means it is not reported.
 	FirewallCounters func() (map[string]Counter, bool)
+	// Connections reads the kernel's table of connections passing through the router: the connections, how many are
+	// tracked, and how many the table can hold. The last result is false when it cannot be read. Nil means not reported.
+	Connections func() ([]network.Connection, int, int, bool)
 	// Wireless reports the Wi-Fi adapters and what they can do. Nil means they cannot be read.
 	Wireless func(ctx context.Context) wireless.Report
 }

@@ -294,6 +294,13 @@ func main() {
 		}
 		return out, true
 	}
+	netAPI.Connections = func() ([]network.Connection, int, int, bool) {
+		network.EnableConntrackAccounting() // from now on connections carry their byte counts
+		conns, ok := network.ReadConntrack()
+		count, max := network.ConntrackLimits()
+		return conns, count, max, ok
+	}
+	mux.HandleFunc("/api/v1/firewall/connections", requireAuth(netAPI.HandleConnections))
 	mux.HandleFunc("/api/v1/firewall", requireAuth(netAPI.HandleFirewall))
 	mux.HandleFunc("/api/v1/firewall/counters", requireAuth(netAPI.HandleFirewallCounters))
 	mux.HandleFunc("/api/v1/firewall/order", requireAuth(netAPI.HandleFirewallOrder))

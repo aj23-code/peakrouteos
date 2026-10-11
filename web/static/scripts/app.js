@@ -199,6 +199,11 @@ function loadView(viewName) {
                 activeViewCleanup = window.FirewallForwardsModule.init();
             }
             break;
+        case 'firewall-connections':
+            if (window.FirewallConnectionsModule) {
+                activeViewCleanup = window.FirewallConnectionsModule.init();
+            }
+            break;
         case 'settings':
             if (window.SettingsModule) {
                 activeViewCleanup = window.SettingsModule.init();

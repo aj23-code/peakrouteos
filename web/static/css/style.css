@@ -1612,3 +1612,10 @@ height: 260px;
     .fw-hits { align-items: flex-start; flex-direction: row; gap: 0.4rem; min-width: 0; }
     .fw-actions { margin-left: auto; }
 }
+
+/* ---------- Firewall connections ---------- */
+.cx-summary { margin: 0 0 0.75rem; }
+.cx-port { color: var(--text-muted); }
+.cx-table td { vertical-align: top; }
+.cx-more { margin-top: 0.75rem; }
+.net-toolbar input.role-select { min-width: 14rem; }

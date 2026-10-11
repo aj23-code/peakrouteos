@@ -398,7 +398,8 @@ Local Networks switches kept as a fixed policy layer; an always-on anti-lockout)
 - **Stage 3, API** (`netapi/firewall.go`, `network/firewall_counters.go`): rules and forwards (add, change, delete, switch off), reordering one tab, the fixed policy lines per tab, hit counters read from `nft -j`, and a guard so a Local Network used by a rule or forward cannot be deleted. Endpoints are in the document.
 - **Stage 4, Rules page** (`firewall_rules.js`, Firewall menu, Rules): described in the document. Checked in the browser: add with errors, add, reorder, the "never matches" warning, switch off, edit, delete, and the review lines and plan the draft produces.
 - **Stage 5, Port forwarding page** (`firewall_forwards.js`, Firewall menu): described in the document; checked in the browser (errors, add, a range greys out the device port, the review lines).
-- Not yet: the Connections page and logging in the Logs page. See the build plan in the document.
+- **Stage 6, Connections page** (`network/conntrack.go`, `netapi/connections.go`, `firewall_connections.js`): the kernel's connection table (from /proc or the `conntrack` tool, parsed from real output), with names, NAT, data and filters. The image gets the `conntrack` package (**ISO rebuild needed**).
+- Not yet: logging in the Logs page. See the build plan in the document.
 
 ## 7e. Static routes (built 2026-10-08)
 
@@ -873,6 +874,7 @@ every future page works on every screen automatically.
 | `GET /api/v1/ports` | session | physical ports with hardware details, `role` (wan, lan, unassigned) from the draft, `active_role`, `pending`, `present` (false: configured but the hardware is gone), `editable`; for LAN ports `native` (the id of the untagged network) and `tagged` (ids); and `networks`: what a LAN port can carry (`id`, `name`, `vlan`, `default`) |
 | `PUT /api/v1/ports` | session + CSRF | `{"assignments": {"eth0": "wan", "eth1": "lan", "eth2": "unassigned"}, "networks": {"eth1": {"native": "lan", "tagged": ["net2"]}}}` stages the roles as one atomic change; ports not mentioned keep their role, and a LAN port not named under `networks` keeps its networks; the result must have exactly one WAN and at least one LAN; an entry that says only the default network is dropped; a port that stops being a LAN port loses its networks |
 | `GET /api/v1/firewall` | session | `tabs`, `rules` (with `text`, `pending`, `shadowed_by`), `forwards`, `policy` (the fixed lines per tab), `editable` |
+| `GET /api/v1/firewall/connections` | session | the connection table: `known`, `count`, `max`, `accounting`, `total`, `shown`, `connections` (see `docs/firewall.md`); `?limit=` 1 to 5000 |
 | `GET /api/v1/firewall/counters` | session | `known`, `counters` by rule or forward id: `packets`, `bytes` |
 | `POST /api/v1/firewall/rules`, `PUT`/`DELETE /api/v1/firewall/rules/{id}`, `PUT /api/v1/firewall/order` | session + CSRF | rules and their order within a tab (see `docs/firewall.md`) |
 | `POST /api/v1/firewall/forwards`, `PUT`/`DELETE /api/v1/firewall/forwards/{id}` | session + CSRF | port forwards |

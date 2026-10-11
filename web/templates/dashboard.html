@@ -51,7 +51,7 @@
             <div class="folder-content">
               <a href="#" class="nav-item" data-view="firewall-rules">Rules</a>
               <a href="#" class="nav-item" data-view="firewall-forwards">Port forwarding</a>
-              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Connections</span>
+              <a href="#" class="nav-item" data-view="firewall-connections">Connections</a>
             </div>
           </details>
 
@@ -663,6 +663,37 @@
         <datalist id="pf-devices"></datalist>
       </div>
 
+      <!-- View: Firewall connections -->
+      <div id="view-firewall-connections" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Connections</h1>
+            <p class="subtitle">What is passing through the router right now: who is talking to whom, and what the router translated on the way.</p>
+          </div>
+          <div class="net-toolbar">
+            <label class="net-picker"><span class="form-hint">Search</span>
+              <input type="text" id="cx-filter" class="role-select" placeholder="address, port, name or state" autocomplete="off" spellcheck="false" aria-label="Search the connections"></label>
+            <label class="net-picker"><span class="form-hint">Protocol</span>
+              <select id="cx-proto" class="role-select" aria-label="Show one protocol">
+                <option value="">All</option><option value="tcp">TCP</option><option value="udp">UDP</option><option value="icmp">ICMP</option><option value="other">Other</option>
+              </select></label>
+            <button type="button" id="cx-pause" class="cfg-btn" aria-pressed="false">Pause</button>
+          </div>
+        </header>
+
+        <div id="cx-summary" class="form-hint cx-summary"></div>
+        <section class="card card-nopadding">
+          <div class="table-container">
+            <table class="data-table cx-table">
+              <thead><tr><th>Protocol</th><th>From</th><th>To</th><th>State</th><th>Expires in</th><th title="Sent by the device that started it / sent back">Data (out / in)</th></tr></thead>
+              <tbody id="cx-body"><tr><td colspan="6" class="table-placeholder">Reading the connection table&hellip;</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+        <p class="form-hint cx-more"><button type="button" id="cx-more" class="cfg-btn cfg-btn--ghost hidden">Show more</button></p>
+        <p class="form-hint" id="cx-note"></p>
+      </div>
+
       <!-- View: System Logs -->
       <div id="view-logs" class="view-section hidden">
         <header class="dash-header">
@@ -753,6 +784,7 @@
   <script src="/static/scripts/settings.js"></script>
   <script src="/static/scripts/firewall_rules.js"></script>
   <script src="/static/scripts/firewall_forwards.js"></script>
+  <script src="/static/scripts/firewall_connections.js"></script>
   <script src="/static/scripts/leases.js"></script>
   <script src="/static/scripts/syslogs.js"></script>
 </body>

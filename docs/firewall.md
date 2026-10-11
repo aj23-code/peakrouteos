@@ -1,7 +1,7 @@
 # PeakRoute OS firewall
 
-Status (2026-10-11): **stages 1 to 5 built** (the model, the ruleset, the API, the Rules page and the Port forwarding page;
-Connections has no page yet). This file was written first and every stage's commit updates it. It is meant to become the firewall chapter of the user documentation, so it
+Status (2026-10-11): **stages 1 to 6 built** (the model, the ruleset, the API, the Rules, Port forwarding and Connections
+pages; logging into the Logs page is the last stage). This file was written first and every stage's commit updates it. It is meant to become the firewall chapter of the user documentation, so it
 is written for a person who runs the router, with the developer details in the sections marked *Internals*.
 
 Contents: 1 What exists today, 2 The model (and why not zones), 3 Rules, 4 Order of evaluation, 5 Port forwarding,
@@ -256,6 +256,7 @@ a change is being applied; everything is saved as a draft):
 | Request | What it does |
 |---|---|
 | `GET /api/v1/firewall` | the **tabs** (`lan`, each network's id, `wan`), the **rules** (every field plus `text`, the rule in words; `pending`, differs from what is running; `shadowed_by`, the earlier rule that makes it unreachable), the **forwards**, the **policy** (the fixed lines of every tab: `before` the rules and `after` them, each with a `kind` of `allow`, `block` or `off`), and `editable` |
+| `GET /api/v1/firewall/connections?limit=` | the connection table (`known`, `count`, `max`, `accounting`, `total`, `shown`, and `connections`: protocol, state, expiry, source and destination with ports, `source_nat`, `dest_nat` and `dest_nat_port`, bytes and packets both ways); the busiest first; `limit` 1 to 5000, default 1000 |
 | `GET /api/v1/firewall/counters` | `known` and `counters` by id (`fw1`, `pf1`): packets and bytes since the ruleset was last loaded; read from `nft -j list ruleset` |
 | `POST /api/v1/firewall/rules` | adds a rule at the end of the list: `name`, `from`, `action`, `to` are required; `protocol` defaults to `any`, `enabled` to on |
 | `PUT /api/v1/firewall/rules/{id}` | changes a rule; fields left out stay. `from` cannot change (a rule stays on its tab) |
@@ -293,6 +294,21 @@ outside ("Reach it at 203.0.113.10:443"; it is the internet address in effect, s
 range), the device to send to (the field suggests the devices that hold a DHCP lease), the port on the device (empty keeps
 the number; **greyed out for a range, which keeps its numbers**), and optional allowed addresses.
 
+**The Connections page** (`firewall_connections.js`, in the menu under Firewall; read only): the connections passing through the
+router right now, the busiest first. Each line has the protocol, **From** (the device that started it, with its DHCP name when
+it has one, and "seen outside as ..." when the router rewrote its address), **To** (and "sent on to NAS 192.168.1.60:8443 (port
+forward)" when a forward redirected it), the state (Established, Connecting, Closing, Closed waiting, Waiting for a reply,
+Active), how long until it is forgotten, and the data it carried in each direction. There is a search box (addresses, ports,
+device names, states), a protocol filter, a Pause button for reading, and a line saying how many connections are tracked and
+how full the table is (the busiest 2000 are loaded; the page shows 200 at a time).
+
+*Where it comes from:* the kernel's connection tracking table, read from `/proc/net/nf_conntrack` where the kernel offers it
+and otherwise with the `conntrack` tool (the image installs the `conntrack` package: **Debian's kernel may not have the /proc file**;
+the Ubuntu kernel this was developed on does not). Both formats are parsed by one function and tested against real output. The
+byte counts need the kernel's accounting (`nf_conntrack_acct`), which the daemon switches on the first time the page is opened;
+it only counts connections that start afterwards, and the page says so. On a machine where the table cannot be read (not
+root, no module) the page says that instead of an empty table.
+
 **Review lines.** One line per rule or forward added, removed or changed ("Allow TCP 9100,631, from LAN to IoT
 (10.30.0.20)" with the old text beside it), a rename is one change, and one line "Firewall rule order" when the order of
 rules that exist before and after differs.
@@ -321,7 +337,7 @@ Each stage is its own commit with tests and updates this document.
 3. **API** (done): list, add, change, delete, reorder and switch rules and forwards; hit counters.
 4. **Rules page** (done): a list per network and the Internet, chosen from a dropdown; the fixed policy lines, add / edit / reorder / switch / delete, hit counts.
 5. **Port forwarding page** (done).
-6. **Connections page** (connection table, filters).
+6. **Connections page** (done): the connection table with names, NAT, data, search and protocol filter.
 7. **Logging** and the Logs page filter; polish; screenshots in this document.
 
 ## 12. Not planned (yet)
