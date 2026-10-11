@@ -630,22 +630,37 @@ setting, then AP mode (the limited GUI and a translator that bridges everything 
   the DHCP lease with the same MAC, network, band, signal with a word for it, link speed, data, time connected).
   Refreshes every 5 s on its own, so it does not disturb a form being edited.
 
-### Connected devices and "wired or wireless" (added 2026-10-10)
+### Connected devices, wired or wireless, and online or offline (added 2026-10-10)
 
-- **Source:** `iw dev` lists the interfaces; every one in AP mode is asked `iw dev <if> station dump`
+- **Wi-Fi stations:** `iw dev` lists the interfaces; every one in AP mode is asked `iw dev <if> station dump`
   (`wireless/stations.go`). hostapd's extra networks are interfaces of their own (`wlan0_1`...), so each station
   carries its own network name, and the band comes from the interface's channel frequency. A device that is still
   in the password exchange (`authorized: no`) is left out. A short cache (`StationCache`, 2 s) stands between the
-  pages and `iw`, because the lease list refreshes every second.
-- **Connection column** (Clients page; `connection` in the lease API) shows an icon only: Wi-Fi (blue; the network and
-  band are in its tooltip) or an Ethernet plug. A lease whose MAC is a current Wi-Fi station
-  is `wifi`; any other lease is `wired` **only when the Wi-Fi side could be read** (`iw` answered, or the machine
-  has no Wi-Fi adapter at all). If an adapter exists but `iw` is missing the answer is `unknown`, shown as a dash:
-  a cable must not be assumed.
-- **Known limitation:** "wired" means "not on our Wi-Fi", not "seen on a port". A device that has left still holds
-  its lease until it expires and is shown as wired. Telling those apart (and naming the port) needs the bridge's
-  forwarding table (`bridge fdb show`) or the neighbour table; not done.
-- **Still not built:** kicking a device off, per-device bandwidth limits, and 802.11k/v/r roaming hints.
+  pages and `iw`.
+- **Who is here** (`internal/presence`): a lease outlives the device (it is held until it expires), so the lease
+  list alone cannot say whether a device is online. The `Tracker` does a round every 20 s: devices on a Wi-Fi
+  station list are online; every other lease is asked with **ARP** (`ARPProber`, an `AF_PACKET` raw socket: a
+  "who has this address?" broadcast on the interface whose subnet holds the address, two tries of 600 ms). ARP is
+  used instead of ping because every connected device must answer it, while phones and firewalled PCs do not
+  answer a ping. A reply only counts if it comes from the leased IP **and** the leased MAC. A device counts as
+  online for 75 s after its last answer.
+- **What is remembered** (`client_presence.json` in the config directory, 0600, forgotten after 60 days): when each
+  device was last seen and how it was connected (Wi-Fi with network and band, or wired). That is what lets an offline
+  device keep its Wi-Fi or Ethernet icon and a "last seen" time. A newly seen device or a changed connection is
+  saved at once; when only times moved the file is rewritten every 5 minutes (flash storage), and once more on
+  shutdown.
+- **Lease API** (`GET /api/v1/dhcp/leases`) gains `connection`, `ssid`, `band`, `status` and `last_seen_epoch`.
+  `status` is `online`, `offline` or `unknown`. **`unknown` is used whenever the answer cannot be given**: ARP needs
+  `CAP_NET_RAW` (the daemon has it as root; the dev server usually does not), so without it only Wi-Fi devices
+  are known online and the rest are `unknown`, never `offline`. Before the first round nothing is called offline.
+- **Clients page:** a Status column first (a green dot and Online, or a grey dot, Offline and "Last seen 2 hours
+  ago"; offline rows are dimmed and listed after the online ones), the Connection icon column (Wi-Fi in blue, with
+  network and band in its tooltip, or an Ethernet plug; a dash when unknown), and the header counts
+  "N online, M offline".
+- **Connection when the Wi-Fi side cannot be read** (`iw` missing but an adapter present): never "wired" for a
+  device that answers; shown as unknown.
+- **Not built:** naming the switch port a wired device is on (needs the bridge forwarding table), kicking a device
+  off, per-device limits, 802.11k/v/r roaming hints, and showing the status on the Overview's client table.
 
 ## 7b. Navigation (decided 2026-10-08)
 
@@ -767,7 +782,7 @@ every future page works on every screen automatically.
 | `PUT /api/v1/uplinks/{id}` | session + CSRF | `{"mode": "dhcp"}` or `{"mode": "static", "ip", "netmask", "gateway", "dns": []}`; stages a draft. Switching to DHCP clears the static values. A static address also requires a gateway and one DNS server |
 | `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (the DNS series' `state`, `target`, `source`, `rtt_ms`, plus `method`, `gateway` (the same fields for the gateway) and a `diagnosis` sentence), `availability` (`uptime_24h`, `uptime_30d` in percent or null, `outage_count`, `outages`: newest first, at most 20, each `start` ms, `seconds`, `ongoing`; independent of the charted range), and two series, `dns` and `gateway`, each with `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
 | `GET /api/v1/system/logs?limit=` | session | systemd journal |
-| `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage, and how each device is connected: `connection` (`wifi`, `wired` or `unknown`), `ssid` and `band` for Wi-Fi devices |
+| `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage, how each device is connected (`connection`: `wifi`, `wired` or `unknown`; `ssid` and `band` for Wi-Fi) and whether it is here (`status`: `online`, `offline` or `unknown`; `last_seen_epoch`, 0 if never) |
 | `GET /api/v1/wifi/stations` | session | the devices connected to this router's Wi-Fi networks: `known`, `stations` (`mac`, `interface`, `ssid`, `band`, `channel`, `signal_dbm`, `inactive_seconds`, `rx_bytes` (from the device), `tx_bytes` (to it), `rx_mbps`, `tx_mbps`, `connected_seconds`) |
 | `POST /api/v1/cert/upload` | session + `X-CSRF-Token` | multipart `cert` and `key` |
 | `GET /api/v1/config/status` | session | `state` (idle, applying, awaiting_confirm), `has_changes`, `change_count`, `confirm.seconds_left`, `last` outcome; polled by the banner |
@@ -793,7 +808,7 @@ every future page works on every screen automatically.
 | `PUT /api/v1/uplinks/{id}` | session + CSRF | `{"mode": "dhcp"}` or `{"mode": "static", "ip", "netmask", "gateway", "dns": []}`; stages a draft. Switching to DHCP clears the static values. A static address also requires a gateway and one DNS server |
 | `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (the DNS series' `state`, `target`, `source`, `rtt_ms`, plus `method`, `gateway` (the same fields for the gateway) and a `diagnosis` sentence), `availability` (`uptime_24h`, `uptime_30d` in percent or null, `outage_count`, `outages`: newest first, at most 20, each `start` ms, `seconds`, `ongoing`; independent of the charted range), and two series, `dns` and `gateway`, each with `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
 | `GET /api/v1/system/logs?limit=` | session | systemd journal |
-| `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage, and how each device is connected: `connection` (`wifi`, `wired` or `unknown`), `ssid` and `band` for Wi-Fi devices |
+| `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage, how each device is connected (`connection`: `wifi`, `wired` or `unknown`; `ssid` and `band` for Wi-Fi) and whether it is here (`status`: `online`, `offline` or `unknown`; `last_seen_epoch`, 0 if never) |
 | `GET /api/v1/wifi/stations` | session | the devices connected to this router's Wi-Fi networks: `known`, `stations` (`mac`, `interface`, `ssid`, `band`, `channel`, `signal_dbm`, `inactive_seconds`, `rx_bytes` (from the device), `tx_bytes` (to it), `rx_mbps`, `tx_mbps`, `connected_seconds`) |
 | `POST /api/v1/cert/upload` | session + `X-CSRF-Token` | multipart `cert` and `key` |
 | `GET /api/v1/config/status` | session | `state` (idle, applying, awaiting_confirm), `has_changes`, `change_count`, `confirm.seconds_left`, `last` outcome; polled by the banner |

@@ -11,6 +11,7 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -25,6 +26,7 @@ import (
 	"peakroute/internal/netapi"
 	"peakroute/internal/network"
 	"peakroute/internal/pipeline"
+	"peakroute/internal/presence"
 	"peakroute/internal/system"
 	"peakroute/internal/translator"
 	"peakroute/internal/wanhealth"
@@ -249,14 +251,30 @@ func main() {
 	}}
 	mux.HandleFunc("/api/v1/wireless", requireAuth(wifi.Handler))
 	stations := &wireless.StationCache{Detector: wifi, TTL: 2 * time.Second}
-	wifiLinks := func(ctx context.Context) (map[string]network.Link, bool) {
-		rep := stations.Get(ctx)
-		links := map[string]network.Link{}
-		for _, s := range rep.Stations {
-			links[s.MAC] = network.Link{SSID: s.SSID, Band: s.Band}
-		}
-		return links, rep.Known
+	// Who is here: Wi-Fi devices from the access points' station lists, the others asked with ARP, all remembered
+	presenceTracker := &presence.Tracker{
+		Path: filepath.Join(configDir, "client_presence.json"),
+		Wifi: func(ctx context.Context) (map[string]presence.Link, bool) {
+			rep := stations.Get(ctx)
+			links := map[string]presence.Link{}
+			for _, s := range rep.Stations {
+				links[s.MAC] = presence.Link{SSID: s.SSID, Band: s.Band}
+			}
+			return links, rep.Known
+		},
+		Probe: presence.ARPProber{}.Probe,
+		Targets: func() []presence.Target {
+			var out []presence.Target
+			for _, l := range network.ReadLeases(network.LeasePaths) {
+				if ip, err := netip.ParseAddr(l.IPAddress); err == nil && ip.Is4() {
+					out = append(out, presence.Target{MAC: l.MACAddress, IP: ip})
+				}
+			}
+			return out
+		},
 	}
+	presenceTracker.Load()
+	go presenceTracker.Run(pollerCtx)
 	netAPI.Wireless = wifi.Detect
 	mux.HandleFunc("/api/v1/wifi/stations", requireAuth(stations.Handler))
 	mux.HandleFunc("/api/v1/wifi", requireAuth(netAPI.HandleWifi))
@@ -286,7 +304,7 @@ func main() {
 	mux.HandleFunc("/api/v1/config/discard", requireAuth(configSvc.HandleDiscard))
 
 	// System DHCP List Endpoint
-	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.LeaseHandler(wifiLinks)))
+	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.LeaseHandler(presenceTracker.Annotate)))
 
 	// Main application routing logic
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

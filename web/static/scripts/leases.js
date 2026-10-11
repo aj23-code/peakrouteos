@@ -19,27 +19,53 @@ window.DHCPModule = (function () {
         return '<span class="form-hint" title="The Wi-Fi side could not be read" aria-label="Unknown">\u2013</span>';
     }
 
+    // "5 minutes ago" for a time in Unix seconds
+    function ago(epoch) {
+        const s = Math.max(0, Math.floor(Date.now() / 1000 - epoch));
+        if (s < 60) return 'just now';
+        const unit = (n, name) => `${n} ${name}${n === 1 ? '' : 's'} ago`;
+        if (s < 3600) return unit(Math.floor(s / 60), 'minute');
+        if (s < 86400) return unit(Math.floor(s / 3600), 'hour');
+        return unit(Math.floor(s / 86400), 'day');
+    }
+
+    // Online or offline (the device may be gone while its lease is still held), with when it was last seen
+    function statusHtml(c) {
+        if (c.status === 'online') return '<span class="client-status client-status--online"><span class="status-pip"></span>Online</span>';
+        if (c.status === 'offline') {
+            const seen = c.last_seen_epoch > 0 ? `Last seen ${ago(c.last_seen_epoch)}` : 'Not seen yet';
+            return `<span class="client-status"><span class="status-pip"></span>Offline</span><div class="form-hint">${escapeHtml(seen)}</div>`;
+        }
+        return '<span class="form-hint" title="Whether this device is here cannot be told on this system">\u2013</span>';
+    }
+
     async function fetchAllLeases() {
         const res = await apiFetch('/api/v1/dhcp/leases');
         if (!res || !res.ok) return;
 
-        const leases = await res.json();
+        const leases = (await res.json()) || [];
+        // devices that are here come first
+        leases.sort((a, b) => (b.status === 'online') - (a.status === 'online'));
         const tbody = document.getElementById('all-clients-table-body');
         const badge = document.getElementById('lease-count-badge');
 
         if (badge) {
-            badge.textContent = `${leases.length} Active ${leases.length === 1 ? 'Lease' : 'Leases'}`;
+            const known = leases.some(c => c.status === 'online' || c.status === 'offline');
+            const online = leases.filter(c => c.status === 'online').length;
+            badge.textContent = known ? `${online} online \u00b7 ${leases.length - online} offline`
+                : `${leases.length} Active ${leases.length === 1 ? 'Lease' : 'Leases'}`;
         }
 
         if (!tbody) return;
 
         if (!leases || leases.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="table-placeholder">No active DHCP leases found.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="table-placeholder">No active DHCP leases found.</td></tr>`;
             return;
         }
 
         tbody.innerHTML = leases.map(c => `
-        <tr>
+        <tr${c.status === 'offline' ? ' class="row-offline"' : ''}>
+        <td>${statusHtml(c)}</td>
         <td><strong>${escapeHtml(c.hostname)}</strong></td>
         <td>${escapeHtml(c.ip_address)}</td>
         <td><code>${escapeHtml(c.mac_address)}</code></td>

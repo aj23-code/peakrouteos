@@ -14,79 +14,64 @@ const leaseFile = `1999999999 aa:bb:cc:00:00:01 192.168.1.10 laptop *
 1999999999 aa:bb:cc:00:00:03 192.168.1.12 * *
 `
 
-func leasesFrom(t *testing.T, links Links) []ClientLease {
+func leaseFileAt(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "leases")
-	if err := os.WriteFile(path, []byte(leaseFile), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	return path
+}
+
+func serve(t *testing.T, paths []string, annotate func(context.Context, []ClientLease)) (string, []ClientLease) {
+	t.Helper()
 	rec := httptest.NewRecorder()
-	leaseHandler([]string{filepath.Join(t.TempDir(), "missing"), path}, links)(rec, httptest.NewRequest("GET", "/x", nil))
+	leaseHandler(paths, annotate)(rec, httptest.NewRequest("GET", "/x", nil))
 	var out []ClientLease
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatalf("%v\n%s", err, rec.Body)
 	}
-	return out
+	return rec.Body.String(), out
 }
 
-func TestLeasesSayHowEachDeviceIsConnected(t *testing.T) {
-	links := func(context.Context) (map[string]Link, bool) {
-		return map[string]Link{"aa:bb:cc:00:00:02": {SSID: "Home", Band: "5 GHz"}}, true
-	}
-	got := leasesFrom(t, links)
+func TestLeasesAreAnnotatedByTheGivenFunction(t *testing.T) {
+	path := leaseFileAt(t, leaseFile)
+	_, got := serve(t, []string{filepath.Join(t.TempDir(), "missing"), path}, func(_ context.Context, ls []ClientLease) {
+		for i := range ls {
+			ls[i].Status, ls[i].Connection = "online", "wired"
+			if ls[i].MACAddress == "aa:bb:cc:00:00:02" { // MACs are lower case by now
+				ls[i].Connection, ls[i].SSID, ls[i].Band, ls[i].LastSeen = "wifi", "Home", "5 GHz", 42
+			}
+		}
+	})
 	if len(got) != 3 {
 		t.Fatalf("%+v", got)
 	}
-	by := map[string]ClientLease{}
-	for _, l := range got {
-		by[l.Hostname] = l
-	}
-	if l := by["phone"]; l.Connection != "wifi" || l.SSID != "Home" || l.Band != "5 GHz" {
+	l := got[1]
+	if l.Hostname != "phone" || l.Connection != "wifi" || l.SSID != "Home" || l.Band != "5 GHz" || l.Status != "online" || l.LastSeen != 42 {
 		t.Fatalf("%+v", l)
 	}
-	for _, name := range []string{"laptop", "Unknown Device"} {
-		if l := by[name]; l.Connection != "wired" || l.SSID != "" || l.Band != "" {
-			t.Fatalf("%s: %+v", name, l)
-		}
+	if got[0].Connection != "wired" || got[2].Hostname != "Unknown Device" {
+		t.Fatalf("%+v", got)
 	}
 }
 
-func TestWithoutKnowingTheWifiSideNobodyIsCalledWired(t *testing.T) {
-	links := func(context.Context) (map[string]Link, bool) {
-		return map[string]Link{"aa:bb:cc:00:00:02": {SSID: "Home", Band: "5 GHz"}}, false
-	}
-	for _, l := range leasesFrom(t, links) {
-		want := "unknown"
-		if l.Hostname == "phone" {
-			want = "wifi" // what is known is still shown
-		}
-		if l.Connection != want {
-			t.Fatalf("%+v", l)
-		}
-	}
-	for _, l := range leasesFrom(t, nil) {
-		if l.Connection != "unknown" {
+func TestWithoutAnAnnotatorEverythingIsUnknown(t *testing.T) {
+	_, got := serve(t, []string{leaseFileAt(t, leaseFile)}, nil)
+	for _, l := range got {
+		if l.Connection != "unknown" || l.Status != "unknown" {
 			t.Fatalf("%+v", l)
 		}
 	}
 }
 
-func TestNoLeaseFileGivesAnEmptyListNotNull(t *testing.T) {
-	rec := httptest.NewRecorder()
-	leaseHandler([]string{filepath.Join(t.TempDir(), "missing")}, nil)(rec, httptest.NewRequest("GET", "/x", nil))
-	if got := rec.Body.String(); got != "[]\n" {
-		t.Fatalf("%q", got)
-	}
-}
-
-func TestAnEmptyLeaseFileGivesAnEmptyListNotNull(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "leases")
-	if err := os.WriteFile(path, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	rec := httptest.NewRecorder()
-	leaseHandler([]string{path}, nil)(rec, httptest.NewRequest("GET", "/x", nil))
-	if got := rec.Body.String(); got != "[]\n" {
-		t.Fatalf("%q", got)
+func TestNoLeaseFileOrAnEmptyOneGivesAnEmptyListNotNull(t *testing.T) {
+	for name, paths := range map[string][]string{
+		"missing": {filepath.Join(t.TempDir(), "missing")},
+		"empty":   {leaseFileAt(t, "")},
+	} {
+		if body, _ := serve(t, paths, nil); body != "[]\n" {
+			t.Errorf("%s: %q", name, body)
+		}
 	}
 }

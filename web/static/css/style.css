@@ -1571,3 +1571,9 @@ height: 260px;
 }
 .conn-icon { display: inline-flex; color: var(--text-muted); vertical-align: middle; }
 .conn-icon--wifi { color: var(--accent-blue); }
+.client-status { display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 600; color: var(--text-muted); }
+.client-status--online { color: var(--accent-green); }
+.status-pip { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: currentColor; flex: none; }
+.client-status--online .status-pip { box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); }
+.row-offline td:not(:first-child) { opacity: 0.6; }
+.client-status + .form-hint { white-space: nowrap; }

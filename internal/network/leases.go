@@ -20,34 +20,15 @@ type ClientLease struct {
 	Expiry     int64  `json:"expiry_epoch"`
 	ExpiryText string `json:"expiry_text"`
 	TotalBytes uint64 `json:"total_bytes"`
-	// How the device is connected: "wifi" (with the network name and band), "wired", or "unknown" when
-	// the Wi-Fi side could not be read.
+	// How the device is connected: "wifi" (with the network name and band), "wired", or "unknown". For a
+	// device that is not here right now this is how it was last seen.
 	Connection string `json:"connection"`
 	SSID       string `json:"ssid,omitempty"`
 	Band       string `json:"band,omitempty"`
-}
-
-// Link is how a device is attached to one of this router's Wi-Fi networks.
-type Link struct {
-	SSID string
-	Band string
-}
-
-// Links reports the devices connected over Wi-Fi, by MAC address (lower case). known is false when that
-// could not be found out; devices not in the map are then of unknown connection, not wired.
-type Links func(ctx context.Context) (wifi map[string]Link, known bool)
-
-// Connect fills in how each lease's device is connected.
-func Connect(leases []ClientLease, wifi map[string]Link, known bool) {
-	for i := range leases {
-		if l, ok := wifi[leases[i].MACAddress]; ok {
-			leases[i].Connection, leases[i].SSID, leases[i].Band = "wifi", l.SSID, l.Band
-		} else if known {
-			leases[i].Connection = "wired"
-		} else {
-			leases[i].Connection = "unknown"
-		}
-	}
+	// Whether the device is here now: "online", "offline" (the lease is still held, the device is gone) or
+	// "unknown" (it cannot be told on this system). LastSeen is when it was last seen, Unix seconds (0: never).
+	Status   string `json:"status"`
+	LastSeen int64  `json:"last_seen_epoch"`
 }
 
 // ParseLeases reads a standard dnsmasq.leases file
@@ -113,34 +94,41 @@ func GetTopClientsByUsage(leases []ClientLease, limit int) []ClientLease {
 	return leases
 }
 
-// LeaseHandler serves the active DHCP leases, each with how the device is connected. links may be nil
-// (then the connection is "unknown").
-func LeaseHandler(links Links) http.HandlerFunc {
-	return leaseHandler([]string{"/var/lib/misc/dnsmasq.leases", "/tmp/dhcp.leases"}, links)
+// LeasePaths are where dnsmasq keeps its leases; the first that exists is read.
+var LeasePaths = []string{"/var/lib/misc/dnsmasq.leases", "/tmp/dhcp.leases"}
+
+// ReadLeases reads the lease file, or returns no leases when there is none.
+func ReadLeases(paths []string) []ClientLease {
+	path := paths[len(paths)-1]
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			path = p
+			break
+		}
+	}
+	leases, err := ParseLeases(path)
+	if err != nil || leases == nil {
+		return []ClientLease{}
+	}
+	return leases
 }
 
-// leaseHandler reads the first of the paths that exists.
-func leaseHandler(paths []string, links Links) http.HandlerFunc {
+// LeaseHandler serves the active DHCP leases. annotate, when given, fills in how each device is connected and
+// whether it is online; without it those fields are "unknown".
+func LeaseHandler(annotate func(context.Context, []ClientLease)) http.HandlerFunc {
+	return leaseHandler(LeasePaths, annotate)
+}
+
+func leaseHandler(paths []string, annotate func(context.Context, []ClientLease)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		leasePath := paths[len(paths)-1]
-		for _, p := range paths {
-			if _, err := os.Stat(p); err == nil {
-				leasePath = p
-				break
+		leases := ReadLeases(paths)
+		if annotate != nil {
+			annotate(r.Context(), leases)
+		} else {
+			for i := range leases {
+				leases[i].Connection, leases[i].Status = "unknown", "unknown"
 			}
 		}
-
-		leases, err := ParseLeases(leasePath)
-		if err != nil || leases == nil {
-			leases = []ClientLease{}
-		}
-		var wifi map[string]Link
-		known := false
-		if links != nil {
-			wifi, known = links(r.Context())
-		}
-		Connect(leases, wifi, known)
-
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(leases)
 	}
