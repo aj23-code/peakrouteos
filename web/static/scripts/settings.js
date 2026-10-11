@@ -1,14 +1,21 @@
 // web/static/scripts/settings.js
-// Settings page: choices that apply to the whole router. Today that is the country, which Wi-Fi uses to know
-// which channels it may use. Saving only writes a draft.
+// Settings page: choices that apply to the whole router: its host name, the country (which Wi-Fi uses to know which
+// channels it may use) and the local domain. Saving only writes a draft.
 
 window.SettingsModule = (function () {
     let settings = null;
-    let domainText = null;       // what is typed in the domain box (null: what the router has)
+    let typed = { hostname: null, domain: null };   // what is typed in each text box (null: what the router has)
     let busy = false;
     let wired = false;
 
     const $ = (id) => document.getElementById(id);
+
+    // the two settings that are a line of text: where they are saved, and how the router keeps them
+    const TEXT = {
+        hostname: { url: '/api/v1/settings/hostname', fail: 'The host name could not be saved.', tidy: (v) => v.trim() },
+        domain: { url: '/api/v1/settings/domain', fail: 'The domain could not be saved.', tidy: (v) => v.trim().toLowerCase() },
+    };
+    const keys = Object.keys(TEXT);
 
     function showMessage(text, kind) {
         const box = $('settings-message');
@@ -20,61 +27,75 @@ window.SettingsModule = (function () {
     const option = (value, label, current) =>
         `<option value="${escapeHtml(value)}"${value === current ? ' selected' : ''}>${escapeHtml(label)}</option>`;
 
+    const draftTag = (on) => (on ? '<span class="tag tag-draft">Draft</span>' : '');
+    const shown = (k) => (typed[k] !== null ? typed[k] : settings[k] || '');
+
+    function textCard(k, title, label, placeholder, pending, hint) {
+        const lock = busy || settings.editable === false;
+        return `<section class="card">
+            <div class="net-card-head"><h2>${title}</h2>${draftTag(pending)}</div>
+            <div class="form-grid"><div class="form-field"><label for="settings-${k}">${label}</label>
+                <input type="text" id="settings-${k}" value="${escapeHtml(shown(k))}" placeholder="${placeholder}" autocomplete="off" spellcheck="false" autocapitalize="off"${lock ? ' disabled' : ''}>
+                <p class="field-error hidden" id="settings-${k}-error"></p></div></div>
+            <p class="form-hint">${hint}</p>
+            <div class="form-actions">
+                <button type="button" class="cfg-btn cfg-btn--primary" id="settings-${k}-save" disabled>Save to draft</button>
+            </div>
+        </section>`;
+    }
+
     function render() {
         if (!settings) return;
         const lock = busy || settings.editable === false;
         const options = option('', 'Choose a country…', settings.country) +
             (settings.countries || []).map(c => option(c.code, `${c.name} (${c.code})`, settings.country)).join('');
-        $('settings-body').innerHTML = `<section class="card">
-            <div class="net-card-head"><h2>Country</h2>${settings.country_pending ? '<span class="tag tag-draft">Draft</span>' : ''}</div>
+        $('settings-body').innerHTML =
+            textCard('hostname', 'Host name', 'Name of this router', 'none',
+                settings.hostname_pending,
+                'Letters, digits and hyphens, such as <code>my-router</code>. When the internet connection gets its address by DHCP, the router sends this name to the provider, and a few providers want a particular one. Empty: no name is sent. It is not used for anything else yet.') +
+            `<section class="card">
+            <div class="net-card-head"><h2>Country</h2>${draftTag(settings.country_pending)}</div>
             <div class="form-grid"><div class="form-field"><label for="settings-country">Where this router is used</label>
                 <select id="settings-country" class="role-select"${lock ? ' disabled' : ''}>${options}</select></div></div>
             <p class="form-hint">Every country has its own rules for radio: which Wi-Fi channels may be used and how strongly they may transmit. Wi-Fi follows this setting, and cannot be switched on without it.</p>
             ${settings.editable === false ? '<p class="form-hint">A change is being applied or waits for confirmation: settings cannot be edited right now.</p>' : ''}
-        </section>
-        <section class="card">
-            <div class="net-card-head"><h2>Local domain</h2>${settings.domain_pending ? '<span class="tag tag-draft">Draft</span>' : ''}</div>
-            <div class="form-grid"><div class="form-field"><label for="settings-domain">Domain name of this network</label>
-                <input type="text" id="settings-domain" value="${escapeHtml(domainText !== null ? domainText : settings.domain)}" placeholder="none" autocomplete="off" spellcheck="false" autocapitalize="off"${lock ? ' disabled' : ''}>
-                <p class="field-error hidden" id="settings-domain-error"></p></div></div>
-            <p class="form-hint">A name such as <code>lan</code> or <code>home.example.com</code>. Set, the devices are told it and can use short names (<code>laptop</code> finds <code>laptop.lan</code>), and the router answers for names inside it by itself. Empty until you set one. The names in it are managed on the <a href="#" data-goto="dns">DNS</a> page.</p>
-            <div class="form-actions">
-                <button type="button" class="cfg-btn cfg-btn--primary" id="settings-domain-save" disabled>Save to draft</button>
-            </div>
-        </section>`;
-        updateDomainButton();
+        </section>` +
+            textCard('domain', 'Local domain', 'Domain name of this network', 'none',
+                settings.domain_pending,
+                'A name such as <code>lan</code> or <code>home.example.com</code>. Set, the devices are told it and can use short names (<code>laptop</code> finds <code>laptop.lan</code>), and the router answers for names inside it by itself. Empty until you set one. The names in it are managed on the <a href="#" data-goto="dns">DNS</a> page.');
+        keys.forEach(updateButton);
     }
 
-    function domainDirty() {
-        return settings && domainText !== null && domainText.trim().toLowerCase() !== (settings.domain || '');
+    function dirty(k) {
+        return settings && typed[k] !== null && TEXT[k].tidy(typed[k]) !== (settings[k] || '');
     }
 
-    function updateDomainButton() {
-        const b = $('settings-domain-save');
-        if (b) b.disabled = busy || settings.editable === false || !domainDirty();
+    function updateButton(k) {
+        const b = $(`settings-${k}-save`);
+        if (b) b.disabled = busy || settings.editable === false || !dirty(k);
     }
 
-    async function saveDomain() {
+    async function saveText(k) {
         showMessage('');
-        const err = $('settings-domain-error');
+        const err = $(`settings-${k}-error`);
         if (err) { err.textContent = ''; err.classList.add('hidden'); }
         busy = true;
-        updateDomainButton();
-        const res = await apiFetch('/api/v1/settings/domain', {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ domain: domainText.trim() }),
+        updateButton(k);
+        const res = await apiFetch(TEXT[k].url, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [k]: TEXT[k].tidy(typed[k]) }),
         });
         busy = false;
         if (!res || !res.ok) {
             let e = {};
             try { e = res ? await res.json() : {}; } catch (x) { /* not JSON */ }
-            const msg = (e.errors || []).map(x => x.message).join(' ') || e.error || 'The domain could not be saved.';
-            if (err && (e.errors || []).some(x => x.field === 'domain')) { err.textContent = msg; err.classList.remove('hidden'); }
+            const msg = (e.errors || []).map(x => x.message).join(' ') || e.error || TEXT[k].fail;
+            if (err && (e.errors || []).some(x => x.field === k)) { err.textContent = msg; err.classList.remove('hidden'); }
             else showMessage(msg, 'error');
-            updateDomainButton();
+            updateButton(k);
             return;
         }
         settings = await res.json();
-        domainText = null;
+        typed[k] = null;
         render();
         showMessage('Saved as a draft. Review and commit it from the bar at the top when you are ready.', 'ok');
         if (window.ConfigBanner) window.ConfigBanner.refresh();
@@ -108,24 +129,30 @@ window.SettingsModule = (function () {
         if (window.ConfigBanner) window.ConfigBanner.refresh();
     }
 
+    const keyOf = (el) => keys.find(k => el.id === `settings-${k}`);
+
     function wire() {
         if (wired) return;
         wired = true;
-        $('settings-body').addEventListener('change', (e) => {
+        const body = $('settings-body');
+        body.addEventListener('change', (e) => {
             if (e.target.id === 'settings-country') saveCountry(e.target.value);
         });
-        $('settings-body').addEventListener('input', (e) => {
-            if (e.target.id !== 'settings-domain') return;
-            domainText = e.target.value;
-            const err = $('settings-domain-error');
+        body.addEventListener('input', (e) => {
+            const k = keyOf(e.target);
+            if (!k) return;
+            typed[k] = e.target.value;
+            const err = $(`settings-${k}-error`);
             if (err) { err.textContent = ''; err.classList.add('hidden'); }
-            updateDomainButton();
+            updateButton(k);
         });
-        $('settings-body').addEventListener('click', (e) => {
-            if (e.target.id === 'settings-domain-save') saveDomain();
+        body.addEventListener('click', (e) => {
+            const k = keys.find(x => e.target.id === `settings-${x}-save`);
+            if (k) saveText(k);
         });
-        $('settings-body').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && e.target.id === 'settings-domain' && domainDirty() && !busy) { e.preventDefault(); saveDomain(); }
+        body.addEventListener('keydown', (e) => {
+            const k = e.key === 'Enter' && keyOf(e.target);
+            if (k && dirty(k) && !busy) { e.preventDefault(); saveText(k); }
         });
     }
 
@@ -133,7 +160,7 @@ window.SettingsModule = (function () {
         wire();
         showMessage('');
         settings = null;
-        domainText = null;
+        typed = { hostname: null, domain: null };
         load();
         return () => {};
     }

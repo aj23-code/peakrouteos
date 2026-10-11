@@ -36,8 +36,8 @@ func ensureSafeWan(cfg config.NetworkConfig) error {
 			return fmt.Errorf("refusing to render an unsafe WAN MAC address %q", cfg.WanMAC)
 		}
 	}
-	if cfg.WanHostname != "" {
-		if err := ensureSafe(cfg.WanHostname); err != nil {
+	if cfg.Hostname != "" {
+		if err := ensureSafe(cfg.Hostname); err != nil {
 			return err
 		}
 	}
@@ -107,8 +107,8 @@ func writeWanStanza(b *strings.Builder, cfg config.NetworkConfig) {
 		stanza("static", extra...)
 	default:
 		var extra []string
-		if cfg.WanHostname != "" {
-			extra = append(extra, "hostname "+cfg.WanHostname)
+		if cfg.Hostname != "" {
+			extra = append(extra, "hostname "+cfg.Hostname)
 		}
 		stanza("dhcp", extra...)
 	}

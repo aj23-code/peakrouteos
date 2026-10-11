@@ -1,7 +1,10 @@
 package netapi
 
 import (
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -82,3 +85,64 @@ func TestTheCountryEditorIsStrictAndRefusedWhileApplying(t *testing.T) {
 		t.Fatal("editable while applying")
 	}
 }
+
+func TestTheHostNameIsSetOnTheSettingsPage(t *testing.T) {
+	e := standard(t)
+	if s := e.settings(); s.Hostname != "" || s.HostnamePending {
+		t.Fatalf("%+v", s)
+	}
+	set := func(body string) *httptest.ResponseRecorder {
+		return e.do(e.api.HandleSettingsHostname, http.MethodPut, body, "application/json")
+	}
+	rec := set(`{"hostname":" my-router "}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if s := decodeInto[Settings](t, rec); s.Hostname != "my-router" || !s.HostnamePending {
+		t.Fatalf("%+v", s)
+	}
+	if e.mgr.NetworkConfig().Hostname != "" {
+		t.Fatal("the active configuration changed")
+	}
+	if !e.changed("hostname") {
+		t.Fatalf("no review line: %+v", e.staged())
+	}
+	e.commit()
+	if s := e.settings(); s.Hostname != "my-router" || s.HostnamePending {
+		t.Fatalf("%+v", s)
+	}
+	// it belongs to the router, not to one kind of connection: it stays when the connection changes
+	e.saveWAN(staticWAN)
+	if e.draft().Hostname != "my-router" {
+		t.Fatal("the host name went with the connection type")
+	}
+	// put back: no draft is left behind
+	e.saveWAN(`{"mode":"dhcp"}`)
+	set(`{"hostname":""}`)
+	set(`{"hostname":"my-router"}`)
+	if e.changed("hostname") || e.changed("wan_mode") {
+		t.Fatalf("putting it back left a draft: %+v", e.staged())
+	}
+	for _, bad := range []string{"my router", "-router", "router-", strings.Repeat("a", 64), "a_b", "a.b.c", "a\nb"} {
+		before := e.stageFileExists()
+		rec := set(`{"hostname":` + jsonString(bad) + `}`)
+		if rec.Code != http.StatusBadRequest || !errorFields(t, rec)["hostname"] {
+			t.Errorf("%q: %d %s", bad, rec.Code, rec.Body)
+		}
+		if e.stageFileExists() != before {
+			t.Errorf("%q changed the draft", bad)
+		}
+	}
+	if rec := e.do(e.api.HandleSettingsHostname, http.MethodPost, `{}`, "application/json"); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("method: %d", rec.Code)
+	}
+	if rec := set(`{"hostname":"x","extra":1}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("unknown field: %d", rec.Code)
+	}
+	e.editable = false
+	if rec := set(`{"hostname":"other"}`); rec.Code != http.StatusConflict {
+		t.Errorf("while applying: %d", rec.Code)
+	}
+}
+
+func jsonString(s string) string { b, _ := json.Marshal(s); return string(b) }

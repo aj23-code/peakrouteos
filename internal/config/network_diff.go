@@ -108,7 +108,7 @@ var wanCarrierSettings = []networkSetting{
 		}
 		return c.WanMAC
 	}},
-	{"wan_hostname", "DHCP host name sent", func(c NetworkConfig) string { return text(c.WanHostname) }},
+	{"hostname", "Host name", func(c NetworkConfig) string { return text(c.Hostname) }},
 	{"pppoe_username", "PPPoE user name", func(c NetworkConfig) string {
 		if c.WanPPPoE == nil {
 			return valueNone

@@ -394,14 +394,7 @@
             </div>
           </div>
 
-          <div class="form-grid" id="inet-dhcp-fields">
-            <div class="form-field" data-field="hostname">
-              <label for="inet-hostname">Host name to send <span class="form-hint">(optional)</span></label>
-              <input type="text" id="inet-hostname" autocomplete="off" placeholder="my-router" spellcheck="false" autocapitalize="off">
-              <p class="form-hint">A few providers want to see a particular name when the router asks for an address.</p>
-              <p class="field-error hidden" data-error="hostname"></p>
-            </div>
-          </div>
+          <p class="form-hint" id="inet-dhcp-fields">When the router has a host name, it sends it when it asks the provider for an address, and a few providers want a particular one. It is set in <a href="#" data-goto="settings">Settings</a>.</p>
 
           <div class="form-grid" id="inet-dns-grid">
             <div class="form-field form-field--wide" data-field="dns">
@@ -626,7 +619,7 @@
         </header>
 
         <div id="settings-message" class="form-message hidden" role="alert"></div>
-        <div id="settings-body"></div>
+        <div id="settings-body" class="card-stack"></div>
       </div>
 
       <!-- View: Firewall rules -->
@@ -705,7 +698,7 @@
         </header>
 
         <div id="dns-message" class="form-message hidden" role="alert"></div>
-        <div id="dns-body"></div>
+        <div id="dns-body" class="card-stack"></div>
       </div>
 
       <!-- View: System Logs -->

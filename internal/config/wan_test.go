@@ -62,10 +62,12 @@ func TestWanSettingsThatAreAccepted(t *testing.T) {
 		"jumbo mtu":              func() NetworkConfig { c := validNet(); c.WanMTU = 9000; return c }(),
 		"pppoe mtu 1492":         func() NetworkConfig { c := pppoeNet(); c.WanMTU = 1492; return c }(),
 		"cloned mac":             func() NetworkConfig { c := validNet(); c.WanMAC = "02:11:22:33:44:55"; return c }(),
-		"dhcp host name":         func() NetworkConfig { c := validNet(); c.WanHostname = "my-router1"; return c }(),
+		"host name":              func() NetworkConfig { c := validNet(); c.Hostname = "my-router1"; return c }(),
+		"host name with static":  func() NetworkConfig { c := staticWan(validNet()); c.Hostname = "my-router1"; return c }(),
+		"host name with pppoe":   func() NetworkConfig { c := pppoeNet(); c.Hostname = "my-router1"; return c }(),
 		"dns over dhcp":          func() NetworkConfig { c := validNet(); c.WanDNS = []string{"9.9.9.9", "149.112.112.112"}; return c }(),
 		"dns over pppoe":         func() NetworkConfig { c := pppoeNet(); c.WanDNS = []string{"1.1.1.1"}; return c }(),
-		"63 character host name": func() NetworkConfig { c := validNet(); c.WanHostname = strings.Repeat("a", 63); return c }(),
+		"63 character host name": func() NetworkConfig { c := validNet(); c.Hostname = strings.Repeat("a", 63); return c }(),
 	}
 	for name, c := range cases {
 		if err := c.Validate(); err != nil {
@@ -94,13 +96,12 @@ func TestWanSettingsThatAreRefused(t *testing.T) {
 		{"group mac", mut(func(c *NetworkConfig) { c.WanMAC = "01:11:22:33:44:55" }), "wan_mac"},
 		{"zero mac", mut(func(c *NetworkConfig) { c.WanMAC = "00:00:00:00:00:00" }), "wan_mac"},
 		{"mac not hex", mut(func(c *NetworkConfig) { c.WanMAC = "zz:11:22:33:44:55" }), "wan_mac"},
-		{"host name with a space", mut(func(c *NetworkConfig) { c.WanHostname = "my router" }), "wan_hostname"},
-		{"host name starting with a dash", mut(func(c *NetworkConfig) { c.WanHostname = "-router" }), "wan_hostname"},
-		{"host name ending with a dash", mut(func(c *NetworkConfig) { c.WanHostname = "router-" }), "wan_hostname"},
-		{"64 character host name", mut(func(c *NetworkConfig) { c.WanHostname = strings.Repeat("a", 64) }), "wan_hostname"},
-		{"host name injecting a line", mut(func(c *NetworkConfig) { c.WanHostname = "a\nb" }), "wan_hostname"},
-		{"host name with static addressing", func() NetworkConfig { c := staticWan(validNet()); c.WanHostname = "x"; return c }(), "wan_hostname"},
-		{"host name with pppoe", pp(func(c *NetworkConfig) { c.WanHostname = "x" }), "wan_hostname"},
+		{"host name with a space", mut(func(c *NetworkConfig) { c.Hostname = "my router" }), "hostname"},
+		{"host name starting with a dash", mut(func(c *NetworkConfig) { c.Hostname = "-router" }), "hostname"},
+		{"host name ending with a dash", mut(func(c *NetworkConfig) { c.Hostname = "router-" }), "hostname"},
+		{"64 character host name", mut(func(c *NetworkConfig) { c.Hostname = strings.Repeat("a", 64) }), "hostname"},
+		{"host name injecting a line", mut(func(c *NetworkConfig) { c.Hostname = "a\nb" }), "hostname"},
+		{"unsafe host name with static addressing", func() NetworkConfig { c := staticWan(validNet()); c.Hostname = "a b"; return c }(), "hostname"},
 		{"dns not an address", mut(func(c *NetworkConfig) { c.WanDNS = []string{"dns.example"} }), "wan_dns"},
 		{"four dns servers", mut(func(c *NetworkConfig) { c.WanDNS = []string{"1.1.1.1", "1.0.0.1", "9.9.9.9", "8.8.8.8"} }), "wan_dns"},
 		{"pppoe without a user", pp(func(c *NetworkConfig) { c.WanPPPoE.Username = "" }), "pppoe_username"},
@@ -148,7 +149,7 @@ func TestACloneIsIndependentOfThePPPoESettings(t *testing.T) {
 
 func TestWanSettingsAreWrittenOnlyWhenUsed(t *testing.T) {
 	plain, _ := json.Marshal(validNet())
-	for _, key := range []string{"wan_vlan", "wan_mtu", "wan_mac", "wan_hostname", "wan_pppoe"} {
+	for _, key := range []string{"wan_vlan", "wan_mtu", "wan_mac", "hostname", "wan_pppoe"} {
 		if strings.Contains(string(plain), key) {
 			t.Errorf("%s written for a plain configuration: %s", key, plain)
 		}
@@ -184,7 +185,7 @@ func TestWanReviewLines(t *testing.T) {
 	if c := line(base, with(func(c *NetworkConfig) { c.WanMAC = "02:11:22:33:44:55" }), "wan_mac"); c == nil || c.Old != "the port's own" || c.New != "02:11:22:33:44:55" {
 		t.Errorf("mac %+v", c)
 	}
-	if c := line(base, with(func(c *NetworkConfig) { c.WanHostname = "gw" }), "wan_hostname"); c == nil || c.Old != "(none)" || c.New != "gw" {
+	if c := line(base, with(func(c *NetworkConfig) { c.Hostname = "gw" }), "hostname"); c == nil || c.Old != "(none)" || c.New != "gw" {
 		t.Errorf("host name %+v", c)
 	}
 	if c := line(base, pppoeNet(), "pppoe_username"); c == nil || c.New != "user@isp.example" {

@@ -1636,3 +1636,19 @@ height: 260px;
 .dns-lk-ask input { flex: 1; min-width: 0; }
 .dns-lk-row .tag { margin-left: 0; min-width: 5.5rem; text-align: center; }
 .dns-lk-ms { margin-left: auto; white-space: nowrap; }
+
+/* ---------- pages made of stacked cards (Settings, DNS) ---------- */
+.card-stack { display: flex; flex-direction: column; gap: 1.5rem; }
+.card-stack > .card { margin: 0; }
+.card-stack .net-card-head + .form-hint,
+.card-stack .net-card-head + .form-grid { margin-top: 0.5rem; }
+.card-stack .card > .form-hint { line-height: 1.5; }
+.card-stack .card > .form-grid, .card-stack .card > .radio-row, .card-stack .card > .dns-lk-ask { margin-top: 1rem; }
+.card-stack .card > .form-actions { margin-top: 1.25rem; }
+.card-stack .card > .form-grid + .form-hint { margin-top: 0.7rem; }
+.card-stack .card > .form-hint + .dns-net { margin-top: 1rem; border-top: 1px solid var(--border-color); }
+.card-stack .card > .fw-list { margin-top: 1rem; }
+.card-stack .dns-net .form-grid { margin-top: 0.75rem; }
+.card-stack .dns-net .form-actions { margin-top: 0.9rem; }
+.card-stack .dns-net .form-hint.net-warn { margin-top: 0.6rem; }
+.fw-list:empty { display: none; }

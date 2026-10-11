@@ -9,19 +9,22 @@ import (
 
 // Settings are the router-wide choices that are not about one network or port.
 type Settings struct {
-	Country       string           `json:"country"`
-	Pending       bool             `json:"country_pending"` // differs from the running configuration
-	Countries     []config.Country `json:"countries"`
-	Domain        string           `json:"domain"` // the local domain; empty until one is set
-	DomainPending bool             `json:"domain_pending"`
-	Editable      bool             `json:"editable"`
+	Country         string           `json:"country"`
+	Pending         bool             `json:"country_pending"` // differs from the running configuration
+	Countries       []config.Country `json:"countries"`
+	Domain          string           `json:"domain"` // the local domain; empty until one is set
+	DomainPending   bool             `json:"domain_pending"`
+	Hostname        string           `json:"hostname"` // the router's host name; sent to the provider with DHCP addressing; empty: none
+	HostnamePending bool             `json:"hostname_pending"`
+	Editable        bool             `json:"editable"`
 }
 
 func (a *API) settingsView() Settings {
 	active := a.Manager.NetworkConfig()
 	draft, _ := a.Manager.StagedNetworkConfig()
 	return Settings{Country: draft.Country, Pending: draft.Country != active.Country, Countries: config.Countries,
-		Domain: draft.Domain, DomainPending: draft.Domain != active.Domain, Editable: a.editable()}
+		Domain: draft.Domain, DomainPending: draft.Domain != active.Domain,
+		Hostname: draft.Hostname, HostnamePending: draft.Hostname != active.Hostname, Editable: a.editable()}
 }
 
 // HandleSettings: GET /api/v1/settings returns the router-wide settings (the draft).
@@ -85,6 +88,29 @@ func (a *API) HandleSettingsDomain(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if errs := ownedErrors(c.Validate(), "domain", "dns"); len(errs) > 0 {
+			return errs
+		}
+		return nil
+	})
+	a.answerStaged(w, err, http.StatusOK, "", a.settingsView())
+}
+
+// HandleSettingsHostname: PUT /api/v1/settings/hostname {"hostname": "my-router"} sets the router's host name; an empty
+// string clears it. Only an internet connection with DHCP addressing sends it (to the provider); the others keep it.
+func (a *API) HandleSettingsHostname(w http.ResponseWriter, r *http.Request) {
+	if !allowMethods(w, r, http.MethodPut) || !a.requireEditable(w) {
+		return
+	}
+	var req struct {
+		Hostname string `json:"hostname"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	name := strings.TrimSpace(req.Hostname)
+	err := a.Manager.StageNetwork(func(c *config.NetworkConfig) error {
+		c.Hostname = name
+		if errs := ownedErrors(c.Validate(), "hostname"); len(errs) > 0 {
 			return errs
 		}
 		return nil

@@ -45,7 +45,7 @@ window.InternetModule = (function () {
     const $ = (id) => document.getElementById(id);
     const FIELD_INPUTS = {
         ip: 'inet-ip', netmask: 'inet-netmask', gateway: 'inet-gateway', dns: 'inet-dns',
-        vlan: 'inet-vlan', mtu: 'inet-mtu', mac: 'inet-mac', hostname: 'inet-hostname',
+        vlan: 'inet-vlan', mtu: 'inet-mtu', mac: 'inet-mac',
         'pppoe.username': 'inet-pppoe-user', 'pppoe.password': 'inet-pppoe-pass', 'pppoe.service': 'inet-pppoe-service',
     };
 
@@ -495,7 +495,6 @@ window.InternetModule = (function () {
             vlan: $('inet-vlan').value.trim(),
             mtu: $('inet-mtu').value.trim(),
             mac: $('inet-mac').value.trim(),
-            hostname: $('inet-hostname').value.trim(),
             pppoeUser: $('inet-pppoe-user').value.trim(),
             pppoePass: $('inet-pppoe-pass').value, // empty: the saved one stays
             pppoeService: $('inet-pppoe-service').value.trim(),
@@ -511,7 +510,6 @@ window.InternetModule = (function () {
         $('inet-vlan').value = u.vlan ? String(u.vlan) : '';
         $('inet-mtu').value = u.mtu ? String(u.mtu) : '';
         $('inet-mac').value = u.mac || '';
-        $('inet-hostname').value = u.hostname || '';
         $('inet-pppoe-user').value = (u.pppoe && u.pppoe.username) || '';
         $('inet-pppoe-pass').value = '';
         $('inet-pppoe-service').value = (u.pppoe && u.pppoe.service) || '';
@@ -530,7 +528,7 @@ window.InternetModule = (function () {
             if (v.dns.join(',') !== (uplink.dns || []).join(',')) return true;
             return v.ip !== (uplink.ip || '') || v.netmask !== (uplink.netmask || '') || v.gateway !== (uplink.gateway || '');
         }
-        if (v.mode === 'dhcp') return v.hostname !== (uplink.hostname || '');
+        if (v.mode === 'dhcp') return false;
         const p = uplink.pppoe || {};
         return v.pppoeUser !== (p.username || '') || v.pppoeService !== (p.service || '') || v.pppoePass !== '';
     }
@@ -542,8 +540,7 @@ window.InternetModule = (function () {
             Object.assign(out, { ip: v.ip, netmask: v.netmask, gateway: v.gateway, dns: v.dns });
         } else {
             // the servers the router asks instead of the provider's are chosen on the DNS page: left alone here
-            if (v.mode === 'dhcp') out.hostname = v.hostname;
-            else out.pppoe = Object.assign({ username: v.pppoeUser, service: v.pppoeService }, v.pppoePass !== '' ? { password: v.pppoePass } : {});
+            if (v.mode === 'pppoe') out.pppoe = Object.assign({ username: v.pppoeUser, service: v.pppoeService }, v.pppoePass !== '' ? { password: v.pppoePass } : {});
         }
         return out;
     }
@@ -589,7 +586,7 @@ window.InternetModule = (function () {
 
         const lock = !editable || saving;
         ['inet-mode-dhcp', 'inet-mode-static', 'inet-mode-pppoe', 'inet-ip', 'inet-netmask', 'inet-gateway', 'inet-dns',
-            'inet-vlan', 'inet-mtu', 'inet-mac', 'inet-hostname', 'inet-pppoe-user', 'inet-pppoe-pass', 'inet-pppoe-service', 'inet-pppoe-reveal']
+            'inet-vlan', 'inet-mtu', 'inet-mac', 'inet-pppoe-user', 'inet-pppoe-pass', 'inet-pppoe-service', 'inet-pppoe-reveal']
             .forEach(id => { $(id).disabled = lock; });
 
         const bad = ['vlan', 'mtu'].filter(k => Number.isNaN(intOf(formValues()[k])));

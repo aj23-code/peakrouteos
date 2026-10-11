@@ -78,7 +78,6 @@ var errorField = map[string]string{
 	"wan_vlan":         "vlan",
 	"wan_mtu":          "mtu",
 	"wan_mac":          "mac",
-	"wan_hostname":     "hostname",
 	"wan_pppoe":        "pppoe",
 	"pppoe_username":   "pppoe.username",
 	"pppoe_password":   "pppoe.password",

@@ -313,6 +313,7 @@ func main() {
 	mux.HandleFunc("/api/v1/settings", requireAuth(netAPI.HandleSettings))
 	mux.HandleFunc("/api/v1/settings/country", requireAuth(netAPI.HandleSettingsCountry))
 	mux.HandleFunc("/api/v1/settings/domain", requireAuth(netAPI.HandleSettingsDomain))
+	mux.HandleFunc("/api/v1/settings/hostname", requireAuth(netAPI.HandleSettingsHostname))
 	netAPI.ProviderDNS = func() []string {
 		var out []string
 		for _, a := range network.SystemResolvers(os.ReadFile) {

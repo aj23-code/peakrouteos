@@ -69,8 +69,11 @@ func TestWanStanzas(t *testing.T) {
 		cfg  config.NetworkConfig
 		want string
 	}{
-		{"dhcp with a host name", wanCfg(func(c *config.NetworkConfig) { c.WanHostname = "my-router" }),
+		{"dhcp with a host name", wanCfg(func(c *config.NetworkConfig) { c.Hostname = "my-router" }),
 			"auto eth0\niface eth0 inet dhcp\n    hostname my-router\n\n"},
+		{"static keeps the router's host name to itself", wanCfg(func(c *config.NetworkConfig) {
+			c.WanMode, c.WanIP, c.WanSubnet, c.WanGateway, c.Hostname = "static", "203.0.113.10", "255.255.255.0", "203.0.113.1", "gw"
+		}), "auto eth0\niface eth0 inet static\n    address 203.0.113.10\n    netmask 255.255.255.0\n    gateway 203.0.113.1\n\n"},
 		{"dhcp with a cloned MAC", wanCfg(func(c *config.NetworkConfig) { c.WanMAC = "02:11:22:33:44:55" }),
 			"auto eth0\niface eth0 inet dhcp\n    hwaddress ether 02:11:22:33:44:55\n\n"},
 		{"dhcp with a lower MTU", wanCfg(func(c *config.NetworkConfig) { c.WanMTU = 1400 }),
@@ -86,14 +89,14 @@ func TestWanStanzas(t *testing.T) {
 			"auto eth0.10\niface eth0.10 inet dhcp\n    vlan-raw-device eth0\n    post-up ip link set dev $IFACE mtu 1400\n\n"},
 		{"dhcp with the usual MTU written out", wanCfg(func(c *config.NetworkConfig) { c.WanMTU = 1500 }),
 			"auto eth0\niface eth0 inet dhcp\n\n"},
-		{"dhcp with everything", wanCfg(func(c *config.NetworkConfig) { c.WanHostname = "gw"; c.WanMAC = "02:11:22:33:44:55"; c.WanMTU = 1400 }),
+		{"dhcp with everything", wanCfg(func(c *config.NetworkConfig) { c.Hostname = "gw"; c.WanMAC = "02:11:22:33:44:55"; c.WanMTU = 1400 }),
 			"auto eth0\niface eth0 inet dhcp\n    hostname gw\n    hwaddress ether 02:11:22:33:44:55\n    post-up ip link set dev $IFACE mtu 1400\n\n"},
 		{"dhcp over a VLAN", wanCfg(func(c *config.NetworkConfig) { c.WanVlan = 835 }),
 			"auto eth0.835\niface eth0.835 inet dhcp\n    vlan-raw-device eth0\n\n"},
 		{"dhcp over a VLAN with a cloned MAC and host name", wanCfg(func(c *config.NetworkConfig) {
 			c.WanVlan = 10
 			c.WanMAC = "02:11:22:33:44:55"
-			c.WanHostname = "gw"
+			c.Hostname = "gw"
 		}), "auto eth0.10\niface eth0.10 inet dhcp\n    vlan-raw-device eth0\n    hostname gw\n    hwaddress ether 02:11:22:33:44:55\n\n"},
 		{"static over a VLAN", wanCfg(func(c *config.NetworkConfig) {
 			c.WanVlan = 20
@@ -284,8 +287,8 @@ func TestWanValuesAreRefusedAtRenderTimeIfValidationIsBypassed(t *testing.T) {
 	defer func() { validateConfig = saved }()
 
 	evil := map[string]func(*config.NetworkConfig){
-		"host name":         func(c *config.NetworkConfig) { c.WanHostname = "a\n    post-up evil" },
-		"host name space":   func(c *config.NetworkConfig) { c.WanHostname = "a b" },
+		"host name":         func(c *config.NetworkConfig) { c.Hostname = "a\n    post-up evil" },
+		"host name space":   func(c *config.NetworkConfig) { c.Hostname = "a b" },
 		"mac":               func(c *config.NetworkConfig) { c.WanMAC = "02:11:22:33:44:55\nup evil" },
 		"mac upper case":    func(c *config.NetworkConfig) { c.WanMAC = "02:11:22:33:44:AA" },
 		"mac group":         func(c *config.NetworkConfig) { c.WanMAC = "01:11:22:33:44:55" },

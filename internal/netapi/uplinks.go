@@ -42,7 +42,6 @@ type Uplink struct {
 	MTU      int      `json:"mtu"`       // 0: the usual one for the type
 	UsualMTU int      `json:"usual_mtu"` // what 0 means for this type
 	MAC      string   `json:"mac"`       // "": the port's own address
-	Hostname string   `json:"hostname"`  // sent to the provider's DHCP server; DHCP only
 	PPPoE    *PPPoE   `json:"pppoe"`     // PPPoE only
 	Device   string   `json:"device"`    // the interface that will carry the connection
 	Pending  bool     `json:"pending"`   // the draft differs from what is in effect
@@ -58,7 +57,7 @@ const wanID = "wan"
 
 // The fields of the configuration an uplink owns (the file's own names).
 var uplinkFields = []string{"wan_mode", "wan_ip", "wan_subnet", "wan_gateway", "wan_dns",
-	"wan_vlan", "wan_mtu", "wan_mac", "wan_hostname", "wan_pppoe", "pppoe_username", "pppoe_password", "pppoe_service"}
+	"wan_vlan", "wan_mtu", "wan_mac", "wan_pppoe", "pppoe_username", "pppoe_password", "pppoe_service"}
 
 func wanMode(c config.NetworkConfig) string { return c.WanKind() }
 
@@ -76,7 +75,6 @@ func wanUplink(active, draft config.NetworkConfig) Uplink {
 		MTU:      draft.WanMTU,
 		UsualMTU: draft.UsualWanMTU(),
 		MAC:      draft.WanMAC,
-		Hostname: draft.WanHostname,
 		Device:   draft.WanDevice(),
 		Pending:  changedIn(active, draft, uplinkFields...),
 	}
@@ -129,16 +127,15 @@ type putPPPoERequest struct {
 // putUplinkRequest changes how the connection is made. What is left out stays as it is, except for the
 // addressing of the type chosen: a static address needs its own four fields, DHCP and PPPoE drop them.
 type putUplinkRequest struct {
-	Mode     string           `json:"mode"`
-	IP       string           `json:"ip"`
-	Netmask  string           `json:"netmask"`
-	Gateway  string           `json:"gateway"`
-	DNS      []string         `json:"dns"` // static: required; DHCP and PPPoE: replaces the provider's servers (an empty list clears them)
-	Vlan     *int             `json:"vlan"`
-	MTU      *int             `json:"mtu"`
-	MAC      *string          `json:"mac"`
-	Hostname *string          `json:"hostname"`
-	PPPoE    *putPPPoERequest `json:"pppoe"`
+	Mode    string           `json:"mode"`
+	IP      string           `json:"ip"`
+	Netmask string           `json:"netmask"`
+	Gateway string           `json:"gateway"`
+	DNS     []string         `json:"dns"` // static: required; DHCP and PPPoE: replaces the provider's servers (an empty list clears them)
+	Vlan    *int             `json:"vlan"`
+	MTU     *int             `json:"mtu"`
+	MAC     *string          `json:"mac"`
+	PPPoE   *putPPPoERequest `json:"pppoe"`
 }
 
 func trimmedDNS(in []string) []string {
@@ -180,9 +177,6 @@ func (a *API) putWAN(w http.ResponseWriter, r *http.Request) {
 		if req.MAC != nil {
 			c.WanMAC = strings.ToLower(strings.TrimSpace(strings.ReplaceAll(*req.MAC, "-", ":")))
 		}
-		if req.Hostname != nil {
-			c.WanHostname = strings.TrimSpace(*req.Hostname)
-		}
 
 		// addressing
 		switch mode {
@@ -191,7 +185,6 @@ func (a *API) putWAN(w http.ResponseWriter, r *http.Request) {
 			c.WanSubnet = strings.TrimSpace(req.Netmask)
 			c.WanGateway = strings.TrimSpace(req.Gateway)
 			c.WanDNS = trimmedDNS(req.DNS)
-			c.WanHostname = "" // only DHCP sends one
 			c.WanPPPoE = nil
 		default:
 			// the address, gateway and mask come from the provider: nothing static is kept
@@ -203,7 +196,6 @@ func (a *API) putWAN(w http.ResponseWriter, r *http.Request) {
 				c.WanDNS = nil // the static servers were for the static address
 			}
 			if mode == config.WanPPPoE {
-				c.WanHostname = ""
 				p := config.PPPoEConfig{}
 				if c.WanPPPoE != nil {
 					p = *c.WanPPPoE

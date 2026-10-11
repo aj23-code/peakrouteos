@@ -140,12 +140,8 @@ func (c NetworkConfig) validateWan(add func(field, format string, args ...any)) 
 		}
 	}
 
-	if c.WanHostname != "" {
-		if kind != WanDHCP {
-			add("wan_hostname", "is only sent with automatic (DHCP) addressing")
-		} else if !hostnamePattern.MatchString(c.WanHostname) {
-			add("wan_hostname", "must be a host name: letters, digits and '-', up to 63 characters")
-		}
+	if c.Hostname != "" && !hostnamePattern.MatchString(c.Hostname) {
+		add("hostname", "must be a host name: letters, digits and '-', up to 63 characters")
 	}
 
 	if kind == WanPPPoE {

@@ -103,10 +103,10 @@ type NetworkConfig struct {
 	WanGateway   string   `json:"wan_gateway,omitempty"`
 	WanDNS       []string `json:"wan_dns,omitempty"` // static: the servers to use; DHCP and PPPoE: servers to use instead of the provider's
 	// How the connection is carried and presented to the provider
-	WanVlan       int          `json:"wan_vlan,omitempty"`     // tagged VLAN the provider wants (0: none)
-	WanMTU        int          `json:"wan_mtu,omitempty"`      // 0: the usual 1500 (1492 for PPPoE)
-	WanMAC        string       `json:"wan_mac,omitempty"`      // hardware address to present instead of the port's own
-	WanHostname   string       `json:"wan_hostname,omitempty"` // name sent to the provider's DHCP server
+	WanVlan       int          `json:"wan_vlan,omitempty"` // tagged VLAN the provider wants (0: none)
+	WanMTU        int          `json:"wan_mtu,omitempty"`  // 0: the usual 1500 (1492 for PPPoE)
+	WanMAC        string       `json:"wan_mac,omitempty"`  // hardware address to present instead of the port's own
+	Hostname      string       `json:"hostname,omitempty"` // the router's host name (System, Settings); sent to the provider's DHCP server when the connection uses DHCP
 	WanPPPoE      *PPPoEConfig `json:"wan_pppoe,omitempty"`
 	LanInterfaces []string     `json:"lan_interfaces,omitempty"`
 	LanIP         string       `json:"lan_ip,omitempty"`

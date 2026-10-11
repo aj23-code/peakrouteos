@@ -26,22 +26,22 @@ func (e *env) saveWAN(body string) Uplink {
 
 func TestTheUplinkShowsItsCarrierSettingsWithTheirDefaults(t *testing.T) {
 	u := standard(t).wan()
-	if u.Vlan != 0 || u.MTU != 0 || u.UsualMTU != 1500 || u.MAC != "" || u.Hostname != "" || u.PPPoE != nil || u.Device != "eth0" {
+	if u.Vlan != 0 || u.MTU != 0 || u.UsualMTU != 1500 || u.MAC != "" || u.PPPoE != nil || u.Device != "eth0" {
 		t.Fatalf("%+v", u)
 	}
 }
 
 func TestCarrierSettingsAreSavedTrimmedAndNormalised(t *testing.T) {
 	e := standard(t)
-	u := e.saveWAN(`{"mode":"dhcp","vlan":835,"mtu":1400,"mac":" 02-11-22-33-44-AA ","hostname":" my-router "}`)
-	if u.Vlan != 835 || u.MTU != 1400 || u.MAC != "02:11:22:33:44:aa" || u.Hostname != "my-router" || u.Device != "eth0.835" || !u.Pending {
+	u := e.saveWAN(`{"mode":"dhcp","vlan":835,"mtu":1400,"mac":" 02-11-22-33-44-AA "}`)
+	if u.Vlan != 835 || u.MTU != 1400 || u.MAC != "02:11:22:33:44:aa" || u.Device != "eth0.835" || !u.Pending {
 		t.Fatalf("%+v", u)
 	}
 	got := map[string]bool{}
 	for _, c := range e.staged() {
 		got[c.Field] = true
 	}
-	for _, f := range []string{"wan_vlan", "wan_mtu", "wan_mac", "wan_hostname"} {
+	for _, f := range []string{"wan_vlan", "wan_mtu", "wan_mac"} {
 		if !got[f] {
 			t.Errorf("no review line for %s: %+v", f, e.staged())
 		}
@@ -53,13 +53,13 @@ func TestCarrierSettingsAreSavedTrimmedAndNormalised(t *testing.T) {
 
 func TestWhatIsLeftOutStaysAndZeroClears(t *testing.T) {
 	e := standard(t)
-	e.saveWAN(`{"mode":"dhcp","vlan":835,"mtu":1400,"mac":"02:11:22:33:44:aa","hostname":"gw"}`)
+	e.saveWAN(`{"mode":"dhcp","vlan":835,"mtu":1400,"mac":"02:11:22:33:44:aa"}`)
 	u := e.saveWAN(`{"mode":"dhcp"}`)
-	if u.Vlan != 835 || u.MTU != 1400 || u.MAC != "02:11:22:33:44:aa" || u.Hostname != "gw" {
+	if u.Vlan != 835 || u.MTU != 1400 || u.MAC != "02:11:22:33:44:aa" {
 		t.Fatalf("left out, still changed: %+v", u)
 	}
-	u = e.saveWAN(`{"mode":"dhcp","vlan":0,"mtu":0,"mac":"","hostname":""}`)
-	if u.Vlan != 0 || u.MTU != 0 || u.MAC != "" || u.Hostname != "" {
+	u = e.saveWAN(`{"mode":"dhcp","vlan":0,"mtu":0,"mac":""}`)
+	if u.Vlan != 0 || u.MTU != 0 || u.MAC != "" {
 		t.Fatalf("not cleared: %+v", u)
 	}
 	if e.stageFileExists() {
@@ -76,7 +76,6 @@ func TestCarrierSettingErrorsNameTheirFields(t *testing.T) {
 		"mtu too big":        {`{"mode":"dhcp","mtu":10000}`, "mtu"},
 		"group mac":          {`{"mode":"dhcp","mac":"01:11:22:33:44:55"}`, "mac"},
 		"short mac":          {`{"mode":"dhcp","mac":"02:11:22"}`, "mac"},
-		"bad host name":      {`{"mode":"dhcp","hostname":"my router"}`, "hostname"},
 		"dns override":       {`{"mode":"dhcp","dns":["nope"]}`, "dns"},
 		"pppoe no user":      {`{"mode":"pppoe","pppoe":{"password":"x"}}`, "pppoe.username"},
 		"pppoe no password":  {`{"mode":"pppoe","pppoe":{"username":"u"}}`, "pppoe.password"},
@@ -159,22 +158,17 @@ func TestSwitchingTheTypeDropsWhatBelongsToTheOldOne(t *testing.T) {
 		t.Fatalf("static values kept for PPPoE: %+v", u)
 	}
 
-	// PPPoE to DHCP: the login goes, the host name can be set again
-	u = e.saveWAN(`{"mode":"dhcp","hostname":"gw"}`)
-	if u.PPPoE != nil || u.Hostname != "gw" {
+	// PPPoE to DHCP: the login goes
+	u = e.saveWAN(`{"mode":"dhcp"}`)
+	if u.PPPoE != nil {
 		t.Fatalf("%+v", u)
 	}
 	if e.draft().WanPPPoE != nil {
 		t.Fatal("the login stayed in the draft")
 	}
 
-	// DHCP to static: the host name goes (only DHCP sends one)
 	u = e.saveWAN(staticWAN)
-	if u.Hostname != "" || u.Mode != "static" {
-		t.Fatalf("%+v", u)
-	}
-	// a host name sent along with a static address is dropped, not an error
-	if u = e.saveWAN(`{"mode":"static","ip":"203.0.113.10","netmask":"255.255.255.0","gateway":"203.0.113.1","dns":["9.9.9.9"],"hostname":"x"}`); u.Hostname != "" {
+	if u.Mode != "static" {
 		t.Fatalf("%+v", u)
 	}
 	// and the PPPoE settings sent with another type are dropped as well
@@ -266,22 +260,28 @@ func TestPPPoEAndCarrierEditsAreRefusedWhileApplying(t *testing.T) {
 
 func TestTheUplinkRequestRefusesUnknownPPPoEFields(t *testing.T) {
 	e := standard(t)
+	// the host name belongs to System, Settings now
+	if rec := e.uplink(http.MethodPut, `{"mode":"dhcp","hostname":"gw"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("host name: %d", rec.Code)
+	}
 	if rec := e.uplink(http.MethodPut, `{"mode":"pppoe","pppoe":{"username":"u","password":"p","vlan":5}}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("%d", rec.Code)
 	}
 }
 
-func TestSwitchingStraightBetweenPPPoEAndStaticOrFromDHCPWithAHostName(t *testing.T) {
+func TestSwitchingStraightBetweenPPPoEAndStaticOrFromDHCP(t *testing.T) {
 	e := standard(t)
 	e.saveWAN(pppoeWAN)
 	u := e.saveWAN(staticWAN) // PPPoE to static in one step
 	if u.Mode != "static" || u.PPPoE != nil || e.draft().WanPPPoE != nil {
 		t.Fatalf("%+v", u)
 	}
-	e.saveWAN(`{"mode":"dhcp","hostname":"gw"}`)
-	u = e.saveWAN(pppoeWAN) // DHCP with a host name to PPPoE in one step
-	if u.Mode != "pppoe" || u.Hostname != "" || e.draft().WanHostname != "" {
-		t.Fatalf("%+v", u)
+	e.saveWAN(`{"mode":"dhcp"}`)
+	e.mgr.StageNetwork(func(c *config.NetworkConfig) error { c.Hostname = "gw"; return nil })
+	u = e.saveWAN(pppoeWAN) // DHCP to PPPoE in one step
+	// the router's host name is not the connection's: it stays, and is simply not sent without DHCP
+	if u.Mode != "pppoe" || e.draft().Hostname != "gw" {
+		t.Fatalf("%+v %q", u, e.draft().Hostname)
 	}
 }
 
