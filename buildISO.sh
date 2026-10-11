@@ -96,6 +96,17 @@ net.ipv4.conf.all.rp_filter = 1
 net.ipv4.tcp_syncookies = 1
 EOF
 
+# The system journal is kept on disk (so that a crash can be explained after the reboot) but cannot grow without limit:
+# at most 100 MB in files of at most 10 MB, and never more than a month. The firewall log has its own database.
+sudo mkdir -p "${ROOTFS_DIR}/etc/systemd/journald.conf.d"
+cat << 'EOF' | sudo tee "${ROOTFS_DIR}/etc/systemd/journald.conf.d/peakroute.conf" > /dev/null
+[Journal]
+Storage=persistent
+SystemMaxUse=100M
+SystemMaxFileSize=10M
+MaxRetentionSec=1month
+EOF
+
 # Generate SHA-512 password hash for 'peakroute' on host
 ROOT_HASH=$(openssl passwd -6 peakroute)
 
