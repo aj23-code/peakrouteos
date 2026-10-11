@@ -154,17 +154,17 @@ func renderDnsmasqDHCPNetworks(cfg config.NetworkConfig, lan string) string {
 	for _, n := range cfg.Networks {
 		fmt.Fprintf(&b, "interface=%s\n", networkIface(n))
 	}
-	scope := func(tag, routerIP, mask string, d *config.DHCPConfig) {
+	scope := func(tag, routerIP, mask string, servers []string, d *config.DHCPConfig) {
 		if d == nil || !d.Enabled {
 			return
 		}
 		fmt.Fprintf(&b, "dhcp-range=set:%s,%s,%s,%s,%s\n", tag, d.RangeStart, d.RangeEnd, mask, d.LeaseTime)
 		fmt.Fprintf(&b, "dhcp-option=tag:%s,option:router,%s\n", tag, routerIP)
-		fmt.Fprintf(&b, "dhcp-option=tag:%s,option:dns-server,%s\n", tag, routerIP)
+		fmt.Fprintf(&b, "dhcp-option=tag:%s,option:dns-server,%s\n", tag, dnsServerOption(servers, routerIP))
 	}
-	scope(config.DefaultNetworkID, cfg.LanIP, cfg.LanSubnet, cfg.DHCP)
+	scope(config.DefaultNetworkID, cfg.LanIP, cfg.LanSubnet, cfg.LanDNSServers, cfg.DHCP)
 	for _, n := range cfg.Networks {
-		scope(n.ID, n.IP, n.Netmask, n.DHCP)
+		scope(n.ID, n.IP, n.Netmask, n.DNSServers, n.DHCP)
 	}
 	return b.String()
 }

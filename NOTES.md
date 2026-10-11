@@ -402,6 +402,23 @@ Local Networks switches kept as a fixed policy layer; an always-on anti-lockout)
 - **Stage 7, logging** (`network/firewall_log.go`, `netapi/firewall_log.go`, the *Logged traffic* card on the Rules page): rules with log on write kernel log lines tagged `fw:<id>`; the Logs page shows them raw and the Rules page in words. The kernel log format is parsed from the LOG target's documented format (a real line could not be captured in a network namespace: the kernel only logs from the main one).
 - **The firewall's seven stages are done.** What remains is real-hardware testing (the ISO needs a rebuild for `ppp`, `conntrack`, hostapd and the wireless firmware), screenshots for the user documentation, and the items in section 12 of the document.
 
+## 7i. DNS (started 2026-10-11)
+
+The design, the two sides (what the router asks upstream, what each network's devices are told), the local domain, local names
+and domain forwarding, and the build plan are in **`docs/dns.md`**, which every DNS commit updates. Decisions with the user:
+dnsmasq stays the engine (no Unbound: no DNS over TLS or DNSSEC for now); the upstream servers are edited on the DNS page
+(one list, the old Internet-page override); the local domain is empty until it is set under System, Settings. Built so far:
+
+- **Stage 1, model** (`config/dns.go`): `domain`, `dns.hosts`, `dns.forwards`, `lan_dns_servers`, and `dns_servers` on each extra
+  network, with validation (lower-case DNS names, usable IPv4 servers, limits of 200 names and 50 forwards, no forward inside
+  the local domain) and review lines in words.
+- **Stage 2, files** (`translator/dns.go`): each network's DHCP answer names its own DNS servers or the router; one more file,
+  `/etc/dnsmasq.d/peakroute-dns.conf`, holds the domain (`domain=`, `local=/.../`, `expand-hosts`), `host-record=` lines and
+  `server=/<domain>/<server>` lines, and exists only while there is something to say. With nothing set every file is unchanged.
+  Checked with the **real dnsmasq answering real queries** in a namespace (`TestTheRealDnsmasqAnswersAsTheFileSays`) and
+  `dnsmasq --test`.
+- Not yet: the API, the DNS page (Services, DNS), the domain field on Settings, the lookup test. See the build plan.
+
 ## 7e. Static routes (built 2026-10-08)
 
 **Model.** `NetworkConfig.Routes` is a list of `{name, destination, gateway, metric, disabled}` (JSON keys

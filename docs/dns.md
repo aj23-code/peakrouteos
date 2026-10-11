@@ -1,7 +1,7 @@
 # PeakRoute OS DNS
 
-Status (2026-10-11): **stage 1 built** (the model, validation and review lines; nothing is written to the system yet and there is
-no page). This file was written first and every stage's commit updates it. It is meant to become the DNS chapter of the user documentation.
+Status (2026-10-11): **stages 1 and 2 built** (the model, and the files dnsmasq reads; there is no API or page yet, so nothing can
+be set by a person). This file was written first and every stage's commit updates it. It is meant to become the DNS chapter of the user documentation.
 
 Contents: 1 What exists today, 2 Two sides: what the router asks, what the devices are told, 3 What each network is told,
 4 The router's own DNS server, 5 The local domain, 6 Local names, 7 Domain forwarding, 8 Staying out of trouble, 9 Recipes,
@@ -118,24 +118,72 @@ under it go to the servers listed (up to three), instead of the upstream servers
 
 ## 10. Internals
 
-*(Filled in as it is built. The planned layout:)*
+**Storage** in `network.json`; every key is written only when it has something in it:
 
-- **Storage** in `network.json`: top-level `domain`; `dns` with `hosts` (`id`, `name`, `address`, `disabled`) and `forwards`
-  (`id`, `domain`, `servers`); per network `dns_servers` (the default network's is `lan_dns_servers`). Upstream stays in
-  `wan_dns`.
-- **Files:** the DHCP file gets the per-network `dhcp-option=tag:<net>,option:dns-server,...` with the chosen servers instead of
-  the router; a new `/etc/dnsmasq.d/peakroute-dns.conf` holds `domain=`, `local=/<domain>/`, `expand-hosts`, `host-record=`,
-  `server=/<domain>/<server>`. **With nothing set, every file is exactly what it is today.**
-- **Testing:** the real `dnsmasq --test`; behaviour with the real dnsmasq in network namespaces (a client asks, and what comes
-  back is asserted: local names, the domain, forwarding to a second dnsmasq, upstream); the DHCP option with a hand-built DHCP
-  request.
+```json
+"domain": "lan",
+"lan_dns_servers": ["192.168.1.5"],
+"networks": [ { "id": "net2", "name": "Guest", ..., "dns_servers": ["1.1.1.1", "9.9.9.9"] } ],
+"dns": {
+  "hosts":    [ {"id": "h1", "name": "nas", "address": "192.168.1.50"} ],
+  "forwards": [ {"id": "f1", "domain": "corp.example.com", "servers": ["10.0.0.5"]} ]
+},
+"wan_dns": ["9.9.9.9"]
+```
+
+The code is `internal/config/dns.go` (model, validation, review text) and `internal/translator/dns.go` (the files). Names and
+the domain are kept in lower case; a switched-off entry is kept and not written.
+
+**The files.** With nothing set, every file is exactly what it was (a test compares them) and the local file is not written.
+
+- *What a network is told* is in the DHCP file, as before, one line per network:
+  `dhcp-option=tag:guest,option:dns-server,1.1.1.1,9.9.9.9` instead of the router's own address. With one network and no tags the
+  line is `dhcp-option=option:dns-server,...`. The router stays the *gateway* (`option:router`) either way.
+- *The router's own answers* are in `/etc/dnsmasq.d/peakroute-dns.conf`, written only while there is a domain, a local name
+  or a forward switched on:
+
+```
+# Managed by PeakRoute OS. Do not edit: this file is rewritten on every commit.
+domain=home.example.com
+local=/home.example.com/
+expand-hosts
+host-record=nas,nas.home.example.com,192.168.1.50
+host-record=www.example.com,192.168.1.50
+server=/corp.example.com/10.0.0.5
+server=/corp.example.com/10.0.0.6
+```
+
+  `domain=` is what DHCP tells the devices and what is added to simple names; `local=/<domain>/` makes the router the only
+  one that answers for the domain (a name inside it that nobody defined is "not found", and is never sent upstream);
+  `host-record` answers the name and its reverse lookup; a short name is written both short and with the domain, because
+  dnsmasq does not add the domain to host records by itself; `server=/<domain>/<server>` sends a domain, and what is under
+  it, to its own servers, one line per server.
+- *The upstream servers* are the existing upstream file (`no-resolv` and `server=` lines) written when servers are set by
+  hand, for every connection type.
+- A change to these files restarts dnsmasq (DHCP and DNS pause for a moment); nothing else is touched.
+
+**Safety at the last moment.** Even if the validation were bypassed, the writer refuses a domain or name that is not a plain
+DNS name, a forwarded domain with a slash or a newline in it, and any server or address that is not a plain IPv4 address.
+
+**Checks.**
+
+1. *The real dnsmasq answers real queries.* `TestTheRealDnsmasqAnswersAsTheFileSays` runs three dnsmasq processes in a
+   throw-away namespace (no privileges): the router's, with the generated local file; a server for a forwarded domain; and a
+   general upstream that claims every name with its own address, so that what the router did with each question shows in the
+   answer. It asks for a local name in full and short, a name that is a full name, a switched-off name, an unknown name inside the
+   local domain (not found, never sent upstream), a forwarded domain and a name below it (answered by the forward's server, not
+   the upstream), any other name (the upstream), and a reverse lookup.
+2. *The real `dnsmasq --test`* accepts the files (with a control: it refuses a line it does not know).
+3. *Exact text* of the files and of the DHCP lines, and the plan: a DNS change restarts only dnsmasq.
+4. What dnsmasq would tell a DHCP client is *not* checked with a real client (no DHCP client is available to the tests); the
+   lines are compared as text and accepted by `dnsmasq --test`.
 
 ## 11. Build plan
 
 Each stage is its own commit with tests and updates this document.
 
 1. **Model** (done): domain, local names, forwards, per-network servers; validation; review lines.
-2. **Files**: the translator writes them; checked with `dnsmasq --test` and with real queries between namespaces.
+2. **Files** (done): the translator writes them; checked with `dnsmasq --test` and with real queries to the real dnsmasq in a namespace.
 3. **API**: the DNS settings, the local names, the forwards, per-network choice, the domain on Settings.
 4. **DNS page** (Services, DNS) and the domain field on Settings.
 5. **Lookup test** on the page: ask the router a name and see the answer and how long it took.

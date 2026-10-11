@@ -121,6 +121,12 @@ func ValidDomain(s string) bool {
 	return ValidDNSName(s)
 }
 
+// IsIPv4 reports whether s is a plain IPv4 address.
+func IsIPv4(s string) bool {
+	_, ok := parseIPv4(s)
+	return ok
+}
+
 // usableServer reports whether an address can be a DNS server: an IPv4 address that is neither unspecified, loopback,
 // multicast nor the broadcast address.
 func usableServer(s string) bool {

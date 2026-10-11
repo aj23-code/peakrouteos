@@ -113,6 +113,9 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	if err := ensureSafeFirewall(cfg); err != nil {
 		return Desired{}, err
 	}
+	if err := ensureSafeDNS(cfg); err != nil {
+		return Desired{}, err
+	}
 	tokens = append(tokens, cfg.WanLink())
 	if strings.EqualFold(cfg.WanMode, "static") {
 		tokens = append(tokens, cfg.WanIP, cfg.WanSubnet)
@@ -176,6 +179,13 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 		})
 	default:
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathDnsmasqDHCP, Remove: true, Service: SvcDnsmasq})
+	}
+
+	// The router's own DNS answers: the local domain, local names and forwarded domains. Only present while there is something to say.
+	if content, ok := renderDnsmasqLocal(cfg); ok {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathDnsmasqLocal, Content: []byte(content), Mode: 0644, Service: SvcDnsmasq})
+	} else {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathDnsmasqLocal, Remove: true, Service: SvcDnsmasq})
 	}
 
 	d.Notes = append(d.Notes, networkNotes(cfg)...)
@@ -288,7 +298,7 @@ func renderDnsmasqDHCP(cfg config.NetworkConfig, lan string) string {
 	fmt.Fprintf(&b, "interface=%s\n", lan)
 	fmt.Fprintf(&b, "dhcp-range=%s,%s,%s,%s\n", d.RangeStart, d.RangeEnd, cfg.LanSubnet, d.LeaseTime)
 	fmt.Fprintf(&b, "dhcp-option=option:router,%s\n", cfg.LanIP)
-	fmt.Fprintf(&b, "dhcp-option=option:dns-server,%s\n", cfg.LanIP)
+	fmt.Fprintf(&b, "dhcp-option=option:dns-server,%s\n", dnsServerOption(cfg.LanDNSServers, cfg.LanIP))
 	return b.String()
 }
 
