@@ -1569,3 +1569,4 @@ height: 260px;
 @media (max-width: 520px) {
     .wifi-toolbar { margin-left: 0; width: 100%; }
 }
+.conn-tag { margin-left: 0; }

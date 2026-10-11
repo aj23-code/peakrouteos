@@ -11,6 +11,8 @@ window.WirelessModule = (function () {
     let wifi = null;          // GET /api/v1/wifi: the draft setup
     let localNets = [];       // GET /api/v1/networks: where a Wi-Fi network can be joined
     let lastReport = '';
+    let devices = null;       // GET /api/v1/wifi/stations joined with the DHCP leases (names, addresses)
+    let devicesTimer = null;
     let radios = {};          // adapter name -> { form, errors, message }
     let ssids = [];           // { key, isNew, server, form, errors, message, confirmDelete }
     let selected = null;
@@ -461,6 +463,61 @@ window.WirelessModule = (function () {
         afterSave();
     }
 
+    // ---------------------------------------------------------------- connected devices
+
+    // What a signal strength means to a person
+    function signalHtml(dbm) {
+        if (dbm === null || dbm === undefined) return '\u2013';
+        const label = dbm >= -55 ? 'Excellent' : dbm >= -65 ? 'Good' : dbm >= -75 ? 'Fair' : 'Weak';
+        return `${dbm} dBm <span class="form-hint">${label}</span>`;
+    }
+
+    const mbps = (v) => (v ? (v >= 100 ? v.toFixed(0) : v.toFixed(1)) : '\u2013');
+
+    function renderDevices() {
+        const holder = $('wifi-devices');
+        if (!devices || !report || !report.adapters.length) { holder.innerHTML = ''; return; }
+        const list = devices.stations;
+        let body;
+        if (!devices.known) {
+            body = '<p class="form-hint">The devices connected over Wi-Fi cannot be read on this system (the <code>iw</code> tool is missing).</p>';
+        } else if (!list.length) {
+            body = '<p class="form-hint">No device is connected to a Wi-Fi network of this router right now.</p>';
+        } else {
+            body = `<div class="table-container"><table class="data-table">
+                <thead><tr><th>Device</th><th>IP address</th><th>MAC address</th><th>Network</th><th>Signal</th>
+                    <th title="Link speed in Mbps: download / upload">Speed \u2193/\u2191</th><th title="Data sent to the device / received from it">Data \u2193/\u2191</th><th>Connected</th></tr></thead>
+                <tbody>${list.map(d => `<tr>
+                    <td><strong>${escapeHtml(d.hostname || 'Unknown device')}</strong></td>
+                    <td>${escapeHtml(d.ip || '\u2013')}</td>
+                    <td><code>${escapeHtml(d.mac)}</code></td>
+                    <td>${escapeHtml(d.ssid)}${d.band ? ` <span class="form-hint">${escapeHtml(d.band)}</span>` : ''}</td>
+                    <td>${signalHtml(d.signal_dbm)}</td>
+                    <td>${mbps(d.tx_mbps)} / ${mbps(d.rx_mbps)}</td>
+                    <td>${formatBytes(d.tx_bytes)} / ${formatBytes(d.rx_bytes)}</td>
+                    <td>${escapeHtml(formatUptime(d.connected_seconds))}</td>
+                </tr>`).join('')}</tbody></table></div>`;
+        }
+        holder.innerHTML = `<section class="card card-nopadding wifi-devices">
+            <div class="card-header"><div class="card-header-group"><h2>Connected devices</h2>
+                <span class="card-subtitle">${devices.known ? `${list.length} ${list.length === 1 ? 'device' : 'devices'} connected` : 'Unknown'}</span></div></div>
+            ${body}</section>`;
+    }
+
+    async function loadDevices() {
+        const [st, ls] = await Promise.all([apiFetch('/api/v1/wifi/stations'), apiFetch('/api/v1/dhcp/leases')]);
+        if (!st || !st.ok) return;
+        const data = await st.json();
+        const byMac = new Map();
+        if (ls && ls.ok) ((await ls.json()) || []).forEach(l => byMac.set(String(l.mac_address || '').toLowerCase(), l));
+        data.stations = (data.stations || []).map(s => {
+            const lease = byMac.get(s.mac);
+            return Object.assign({}, s, { hostname: lease && lease.hostname !== 'Unknown Device' ? lease.hostname : '', ip: lease ? lease.ip_address : '' });
+        });
+        devices = data;
+        renderDevices();
+    }
+
     // ---------------------------------------------------------------- loading
 
     function render() {
@@ -477,6 +534,7 @@ window.WirelessModule = (function () {
         if (!report) return;
         renderCountry();
         renderSsids();
+        renderDevices();
         renderAdapters();
     }
 
@@ -639,9 +697,12 @@ window.WirelessModule = (function () {
         radios = {};
         ssids = [];
         selected = null;
+        devices = null;
         load();
+        loadDevices();
         timer = setInterval(poll, 10000);
-        return () => { clearInterval(timer); timer = null; };
+        devicesTimer = setInterval(loadDevices, 5000);
+        return () => { clearInterval(timer); clearInterval(devicesTimer); timer = null; devicesTimer = null; };
     }
 
     return { init };

@@ -1,0 +1,34 @@
+Station 0e:ea:14:4f:9c:56 (on wlan1)
+	inactive time:	41 ms
+	rx bytes:	15016565
+	rx packets:	39713
+	tx bytes:	29808060
+	tx packets:	42027
+	tx retries:	2174
+	tx failed:	0
+	signal:  	-44 [-46, -44] dBm
+	signal avg:	-43 [-46, -43] dBm
+	tx bitrate:	866.7 MBit/s VHT-MCS 9 80MHz short GI VHT-NSS 2
+	rx bitrate:	433.3 MBit/s VHT-MCS 9 80MHz short GI VHT-NSS 1
+	authorized:	yes
+	authenticated:	yes
+	associated:	yes
+	MFP:		yes
+	connected time:	7239 seconds
+Station AA:BB:CC:00:00:02 (on wlan1)
+	inactive time:	3500 ms
+	rx bytes:	100
+	tx bytes:	200
+	signal:  	-71 dBm
+	tx bitrate:	6.0 MBit/s
+	authorized:	yes
+	authenticated:	yes
+	associated:	yes
+	connected time:	12 seconds
+Station aa:bb:cc:00:00:03 (on wlan1)
+	inactive time:	10 ms
+	signal:  	-50 dBm
+	authorized:	no
+	authenticated:	yes
+	associated:	yes
+	connected time:	1 seconds

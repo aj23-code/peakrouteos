@@ -56,22 +56,32 @@ func linkBase(path string) string {
 	return filepath.Base(target)
 }
 
+// interfaceNames lists the interfaces that have a wireless side (a "wireless" folder or a "phy80211" link in
+// the kernel's description of them).
+func (d Detector) interfaceNames() []string {
+	var names []string
+	entries, _ := os.ReadDir(d.SysClassNet)
+	for _, e := range entries {
+		base := filepath.Join(d.SysClassNet, e.Name())
+		_, errW := os.Stat(filepath.Join(base, "wireless"))
+		_, errP := os.Lstat(filepath.Join(base, "phy80211"))
+		if errW == nil || errP == nil {
+			names = append(names, e.Name())
+		}
+	}
+	return names
+}
+
 // Detect lists the Wi-Fi adapters: the interfaces that have a wireless side (a "wireless" folder or a
 // "phy80211" link in the kernel's description of them).
 func (d Detector) Detect(ctx context.Context) Report {
 	var rep Report
 	rep.Adapters = []Adapter{}
 
-	entries, _ := os.ReadDir(d.SysClassNet)
-	for _, e := range entries {
-		base := filepath.Join(d.SysClassNet, e.Name())
-		_, errW := os.Stat(filepath.Join(base, "wireless"))
-		_, errP := os.Lstat(filepath.Join(base, "phy80211"))
-		if errW != nil && errP != nil {
-			continue
-		}
+	for _, name := range d.interfaceNames() {
+		base := filepath.Join(d.SysClassNet, name)
 		rep.Adapters = append(rep.Adapters, Adapter{
-			Name:   e.Name(),
+			Name:   name,
 			Phy:    linkBase(filepath.Join(base, "phy80211")),
 			MAC:    readTrim(filepath.Join(base, "address")),
 			Driver: linkBase(filepath.Join(base, "device", "driver")),

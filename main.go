@@ -248,7 +248,17 @@ func main() {
 		return string(out), err
 	}}
 	mux.HandleFunc("/api/v1/wireless", requireAuth(wifi.Handler))
+	stations := &wireless.StationCache{Detector: wifi, TTL: 2 * time.Second}
+	wifiLinks := func(ctx context.Context) (map[string]network.Link, bool) {
+		rep := stations.Get(ctx)
+		links := map[string]network.Link{}
+		for _, s := range rep.Stations {
+			links[s.MAC] = network.Link{SSID: s.SSID, Band: s.Band}
+		}
+		return links, rep.Known
+	}
 	netAPI.Wireless = wifi.Detect
+	mux.HandleFunc("/api/v1/wifi/stations", requireAuth(stations.Handler))
 	mux.HandleFunc("/api/v1/wifi", requireAuth(netAPI.HandleWifi))
 	mux.HandleFunc("/api/v1/wifi/country", requireAuth(netAPI.HandleWifiCountry))
 	mux.HandleFunc("/api/v1/wifi/radios/{name}", requireAuth(netAPI.HandleWifiRadio))
@@ -276,7 +286,7 @@ func main() {
 	mux.HandleFunc("/api/v1/config/discard", requireAuth(configSvc.HandleDiscard))
 
 	// System DHCP List Endpoint
-	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.HandleDHCPLeases))
+	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.LeaseHandler(wifiLinks)))
 
 	// Main application routing logic
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

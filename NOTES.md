@@ -626,8 +626,25 @@ setting, then AP mode (the limited GUI and a translator that bridges everything 
   would be lost); the 10 s refresh only redraws when the list of adapters changed.
 - With no adapter the page is greyed with its message; with adapters but none able to be an access point, the Wi-Fi
   networks card says so and cannot add a network.
-- **Not built yet:** a list of connected devices (needs `iw dev <if> station dump` or hostapd's control socket, and
-  a way to put names to them from the DHCP leases).
+- **Connected devices** card: one row per device connected to one of our Wi-Fi networks (name and address from
+  the DHCP lease with the same MAC, network, band, signal with a word for it, link speed, data, time connected).
+  Refreshes every 5 s on its own, so it does not disturb a form being edited.
+
+### Connected devices and "wired or wireless" (added 2026-10-10)
+
+- **Source:** `iw dev` lists the interfaces; every one in AP mode is asked `iw dev <if> station dump`
+  (`wireless/stations.go`). hostapd's extra networks are interfaces of their own (`wlan0_1`...), so each station
+  carries its own network name, and the band comes from the interface's channel frequency. A device that is still
+  in the password exchange (`authorized: no`) is left out. A short cache (`StationCache`, 2 s) stands between the
+  pages and `iw`, because the lease list refreshes every second.
+- **Connection column** (Clients page; `connection` in the lease API): a lease whose MAC is a current Wi-Fi station
+  is `wifi`; any other lease is `wired` **only when the Wi-Fi side could be read** (`iw` answered, or the machine
+  has no Wi-Fi adapter at all). If an adapter exists but `iw` is missing the answer is `unknown`, shown as a dash:
+  a cable must not be assumed.
+- **Known limitation:** "wired" means "not on our Wi-Fi", not "seen on a port". A device that has left still holds
+  its lease until it expires and is shown as wired. Telling those apart (and naming the port) needs the bridge's
+  forwarding table (`bridge fdb show`) or the neighbour table; not done.
+- **Still not built:** kicking a device off, per-device bandwidth limits, and 802.11k/v/r roaming hints.
 
 ## 7b. Navigation (decided 2026-10-08)
 
@@ -749,7 +766,8 @@ every future page works on every screen automatically.
 | `PUT /api/v1/uplinks/{id}` | session + CSRF | `{"mode": "dhcp"}` or `{"mode": "static", "ip", "netmask", "gateway", "dns": []}`; stages a draft. Switching to DHCP clears the static values. A static address also requires a gateway and one DNS server |
 | `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (the DNS series' `state`, `target`, `source`, `rtt_ms`, plus `method`, `gateway` (the same fields for the gateway) and a `diagnosis` sentence), `availability` (`uptime_24h`, `uptime_30d` in percent or null, `outage_count`, `outages`: newest first, at most 20, each `start` ms, `seconds`, `ongoing`; independent of the charted range), and two series, `dns` and `gateway`, each with `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
 | `GET /api/v1/system/logs?limit=` | session | systemd journal |
-| `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage |
+| `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage, and how each device is connected: `connection` (`wifi`, `wired` or `unknown`), `ssid` and `band` for Wi-Fi devices |
+| `GET /api/v1/wifi/stations` | session | the devices connected to this router's Wi-Fi networks: `known`, `stations` (`mac`, `interface`, `ssid`, `band`, `channel`, `signal_dbm`, `inactive_seconds`, `rx_bytes` (from the device), `tx_bytes` (to it), `rx_mbps`, `tx_mbps`, `connected_seconds`) |
 | `POST /api/v1/cert/upload` | session + `X-CSRF-Token` | multipart `cert` and `key` |
 | `GET /api/v1/config/status` | session | `state` (idle, applying, awaiting_confirm), `has_changes`, `change_count`, `confirm.seconds_left`, `last` outcome; polled by the banner |
 | `GET /api/v1/config/staged` | session | the review: `changes`, `valid`, per-field `errors`, `plan` (files and service actions), `notes`, `needs_confirm`, `confirm_seconds` |
@@ -774,7 +792,8 @@ every future page works on every screen automatically.
 | `PUT /api/v1/uplinks/{id}` | session + CSRF | `{"mode": "dhcp"}` or `{"mode": "static", "ip", "netmask", "gateway", "dns": []}`; stages a draft. Switching to DHCP clears the static values. A static address also requires a gateway and one DNS server |
 | `GET /api/v1/uplinks/{id}/health?range=5m\|1h\|24h\|30d` | session | `status` (the DNS series' `state`, `target`, `source`, `rtt_ms`, plus `method`, `gateway` (the same fields for the gateway) and a `diagnosis` sentence), `availability` (`uptime_24h`, `uptime_30d` in percent or null, `outage_count`, `outages`: newest first, at most 20, each `start` ms, `seconds`, `ongoing`; independent of the charted range), and two series, `dns` and `gateway`, each with `summary` (sent, lost, loss %, avg/min/max ms) and parallel arrays `timestamps` (ms), `avg_ms`, `min_ms`, `max_ms` (null when every probe in the point was lost), `loss_pct` |
 | `GET /api/v1/system/logs?limit=` | session | systemd journal |
-| `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage |
+| `GET /api/v1/dhcp/leases` | session | dnsmasq leases with per-client usage, and how each device is connected: `connection` (`wifi`, `wired` or `unknown`), `ssid` and `band` for Wi-Fi devices |
+| `GET /api/v1/wifi/stations` | session | the devices connected to this router's Wi-Fi networks: `known`, `stations` (`mac`, `interface`, `ssid`, `band`, `channel`, `signal_dbm`, `inactive_seconds`, `rx_bytes` (from the device), `tx_bytes` (to it), `rx_mbps`, `tx_mbps`, `connected_seconds`) |
 | `POST /api/v1/cert/upload` | session + `X-CSRF-Token` | multipart `cert` and `key` |
 | `GET /api/v1/config/status` | session | `state` (idle, applying, awaiting_confirm), `has_changes`, `change_count`, `confirm.seconds_left`, `last` outcome; polled by the banner |
 | `GET /api/v1/config/staged` | session | the review: `changes`, `valid`, per-field `errors`, `plan` (files and service actions), `notes`, `needs_confirm`, `confirm_seconds` |
