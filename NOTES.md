@@ -589,6 +589,25 @@ Built in stages: (1) config, validation and review lines, (2) translator and the
 on the Guest VLAN: name, WPA2/WPA3 passphrase, band, channel, width), the translator for hostapd, the country
 setting, then AP mode (the limited GUI and a translator that bridges everything to one port).
 
+### Wi-Fi networks: the API (stage 3)
+
+- `netapi/wifi.go`. Every change is staged like the other editors (nothing touches the running box until the
+  review and commit). The adapters' capabilities come from an injected `Wireless` function (the same detector the
+  Wireless page uses), so the API refuses what the hardware cannot do instead of leaving it to hostapd.
+- **Adapter settings** (`PUT /api/v1/wifi/radios/{name}`) are checked against that report: the adapter must exist,
+  be able to act as an access point and have readable capabilities; the band must be one it has; the width one of
+  the widths it offers for that band; the channel one that is not `disabled`. A channel marked `no_ir` or DFS is
+  *allowed*, because whether it can start an access point depends on the country, which may not be chosen yet; the
+  commit-time check (config `validateWifi`) is where it is refused. `ht`/`vht`/`he` are copied from the band's
+  capabilities into the stored radio, so the translator never needs the hardware.
+- **The number of Wi-Fi networks per adapter** is capped by `max_ap` from the adapter's interface combinations
+  (stated by `iw`); adding a network or changing its bands that would exceed it is refused with a message on `bands`.
+- **Errors are scoped** to the thing being edited (`errorsForWifi`): a problem with another Wi-Fi network, the
+  country or "no adapter serves this band" does not block saving this one; the commit gate still catches them.
+- **Passwords** are returned to the logged-in session (the form has a reveal button) but never appear in the
+  review lines. On `PUT`, leaving `passphrase` out keeps the stored one.
+- A Local Network cannot be deleted while a Wi-Fi network joins it.
+
 ## 7b. Navigation (decided 2026-10-08)
 
 An OPNsense-style sidebar (grouped by function, quick search, clear two-level navigation) holding
@@ -719,6 +738,11 @@ every future page works on every screen automatically.
 | `POST /api/v1/config/discard` | session + CSRF | drop the staged changes; 409 while applying or awaiting confirmation |
 | `GET /api/v1/ports` | session | physical ports with hardware details, `role` (wan, lan, unassigned) from the draft, `active_role`, `pending`, `present` (false: configured but the hardware is gone), `editable`; for LAN ports `native` (the id of the untagged network) and `tagged` (ids); and `networks`: what a LAN port can carry (`id`, `name`, `vlan`, `default`) |
 | `PUT /api/v1/ports` | session + CSRF | `{"assignments": {"eth0": "wan", "eth1": "lan", "eth2": "unassigned"}, "networks": {"eth1": {"native": "lan", "tagged": ["net2"]}}}` stages the roles as one atomic change; ports not mentioned keep their role, and a LAN port not named under `networks` keeps its networks; the result must have exactly one WAN and at least one LAN; an entry that says only the default network is dropped; a port that stops being a LAN port loses its networks |
+| `GET /api/v1/wifi` | session | `country`, `country_pending`, `countries` (`code`, `name`), `radios` (`name`, `band`, `channel` (0: automatic), `width`, `enabled`, `ht`, `vht`, `he`, `pending`), `networks` (`id` `wifi1`..., `ssid`, `passphrase`, `network`, `security`, `bands`, `band_steering`, `hidden`, `client_isolation`, `enabled`, `pending`), `editable` |
+| `PUT /api/v1/wifi/country` | session + CSRF | `{"country": "US"}`; an empty string clears it (committing Wi-Fi without a country is refused) |
+| `PUT /api/v1/wifi/radios/{name}` | session + CSRF | `{"band", "channel", "width", "enabled"}` checked against the adapter's capabilities; `DELETE` stops using the adapter |
+| `POST /api/v1/wifi/networks` | session + CSRF | `{"ssid", "passphrase", "bands": [...], "network", "security", "band_steering", "hidden", "client_isolation", "enabled"}`; left out: security `wpa2-wpa3`, network `lan`, enabled, band steering on when both bands are chosen; answers 201 |
+| `PUT /api/v1/wifi/networks/{id}`, `DELETE ...` | session + CSRF | fields left out stay as they are (also the passphrase); `DELETE` stages the removal and answers with the whole Wi-Fi setup |
 | `GET /api/v1/networks`, `GET /api/v1/networks/{id}` | session | the networks, the default one (id `lan`) first: `name`, `default`, `vlan` (1 for the default), `ip`, `netmask`, `ports` (carried untagged), `tagged_ports`, `bridged`, `dhcp` (null if none), `internet`, `isolated`, `pending` |
 | `POST /api/v1/networks` | session + CSRF | adds a network: `{"name", "vlan", "ip", "netmask", "dhcp": {...}, "internet", "isolated"}`; left out, `internet` is false and `isolated` true and there is no DHCP; the id (`net2`, `net3`...) is chosen by the server; answers 201 with the network |
 | `PUT /api/v1/networks/{id}` | session + CSRF | `{"ip", "netmask"}` always, and `name`, `vlan`, `dhcp`, `internet`, `isolated` only if they change (a field left out stays); the default network's name, VLAN and internet access cannot be changed |

@@ -248,6 +248,12 @@ func main() {
 		return string(out), err
 	}}
 	mux.HandleFunc("/api/v1/wireless", requireAuth(wifi.Handler))
+	netAPI.Wireless = wifi.Detect
+	mux.HandleFunc("/api/v1/wifi", requireAuth(netAPI.HandleWifi))
+	mux.HandleFunc("/api/v1/wifi/country", requireAuth(netAPI.HandleWifiCountry))
+	mux.HandleFunc("/api/v1/wifi/radios/{name}", requireAuth(netAPI.HandleWifiRadio))
+	mux.HandleFunc("/api/v1/wifi/networks", requireAuth(netAPI.HandleWifiNetworks))
+	mux.HandleFunc("/api/v1/wifi/networks/{id}", requireAuth(netAPI.HandleWifiNetwork))
 	mux.HandleFunc("/api/v1/uplinks", requireAuth(netAPI.HandleUplinks))
 	mux.HandleFunc("/api/v1/uplinks/{id}", requireAuth(netAPI.HandleUplink))
 	mux.HandleFunc("/api/v1/uplinks/{id}/health", requireAuth(func(w http.ResponseWriter, r *http.Request) {

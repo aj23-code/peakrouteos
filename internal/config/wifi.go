@@ -378,6 +378,22 @@ func (c NetworkConfig) validateWifi(add func(field, format string, args ...any))
 
 	// every band a switched-on network uses needs a switched-on radio for it
 	radios, networks := w.Active()
+
+	// hostapd names the second network on an adapter name_1, the third name_2...: the kernel allows 15 characters
+	for i, r := range w.Radios {
+		if r.Disabled || len(r.Name)+len("_9") <= 15 {
+			continue
+		}
+		count := 0
+		for _, n := range networks {
+			if n.Has(r.Band) {
+				count++
+			}
+		}
+		if count > 1 {
+			add(fmt.Sprintf("wifi.radios[%d].name", i), "this adapter's name is too long to carry more than one Wi-Fi network (the extra ones are named after it)")
+		}
+	}
 	have := map[string]bool{}
 	for _, r := range radios {
 		have[r.Band] = true

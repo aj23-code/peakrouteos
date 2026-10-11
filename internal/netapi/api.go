@@ -8,6 +8,7 @@
 package netapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -16,6 +17,7 @@ import (
 
 	"peakroute/internal/auth"
 	"peakroute/internal/config"
+	"peakroute/internal/wireless"
 )
 
 // PortLister reports the machine's physical network ports.
@@ -32,6 +34,8 @@ type API struct {
 	Live func(port string) *Live
 	// RoutingTable lists the routes the kernel is using now. Nil means it is not reported.
 	RoutingTable func() []LiveRoute
+	// Wireless reports the Wi-Fi adapters and what they can do. Nil means they cannot be read.
+	Wireless func(ctx context.Context) wireless.Report
 }
 
 const maxBody = 64 << 10

@@ -344,6 +344,12 @@ func (a *API) deleteNetwork(w http.ResponseWriter, id string) {
 					Message: fmt.Sprintf("port %s still carries this network untagged; move the port to another network first", port)})
 			}
 		}
+		for _, wn := range c.WifiSettings().Networks {
+			if wn.Network == id {
+				problems = append(problems, config.FieldError{Field: "wifi",
+					Message: fmt.Sprintf("the Wi-Fi network %q still joins this network; move or delete it first", wn.SSID)})
+			}
+		}
 		if len(problems) > 0 {
 			return problems
 		}

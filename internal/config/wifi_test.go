@@ -444,3 +444,32 @@ func TestThePasswordNeverAppearsInTheReview(t *testing.T) {
 		t.Fatalf("%s", old)
 	}
 }
+
+func TestALongAdapterNameCanCarryOnlyOneNetwork(t *testing.T) {
+	long := radio24()
+	long.Name = "wlx00e04c680001" // 15 characters: fine alone, no room for the _1 of a second network
+	one := withWifi(validNet(), "US", []WifiRadio{long}, func() WifiNetwork { n := homeWifi(); n.Bands = []string{Band24}; n.BandSteering = false; return n }())
+	if err := one.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	two := one.clone()
+	two.Wifi.Networks = append(two.Wifi.Networks, WifiNetwork{ID: "wifi2", SSID: "Guest", Network: "lan", Security: SecurityWPA2, Passphrase: "visitors only!", Bands: []string{Band24}})
+	err := two.Validate()
+	if err == nil || !fieldsOf(t, err).Has("wifi.radios[0].name") {
+		t.Fatalf("%v", err)
+	}
+	// a short name is fine with many
+	short := two.clone()
+	short.Wifi.Radios[0].Name = "wlan0"
+	if err := short.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	// a switched-off adapter is not checked
+	off := two.clone()
+	off.Wifi.Radios[0].Disabled = true
+	for _, e := range func() ValidationError { e := off.Validate(); v, _ := e.(ValidationError); return v }() {
+		if strings.Contains(e.Field, ".name") {
+			t.Errorf("%v", e)
+		}
+	}
+}
