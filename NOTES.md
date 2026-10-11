@@ -637,7 +637,8 @@ setting, then AP mode (the limited GUI and a translator that bridges everything 
   carries its own network name, and the band comes from the interface's channel frequency. A device that is still
   in the password exchange (`authorized: no`) is left out. A short cache (`StationCache`, 2 s) stands between the
   pages and `iw`, because the lease list refreshes every second.
-- **Connection column** (Clients page; `connection` in the lease API): a lease whose MAC is a current Wi-Fi station
+- **Connection column** (Clients page; `connection` in the lease API) shows an icon only: Wi-Fi (blue; the network and
+  band are in its tooltip) or an Ethernet plug. A lease whose MAC is a current Wi-Fi station
   is `wifi`; any other lease is `wired` **only when the Wi-Fi side could be read** (`iw` answered, or the machine
   has no Wi-Fi adapter at all). If an adapter exists but `iw` is missing the answer is `unknown`, shown as a dash:
   a cable must not be assumed.

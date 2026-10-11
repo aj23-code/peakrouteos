@@ -3,15 +3,20 @@
 window.DHCPModule = (function () {
     let pollInterval = null;
 
-    // How the device is attached: over Wi-Fi (with the network name and band), by cable, or not known
-    // (the Wi-Fi side could not be read, so a cable cannot be assumed)
+    // How the device is attached, as an icon: Wi-Fi, or an Ethernet plug. The details (network and band) are in
+    // the tooltip and the accessible name; a dash means the Wi-Fi side could not be read, so a cable is not assumed.
+    const ICON_WIFI = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8.8a15 15 0 0 1 20 0"/><path d="M5.5 12.4a10 10 0 0 1 13 0"/><path d="M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="19.5" r="0.9" fill="currentColor"/></svg>';
+    const ICON_ETHERNET = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v9a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3z"/><path d="M10 15v3h4v-3"/><path d="M12 18v3"/><path d="M9.5 3v4M12 3v4M14.5 3v4"/></svg>';
+
     function connectionHtml(c) {
         if (c.connection === 'wifi') {
-            const detail = [c.ssid, c.band].filter(Boolean).map(escapeHtml).join(' \u00b7 ');
-            return `<span class="tag tag-ok conn-tag">Wi-Fi</span>${detail ? ` <span class="form-hint">${detail}</span>` : ''}`;
+            const label = ['Wi-Fi', c.ssid, c.band].filter(Boolean).join(' \u00b7 ');
+            return `<span class="conn-icon conn-icon--wifi" role="img" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${ICON_WIFI}</span>`;
         }
-        if (c.connection === 'wired') return '<span class="tag conn-tag">Wired</span>';
-        return '<span class="form-hint" title="The Wi-Fi side could not be read">\u2013</span>';
+        if (c.connection === 'wired') {
+            return `<span class="conn-icon" role="img" aria-label="Wired" title="Wired">${ICON_ETHERNET}</span>`;
+        }
+        return '<span class="form-hint" title="The Wi-Fi side could not be read" aria-label="Unknown">\u2013</span>';
     }
 
     async function fetchAllLeases() {
