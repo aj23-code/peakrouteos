@@ -75,7 +75,7 @@
             </summary>
             <div class="folder-content">
               <a href="#" class="nav-item" data-view="settings">Settings</a>
-              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Administrators</span>
+              <a href="#" class="nav-item" data-view="admins">Administrators</a>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Certificates</span>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Backup and restore</span>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Updates</span>
@@ -87,6 +87,7 @@
       </div>
 
       <div class="sidebar-bottom">
+        <span class="mode-indicator">Signed in as <strong>{{.Username}}</strong>{{if .ReadOnly}} <span class="tag">read-only</span>{{end}}</span>
         <span class="mode-indicator">Mode: <strong>{{.SystemMode}}</strong></span>
         <form method="POST" action="/logout" class="logout-form">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -689,6 +690,19 @@
         <p class="form-hint" id="cx-note"></p>
       </div>
 
+      <!-- View: Administrators -->
+      <div id="view-admins" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Administrators</h1>
+            <p class="subtitle">Who can sign in to this router&rsquo;s web interface, with what role. Unlike most pages, changes here take effect at once: they are not part of the draft you commit.</p>
+          </div>
+        </header>
+
+        <div id="admins-message" class="form-message hidden" role="alert"></div>
+        <div id="admins-body" class="card-stack"></div>
+      </div>
+
       <!-- View: Firewall log -->
       <div id="view-firewall-log" class="view-section hidden">
         <header class="dash-header">
@@ -848,6 +862,7 @@
   <script src="/static/scripts/firewall_log.js"></script>
   <script src="/static/scripts/dns.js"></script>
   <script src="/static/scripts/diagnostics.js"></script>
+  <script src="/static/scripts/admins.js"></script>
   <script src="/static/scripts/leases.js"></script>
   <script src="/static/scripts/syslogs.js"></script>
 </body>

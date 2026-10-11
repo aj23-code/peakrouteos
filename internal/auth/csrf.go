@@ -63,6 +63,12 @@ func RequireAuth(sm *SessionManager, next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		// a read-only account changes nothing, whatever the page lets it try (it may change its own password)
+		if !SafeMethod(r.Method) && !CanWrite(info.Role) && r.URL.Path != OwnPasswordPath {
+			writeJSONError(w, http.StatusForbidden, "This account is read-only.")
+			return
+		}
+
 		next(w, r)
 	}
 }

@@ -31,6 +31,16 @@ func newTestSessions(t *testing.T, timeoutMinutes int) (*SessionManager, *fakeCl
 		}
 	}
 
+	// the accounts the tests sign in with
+	if err := mgr.UpdateAuth(func(cfg *config.AuthConfig) error {
+		for _, name := range []string{"admin", "abandoned", "fresh", "old", "alice", "bob"} {
+			cfg.Users = append(cfg.Users, config.User{Username: name, PasswordHash: "x", Role: RoleAdmin})
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	clock := &fakeClock{t: time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)}
 	sm := NewSessionManager(mgr)
 	sm.now = clock.now

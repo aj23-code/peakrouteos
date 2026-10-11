@@ -426,6 +426,25 @@ dnsmasq stays the engine (no Unbound: no DNS over TLS or DNSSEC for now); the up
 - Not yet: polish and screenshots (stage 6).
 - **The host name moved to System, Settings (2026-10-11).** The Internet page's "Host name to send" is now the router's `hostname` (`network.json` key `hostname`, was `wan_hostname`; `PUT /api/v1/settings/hostname`; review line "Host name"). It is checked and kept whatever the connection type (changing to static or PPPoE no longer clears it) and is only written (`hostname` on the DHCP stanza) with DHCP addressing; the uplink API no longer takes it. It is not yet the machine's own name (`sys.json` still holds the unchangeable device name shown on Overview): making the two one setting is an open question. Settings and DNS pages now stack their cards with a shared gap (`.card-stack`).
 
+## 7j. Administrators (built 2026-10-11)
+
+Design, rules and API are in **`docs/administrators.md`**. In short: System, Administrators (`admins.js`, `auth/admins.go`) manages
+the accounts in `auth.json` with two roles, **admin** and **readonly**; changes take effect at once (they are not staged like the
+network configuration).
+
+- **Roles are enforced in `RequireAuth`** (`auth/csrf.go`): a read-only session gets 403 "This account is read-only." for anything that
+  changes state, except `POST /api/v1/me/password`. The role is read from the configuration at every request
+  (`SessionManager.Lookup` now returns it), so a demotion counts at once, and **a session whose account was removed is no longer a
+  session**. An unknown or empty role counts as read-only. The dashboard shows who is signed in (and a *read-only* tag).
+- **Rules the router enforces:** at least one administrator always (`changeAccount`, also against two administrators acting at once);
+  not your own removal or role change; your own password only with the current one (rate limited, 5 per 2 minutes per account);
+  other accounts' passwords by an administrator without it; names unique whatever the capitals; at most 20 accounts. A password
+  change ends the account's other sessions (`SessionManager.RevokeUser`); an administrator's reset or a removal ends all of them.
+- **Tests:** `auth/admins_test.go` drives the real handlers behind `RequireAuth`; every deliberate break of the rules was caught (five that the first round missed got their own tests).
+  The older session and CSRF tests now create the accounts they sign in with (a session needs its account to exist).
+- Not built: more roles, two-factor, RADIUS/LDAP, past sign-ins, a console tool to recover when every administrator has forgotten the
+  password (TODO, longer-term gaps).
+
 ## 7e. Static routes (built 2026-10-08)
 
 **Model.** `NetworkConfig.Routes` is a list of `{name, destination, gateway, metric, disabled}` (JSON keys

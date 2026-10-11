@@ -335,6 +335,14 @@ func main() {
 		}
 		return out
 	}
+	// Administrators: who may sign in, with what role, their passwords and the session timeout. Changes count at once.
+	adminAPI := &auth.AdminAPI{Cfg: cfgMgr, Sessions: sessionMgr, Attempts: auth.NewRateLimiter(5, 2*time.Minute)}
+	mux.HandleFunc("/api/v1/admins", requireAuth(adminAPI.HandleAdmins))
+	mux.HandleFunc("/api/v1/admins/{username}", requireAuth(adminAPI.HandleAdmin))
+	mux.HandleFunc("/api/v1/admins/{username}/password", requireAuth(adminAPI.HandleAdminPassword))
+	mux.HandleFunc("/api/v1/admins/{username}/sessions", requireAuth(adminAPI.HandleAdminSessions))
+	mux.HandleFunc(auth.OwnPasswordPath, requireAuth(adminAPI.HandleOwnPassword))
+	mux.HandleFunc("/api/v1/session/timeout", requireAuth(adminAPI.HandleSessionTimeout))
 	mux.HandleFunc("/api/v1/dns", requireAuth(netAPI.HandleDNS))
 	mux.HandleFunc("/api/v1/dns/lookup", requireAuth(netAPI.HandleDNSLookup))
 	mux.HandleFunc("/api/v1/dns/upstream", requireAuth(netAPI.HandleDNSUpstream))
@@ -436,9 +444,13 @@ func main() {
 			data := struct {
 				SystemMode string
 				CSRFToken  string
+				Username   string
+				ReadOnly   bool
 			}{
 				SystemMode: sysMode,
 				CSRFToken:  session.CSRFToken,
+				Username:   session.Username,
+				ReadOnly:   !auth.CanWrite(session.Role),
 			}
 
 			if err := tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {

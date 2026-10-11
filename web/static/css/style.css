@@ -1654,3 +1654,11 @@ height: 260px;
 .fw-list:empty { display: none; }
 .fw-log-hint { margin-top: 0.75rem; }
 .fwl-filters { margin: 0 0 1rem; }
+
+/* ---------- Administrators ---------- */
+.admins-row { flex-wrap: wrap; }
+.admins-role-cell { min-width: 11rem; }
+.admins-reset-row { padding: 0 0.9rem 0.9rem; border-top: 1px solid var(--border-color); }
+.admins-reset-row .form-grid { margin-top: 0.75rem; }
+.card-stack .card > .form-section { margin: 1.25rem 0 0; font-size: 1rem; }
+.sidebar-bottom .mode-indicator { display: block; }

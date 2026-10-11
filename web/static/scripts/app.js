@@ -214,6 +214,11 @@ function loadView(viewName) {
                 activeViewCleanup = window.DNSModule.init();
             }
             break;
+        case 'admins':
+            if (window.AdminsModule) {
+                activeViewCleanup = window.AdminsModule.init();
+            }
+            break;
         case 'diagnostics':
             if (window.DiagnosticsModule) {
                 activeViewCleanup = window.DiagnosticsModule.init();

@@ -23,6 +23,7 @@ type Session struct {
 type SessionInfo struct {
 	Username  string
 	CSRFToken string
+	Role      string // what the account may do now (read from the configuration at every request, so a change counts at once)
 }
 
 func randomToken() string {
@@ -115,11 +116,22 @@ func (sm *SessionManager) Lookup(r *http.Request) (SessionInfo, bool) {
 		return SessionInfo{}, false
 	}
 
+	// The account must still exist, and what it may do is what the configuration says now
+	role := RoleAdmin
+	if sm.mgr != nil {
+		user, ok := FindUser(sm.mgr.Users(), session.Username)
+		if !ok {
+			delete(sm.sessions, cookie.Value)
+			return SessionInfo{}, false
+		}
+		role = NormalizeRole(user.Role)
+	}
+
 	// ROLLING TIMEOUT: extend the session on active use
 	session.ExpiresAt = now.Add(timeout)
 	sm.sessions[cookie.Value] = session
 
-	return SessionInfo{Username: session.Username, CSRFToken: session.CSRFToken}, true
+	return SessionInfo{Username: session.Username, CSRFToken: session.CSRFToken, Role: role}, true
 }
 
 // DestroySession invalidates the active session in memory and clears the client cookie.
@@ -175,4 +187,39 @@ func (sm *SessionManager) StartJanitor(ctx context.Context, interval time.Durati
 			}
 		}
 	}()
+}
+
+// RevokeUser ends every session of the account, except the one the request belongs to (when keep is not nil). It returns
+// how many it ended.
+func (sm *SessionManager) RevokeUser(username string, keep *http.Request) int {
+	keepToken := ""
+	if keep != nil {
+		if c, err := keep.Cookie(sessionCookieName); err == nil {
+			keepToken = c.Value
+		}
+	}
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	n := 0
+	for token, s := range sm.sessions {
+		if s.Username == username && token != keepToken {
+			delete(sm.sessions, token)
+			n++
+		}
+	}
+	return n
+}
+
+// ActiveSessions counts the sessions that have not timed out, by account.
+func (sm *SessionManager) ActiveSessions() map[string]int {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	now := sm.now()
+	out := map[string]int{}
+	for _, s := range sm.sessions {
+		if !now.After(s.ExpiresAt) {
+			out[s.Username]++
+		}
+	}
+	return out
 }
