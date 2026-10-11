@@ -79,7 +79,7 @@
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Backup and restore</span>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Updates</span>
               <a href="#" class="nav-item" data-view="logs">Logs</a>
-              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Diagnostics</span>
+              <a href="#" class="nav-item" data-view="diagnostics">Diagnostics</a>
             </div>
           </details>
         </nav>
@@ -693,12 +693,24 @@
         <header class="dash-header">
           <div>
             <h1>DNS</h1>
-            <p class="subtitle">Where the router looks names up, and what the devices on each network are told to use. Changes are saved as a draft until you commit them.</p>
+            <p class="subtitle">Where the router looks names up, and what the devices on each network are told to use. Changes are saved as a draft until you commit them. To check what the router answers, use the DNS lookup under <a href="#" data-goto="diagnostics">Diagnostics</a>.</p>
           </div>
         </header>
 
         <div id="dns-message" class="form-message hidden" role="alert"></div>
         <div id="dns-body" class="card-stack"></div>
+      </div>
+
+      <!-- View: Diagnostics -->
+      <div id="view-diagnostics" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Diagnostics</h1>
+            <p class="subtitle">Small tools for finding out why something does not work. They look; they change nothing.</p>
+          </div>
+        </header>
+
+        <div id="diagnostics-body" class="card-stack"></div>
       </div>
 
       <!-- View: System Logs -->
@@ -793,6 +805,7 @@
   <script src="/static/scripts/firewall_forwards.js"></script>
   <script src="/static/scripts/firewall_connections.js"></script>
   <script src="/static/scripts/dns.js"></script>
+  <script src="/static/scripts/diagnostics.js"></script>
   <script src="/static/scripts/leases.js"></script>
   <script src="/static/scripts/syslogs.js"></script>
 </body>

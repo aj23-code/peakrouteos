@@ -127,12 +127,13 @@ under it go to the servers listed (up to three), instead of the upstream servers
 3. **Local names**: a list with a switch, Edit and a two-click Delete per entry, and *Add name*. The local domain is shown here
    but changed under **System, Settings** (the link is on the page).
 4. **Domain forwarding**: the same, with *Add domain*.
-5. **Look a name up**: type a name (`nas`, `www.example.com`) or an IPv4 address and press *Ask*. The router's own DNS server is
-   asked, the way a device would ask it, and the page shows *Answered*, *Not found*, *No answer* (the server did not reply in
-   three seconds: it may be stopped, restarting or waiting for an upstream server) or *Error* (the server could not get an
-   answer), with the addresses (or names, for an address) and how long it took. The last five questions stay on the page. It
-   tests what is **running now**; changes still in the draft are not included, so commit first and then ask. A short name is
-   asked exactly as typed (a device's own search domain is not added); use `nas.lan` to see the domain at work.
+
+**DNS lookup** is not on this page: it is a tool on **System, Diagnostics** (the DNS page links to it). Type a name (`nas`, `www.example.com`) or an IPv4 address and press *Ask*. The router's own DNS server is
+asked, the way a device would ask it, and the page shows *Answered*, *Not found*, *No answer* (the server did not reply in
+three seconds: it may be stopped, restarting or waiting for an upstream server) or *Error* (the server could not get an
+answer), with the addresses (or names, for an address) and how long it took. The last five questions stay on the page. It
+tests what is **running now**; changes still in the draft are not included, so commit first and then ask. A short name is
+asked exactly as typed (a device's own search domain is not added); use `nas.lan` to see the domain at work.
 
 The Internet page only shows a *DNS servers* field for a fixed address; otherwise it says that the DNS page decides. Errors
 appear under the field they belong to; a draft entry carries a *Draft* tag until it is committed.
@@ -229,7 +230,7 @@ Each stage is its own commit with tests and updates this document.
 2. **Files** (done): the translator writes them; checked with `dnsmasq --test` and with real queries to the real dnsmasq in a namespace.
 3. **API** (done): the DNS settings, the local names, the forwards, per-network choice, the domain on Settings.
 4. **DNS page** (done, Services, DNS) and the domain field on Settings.
-5. **Lookup test** (done) on the page: ask the router a name and see the answer and how long it took.
+5. **Lookup test** (done), on the Diagnostics page: ask the router a name and see the answer and how long it took.
 6. Polish; screenshots in this document.
 
 ## 13. Not planned (yet)
