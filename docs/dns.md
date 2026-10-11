@@ -27,8 +27,8 @@ There are two separate questions, and the page keeps them apart:
 
 | Side | Question | Setting |
 |---|---|---|
-| **Public side** (upstream) | Who does the router ask when it does not know a name? | The provider's servers (the default), or servers you choose |
-| **Local side** (per network) | Who are the devices on this network told to ask? | This router (the default), or other servers you choose |
+| **Public side**: *Upstream DNS* | Who does the router ask when it does not know a name? | The provider's servers (the default), or servers you choose |
+| **Local side**: *Local DNS* (per network) | Who are the devices on this network told to ask? | This router (the default), or other servers you choose |
 
 They are independent. A network can be told to use a server in your own network (a Pi-hole, a company DNS server) while the
 router itself still asks the provider; or every network can use the router, which asks a public resolver you picked.
@@ -119,9 +119,9 @@ under it go to the servers listed (up to three), instead of the upstream servers
 
 **Services, DNS.** Top to bottom; every change is saved to the draft and applied when you commit, like the rest:
 
-1. **Where the router asks**: *The provider's servers* (the card shows which ones are in use right now) or *These servers instead*
+1. **Upstream DNS** (where the router asks): *The provider's servers* (the card shows which ones are in use right now) or *These servers instead*
    (up to three). With a fixed address on the internet connection only the second is possible. Save, or Reset to what is saved.
-2. **What each network is told**: one block per Local Network with *This router (its address)* or *Other servers* and the
+2. **Local DNS** (what each network is told): one block per Local Network with *This router (its address)* or *Other servers* and the
    servers. Advice (no DHCP from the router there, a server on another network, a public server for a network without
    internet) is shown under the block.
 3. **Local names**: a list with a switch, Edit and a two-click Delete per entry, and *Add name*. The local domain is shown here

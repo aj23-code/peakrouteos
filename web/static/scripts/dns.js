@@ -77,7 +77,7 @@ window.DNSModule = (function () {
         const provider = (u.provider || []).length ? u.provider.map(s => `<code>${escapeHtml(s)}</code>`).join(', ') : 'none right now';
         const dirty = upstreamDirty();
         return `<section class="card" id="dns-upstream">
-            <div class="net-card-head"><h2>Where the router asks</h2>${u.pending ? '<span class="tag tag-draft">Draft</span>' : ''}</div>
+            <div class="net-card-head"><h2>Upstream DNS</h2>${u.pending ? '<span class="tag tag-draft">Draft</span>' : ''}</div>
             <p class="form-hint">For every name the router does not know itself, it asks these servers.</p>
             <div class="radio-row" role="radiogroup" aria-label="Upstream servers">
                 <label class="radio"><input type="radio" name="dns-up" value="provider" data-up="mode"${f.mode === 'provider' ? ' checked' : ''}${lock || u.static ? ' disabled' : ''}> The provider&rsquo;s servers
@@ -130,7 +130,7 @@ window.DNSModule = (function () {
 
     function networksHtml() {
         return `<section class="card">
-            <div class="net-card-head"><h2>What each network is told</h2></div>
+            <div class="net-card-head"><h2>Local DNS</h2></div>
             <p class="form-hint">When a device gets its address (DHCP) it is also told which DNS server to use. <strong>This router</strong> gives it the router&rsquo;s local names, device names and forwarding; <strong>other servers</strong> sends it to a server you run, such as a Pi-hole. Devices with a fixed address, or their own DNS settings, ignore it. A server on another network needs a firewall rule that lets this network reach it.</p>
             ${data.networks.map(networkHtml).join('')}
         </section>`;
