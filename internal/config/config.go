@@ -96,17 +96,23 @@ type Route struct {
 }
 
 type NetworkConfig struct {
-	WanInterface  string      `json:"wan_interface,omitempty"`
-	WanMode       string      `json:"wan_mode,omitempty"` // "dhcp" or "static"
-	WanIP         string      `json:"wan_ip,omitempty"`
-	WanSubnet     string      `json:"wan_subnet,omitempty"`
-	WanGateway    string      `json:"wan_gateway,omitempty"`
-	WanDNS        []string    `json:"wan_dns,omitempty"`
-	LanInterfaces []string    `json:"lan_interfaces,omitempty"`
-	LanIP         string      `json:"lan_ip,omitempty"`
-	LanSubnet     string      `json:"lan_subnet,omitempty"`
-	DHCP          *DHCPConfig `json:"dhcp,omitempty"`
-	Routes        []Route     `json:"routes,omitempty"`
+	WanInterface string   `json:"wan_interface,omitempty"`
+	WanMode      string   `json:"wan_mode,omitempty"` // "dhcp", "static" or "pppoe"
+	WanIP        string   `json:"wan_ip,omitempty"`
+	WanSubnet    string   `json:"wan_subnet,omitempty"`
+	WanGateway   string   `json:"wan_gateway,omitempty"`
+	WanDNS       []string `json:"wan_dns,omitempty"` // static: the servers to use; DHCP and PPPoE: servers to use instead of the provider's
+	// How the connection is carried and presented to the provider
+	WanVlan       int          `json:"wan_vlan,omitempty"`     // tagged VLAN the provider wants (0: none)
+	WanMTU        int          `json:"wan_mtu,omitempty"`      // 0: the usual 1500 (1492 for PPPoE)
+	WanMAC        string       `json:"wan_mac,omitempty"`      // hardware address to present instead of the port's own
+	WanHostname   string       `json:"wan_hostname,omitempty"` // name sent to the provider's DHCP server
+	WanPPPoE      *PPPoEConfig `json:"wan_pppoe,omitempty"`
+	LanInterfaces []string     `json:"lan_interfaces,omitempty"`
+	LanIP         string       `json:"lan_ip,omitempty"`
+	LanSubnet     string       `json:"lan_subnet,omitempty"`
+	DHCP          *DHCPConfig  `json:"dhcp,omitempty"`
+	Routes        []Route      `json:"routes,omitempty"`
 	// Further local networks, and which LAN ports carry them. LanIsolated is the default network's
 	// own isolation switch (the extra networks carry theirs).
 	LanIsolated  bool                    `json:"lan_isolated,omitempty"`
@@ -200,6 +206,10 @@ func (c NetworkConfig) clone() NetworkConfig {
 		c.DHCP = &d
 	}
 	c.WanDNS = append([]string(nil), c.WanDNS...)
+	if c.WanPPPoE != nil {
+		p := *c.WanPPPoE
+		c.WanPPPoE = &p
+	}
 	c.LanInterfaces = append([]string(nil), c.LanInterfaces...)
 	c.Routes = append([]Route(nil), c.Routes...)
 	if len(c.Networks) > 0 {

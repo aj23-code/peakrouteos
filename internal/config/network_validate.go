@@ -138,6 +138,8 @@ func (c NetworkConfig) Validate() error {
 	switch strings.ToLower(c.WanMode) {
 	case "", "dhcp":
 		// addressing comes from the upstream router
+	case "pppoe":
+		// the provider assigns the address over the PPP session
 	case "static":
 		ip, ipOK := parseIPv4(c.WanIP)
 		if !ipOK {
@@ -161,17 +163,19 @@ func (c NetworkConfig) Validate() error {
 				add("wan_gateway", "cannot be the same as the WAN IP")
 			}
 		}
-		if len(c.WanDNS) > 3 {
-			add("wan_dns", "at most 3 DNS servers are supported")
-		}
-		for _, d := range c.WanDNS {
-			if _, ok := parseIPv4(d); !ok {
-				add("wan_dns", "%q is not an IPv4 address", d)
-			}
-		}
 	default:
-		add("wan_mode", "must be \"dhcp\" or \"static\"")
+		add("wan_mode", "must be \"dhcp\", \"static\" or \"pppoe\"")
 	}
+	// DNS servers: required with a static address; with DHCP or PPPoE they replace the provider's
+	if len(c.WanDNS) > 3 {
+		add("wan_dns", "at most 3 DNS servers are supported")
+	}
+	for _, d := range c.WanDNS {
+		if _, ok := parseIPv4(d); !ok {
+			add("wan_dns", "%q is not an IPv4 address", d)
+		}
+	}
+	c.validateWan(add)
 
 	// --- LAN ---
 	if len(c.LanInterfaces) == 0 {
@@ -300,8 +304,8 @@ func (c NetworkConfig) validateRoutes(add func(field, format string, args ...any
 			if !isHostAddr(wan, gw) {
 				add(field("gateway"), "cannot be the network or broadcast address of the WAN")
 			}
-		case c.WanMode == "" || strings.EqualFold(c.WanMode, "dhcp"):
-			// A DHCP uplink's subnet is only known once it is up; a wrong gateway is caught when applied
+		case c.WanKind() != WanStatic:
+			// A DHCP or PPPoE uplink's subnet is only known once it is up; a wrong gateway is caught when applied
 		case lanOK || haveWan:
 			var where []string
 			if lanOK {

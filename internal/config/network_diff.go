@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -89,6 +90,58 @@ var networkSettings = []networkSetting{
 	{"country", "Country", func(c NetworkConfig) string { return text(c.Country) }},
 }
 
+// The internet connection's carrier settings (VLAN, MTU, MAC, host name, PPPoE), shown right after the
+// addressing lines. The PPPoE password is handled apart (diffWanSecret): it is never shown.
+var wanCarrierSettings = []networkSetting{
+	{"wan_vlan", "WAN VLAN", func(c NetworkConfig) string {
+		if c.WanVlan == 0 {
+			return "none"
+		}
+		return strconv.Itoa(c.WanVlan)
+	}},
+	{"wan_mtu", "WAN MTU", func(c NetworkConfig) string { return strconv.Itoa(c.EffectiveWanMTU()) }},
+	{"wan_mac", "WAN MAC address", func(c NetworkConfig) string {
+		if c.WanMAC == "" {
+			return "the port's own"
+		}
+		return c.WanMAC
+	}},
+	{"wan_hostname", "DHCP host name sent", func(c NetworkConfig) string { return text(c.WanHostname) }},
+	{"pppoe_username", "PPPoE user name", func(c NetworkConfig) string {
+		if c.WanPPPoE == nil {
+			return valueNone
+		}
+		return text(c.WanPPPoE.Username)
+	}},
+	{"pppoe_service", "PPPoE service name", func(c NetworkConfig) string {
+		if c.WanPPPoE == nil {
+			return valueNone
+		}
+		return text(c.WanPPPoE.Service)
+	}},
+}
+
+// diffWanSecret reports a change of the PPPoE password without showing either value.
+func diffWanSecret(active, candidate NetworkConfig) []Change {
+	pw := func(c NetworkConfig) string {
+		if c.WanPPPoE == nil {
+			return ""
+		}
+		return c.WanPPPoE.Password
+	}
+	a, b := pw(active), pw(candidate)
+	if a == b {
+		return nil
+	}
+	change := Change{Field: "pppoe_password", Label: "PPPoE password", Old: "set", New: "changed"}
+	if a == "" {
+		change.Old, change.New = valueNone, "set"
+	} else if b == "" {
+		change.New = valueNone
+	}
+	return []Change{change}
+}
+
 // DiffNetwork lists what differs between the active configuration and a candidate, in a
 // stable order. It returns nil when there is nothing to commit.
 func DiffNetwork(active, candidate NetworkConfig) []Change {
@@ -99,6 +152,12 @@ func DiffNetwork(active, candidate NetworkConfig) []Change {
 			changes = append(changes, Change{Field: s.field, Label: s.label, Old: before, New: after})
 		}
 	}
+	for _, s := range wanCarrierSettings {
+		if before, after := s.value(active), s.value(candidate); before != after {
+			changes = append(changes, Change{Field: s.field, Label: s.label, Old: before, New: after})
+		}
+	}
+	changes = append(changes, diffWanSecret(active, candidate)...)
 	changes = append(changes, diffWifi(active, candidate)...)
 	changes = append(changes, diffNetworks(active, candidate)...)
 	changes = append(changes, diffPortNetworks(active, candidate)...)

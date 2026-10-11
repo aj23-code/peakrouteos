@@ -106,7 +106,7 @@ func TestInvalidConfigurationsAreRejectedWithTheRightField(t *testing.T) {
 		{"WAN name too long", func(c *NetworkConfig) { c.WanInterface = "abcdefghijklmnop" }, "wan_interface"},
 		{"WAN name starting with a dash", func(c *NetworkConfig) { c.WanInterface = "-eth0" }, "wan_interface"},
 		{"WAN name with quote and brace", func(c *NetworkConfig) { c.WanInterface = `eth0"}` }, "wan_interface"},
-		{"unknown WAN mode", func(c *NetworkConfig) { c.WanMode = "pppoe" }, "wan_mode"},
+		{"unknown WAN mode", func(c *NetworkConfig) { c.WanMode = "l2tp" }, "wan_mode"},
 		{"static WAN without an IP", func(c *NetworkConfig) { *c = staticWan(*c); c.WanIP = "" }, "wan_ip"},
 		{"static WAN with CIDR in the IP", func(c *NetworkConfig) { *c = staticWan(*c); c.WanIP = "203.0.113.10/24" }, "wan_ip"},
 		{"static WAN with IPv6", func(c *NetworkConfig) { *c = staticWan(*c); c.WanIP = "2001:db8::1" }, "wan_ip"},
