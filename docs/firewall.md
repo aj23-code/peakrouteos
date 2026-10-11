@@ -94,7 +94,7 @@ router (the input path) the same order applies with the lines marked *router*.
    the option.
 4. **Port forwards** (section 5): the traffic they forward is allowed.
 5. **Your rules**, from the tab the traffic comes from, top to bottom.
-6. **Network policy**: what the switches on Local Networks mean, shown under the rules on each tab as fixed lines:
+6. **Network policy (the defaults)**: what the switches on Local Networks mean, shown under the rules on each tab as fixed lines:
    - *Allow to the Internet*, if that network's **Internet access** is on
    - *Allow to other networks*, if neither network is isolated
    - *Allow the router's DNS and ping* (other networks), or *Allow everything on the router* (the default network)
@@ -281,12 +281,16 @@ always match what the ruleset does.
 **The Rules page** (`web/static/scripts/firewall_rules.js`, in the menu under Firewall, Rules):
 
 - The dropdown at the top chooses where the traffic comes from; it shows how many rules each source has.
-- **Your rules** come first, **numbered by priority** from 1 downward: rule 1 is checked first, and the first rule that matches
-  decides. Moving a rule with the arrows renumbers them. Below them, in their own section, are the **built-in rules** (grey,
-  with a lock; they have no number and cannot be edited): first those *checked before your rules* (replies to connections that
-  were started, DHCP, and for the default network the anti-lockout), then those *checked after your rules, if none of them
-  matched* (what the Internet and isolation switches on Local Networks mean, ending in "Block everything else"). The built-in
-  rules are shown below your rules to keep your own rules in focus; the two headings say which of them actually come first.
+- The page is laid out in the order the firewall really applies it, top to bottom: **System rules** (grey, with a lock, no
+  number, cannot be edited: replies to connections that were started, DHCP, and for the default network the anti-lockout) are
+  always checked first and nothing of yours can override them; then **Your rules**, **numbered by priority** from 1 downward
+  (the first that matches decides; moving a rule with the arrows renumbers them); then the **Defaults** (also locked: what the
+  Internet and isolation switches on Local Networks mean, ending in "Block everything else"), which decide whatever none of your
+  rules matched.
+- *Why the defaults are not in front of your rules:* they are defaults, not rules the system imposes. If they were checked first,
+  an Allow they contain (for instance "Allow to the internet") would win over a Block of yours, and you could not keep one
+  device off the internet while its network has Internet access on. Only the safety lines, which exist so that nothing can lock
+  you out or break addressing, are in front.
 - Each rule shows its name, what it does (Allow green, Block red, Reject amber), a **Draft** tag until it is committed, a
   **Logged** tag, the rule in words, and its **hit count** (packets since the rules were last loaded; a dash for a rule that is not
   running yet; refreshed every 5 seconds without redrawing the list). A rule that no traffic can reach shows an amber

@@ -164,15 +164,16 @@ window.FirewallRulesModule = (function () {
             <div class="net-card-head"><h2>Traffic from ${escapeHtml(t.name)}</h2><span class="tag">${rules.length} ${rules.length === 1 ? 'rule' : 'rules'}</span></div>
             <p class="form-hint">${switches}</p>
             ${!editable() ? '<p class="form-hint">A change is being applied or waits for confirmation: rules cannot be edited right now.</p>' : ''}
+            <h3 class="fw-heading">System rules <span class="form-hint">always checked first, cannot be changed</span></h3>
+            <div class="fw-list fw-builtin">
+                ${policy.before.map(lineHtml).join('')}
+            </div>
             <h3 class="fw-heading">Your rules <span class="form-hint">checked from 1 downward; the first that matches decides</span></h3>
             <div class="fw-list">
                 ${rules.length ? rules.map(ruleHtml).join('') : '<div class="fw-row fw-empty">No rules of your own yet. Add one to let something through or to keep something out.</div>'}
             </div>
-            <h3 class="fw-heading">Built-in rules <span class="form-hint">always there, cannot be changed here</span></h3>
+            <h3 class="fw-heading">Defaults <span class="form-hint">what happens when none of your rules matched</span></h3>
             <div class="fw-list fw-builtin">
-                <div class="fw-group">Checked before your rules</div>
-                ${policy.before.map(lineHtml).join('')}
-                <div class="fw-group">Checked after your rules, if none of them matched</div>
                 ${policy.after.map(lineHtml).join('')}
             </div>
         </section>${logCardHtml(t, rules)}${editing ? editorHtml() : ''}`;
