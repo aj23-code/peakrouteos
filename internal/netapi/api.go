@@ -38,6 +38,8 @@ type API struct {
 	// FirewallCounters reports how often each firewall rule and port forward in effect has matched (by id). The
 	// second result is false when it cannot be read. Nil means it is not reported.
 	FirewallCounters func() (map[string]Counter, bool)
+	// ProviderDNS lists the DNS servers the internet connection's provider hands out right now. Nil means not reported.
+	ProviderDNS func() []string
 	// FirewallLog reads the most recent packets that firewall rules with logging matched (oldest first, at most the
 	// given number). The second result is false when the log cannot be read. Nil means it is not reported.
 	FirewallLog func(limit int) ([]network.FirewallLogEntry, bool)

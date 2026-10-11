@@ -167,14 +167,7 @@ func (c NetworkConfig) Validate() error {
 		add("wan_mode", "must be \"dhcp\", \"static\" or \"pppoe\"")
 	}
 	// DNS servers: required with a static address; with DHCP or PPPoE they replace the provider's
-	if len(c.WanDNS) > 3 {
-		add("wan_dns", "at most 3 DNS servers are supported")
-	}
-	for _, d := range c.WanDNS {
-		if _, ok := parseIPv4(d); !ok {
-			add("wan_dns", "%q is not an IPv4 address", d)
-		}
-	}
+	validateServers(c.WanDNS, "wan_dns", add)
 	c.validateWan(add)
 
 	// --- LAN ---

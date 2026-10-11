@@ -1,7 +1,6 @@
 # PeakRoute OS DNS
 
-Status (2026-10-11): **stages 1 and 2 built** (the model, and the files dnsmasq reads; there is no API or page yet, so nothing can
-be set by a person). This file was written first and every stage's commit updates it. It is meant to become the DNS chapter of the user documentation.
+Status (2026-10-11): **stages 1 to 3 built** (the model, the files dnsmasq reads, and the API; there is no page yet). This file was written first and every stage's commit updates it. It is meant to become the DNS chapter of the user documentation.
 
 Contents: 1 What exists today, 2 Two sides: what the router asks, what the devices are told, 3 What each network is told,
 4 The router's own DNS server, 5 The local domain, 6 Local names, 7 Domain forwarding, 8 Staying out of trouble, 9 Recipes,
@@ -162,6 +161,23 @@ server=/corp.example.com/10.0.0.6
   hand, for every connection type.
 - A change to these files restarts dnsmasq (DHCP and DNS pause for a moment); nothing else is touched.
 
+**The API** (`internal/netapi/dns.go`; all need a session, changes also the CSRF token, and are refused with 409 while a change is
+being applied; everything is saved as a draft):
+
+| Request | What it does |
+|---|---|
+| `GET /api/v1/dns` | `upstream` (`mode`: `provider` or `custom`; `servers`: the ones set by hand; `provider`: what the provider's servers are right now; `static`: the connection has a fixed address, so servers are required; `pending`), `domain` (read only here), `networks` (one per Local Network: `mode` `router` or `custom`, `servers`, `router` (the address it is told otherwise), `dhcp` (the router runs DHCP there), `notes`, `pending`), `hosts`, `forwards` (each with `text`, `enabled`, `pending`), `editable` |
+| `PUT /api/v1/dns/upstream` | `{"servers": [...]}` sets the servers the router asks instead of the provider's; an empty list goes back to the provider's (refused with a fixed address). The same list as `dns` on the Internet page |
+| `PUT /api/v1/dns/networks/{id}` | `{"servers": [...]}` sets what the network is told to use (`lan` is the default network); an empty list goes back to the router |
+| `POST /api/v1/dns/hosts`, `PUT` / `DELETE /api/v1/dns/hosts/{id}` | local names: `name`, `address`, `enabled` (left out stays); names are kept in lower case |
+| `POST /api/v1/dns/forwards`, `PUT` / `DELETE /api/v1/dns/forwards/{id}` | forwarded domains: `domain`, `servers`, `enabled` |
+| `PUT /api/v1/settings/domain` | `{"domain": "lan"}` sets the local domain (kept in lower case); empty clears it. Refused when it would swallow a forwarded domain |
+
+*Notes on a network's servers* (in `notes`, advice, not errors): the router runs no DHCP server there, so nothing tells the devices;
+a server is on **another** network, so a firewall rule must let this network reach it; a public server for a network that has
+no internet access. Ids are `h1`... for names and `f1`... for forwards, the lowest free one. The servers set by hand were
+tightened for both lists: up to three, IPv4, not loopback, not unspecified, not multicast or broadcast, each once.
+
 **Safety at the last moment.** Even if the validation were bypassed, the writer refuses a domain or name that is not a plain
 DNS name, a forwarded domain with a slash or a newline in it, and any server or address that is not a plain IPv4 address.
 
@@ -184,7 +200,7 @@ Each stage is its own commit with tests and updates this document.
 
 1. **Model** (done): domain, local names, forwards, per-network servers; validation; review lines.
 2. **Files** (done): the translator writes them; checked with `dnsmasq --test` and with real queries to the real dnsmasq in a namespace.
-3. **API**: the DNS settings, the local names, the forwards, per-network choice, the domain on Settings.
+3. **API** (done): the DNS settings, the local names, the forwards, per-network choice, the domain on Settings.
 4. **DNS page** (Services, DNS) and the domain field on Settings.
 5. **Lookup test** on the page: ask the router a name and see the answer and how long it took.
 6. Polish; screenshots in this document.

@@ -417,7 +417,8 @@ dnsmasq stays the engine (no Unbound: no DNS over TLS or DNSSEC for now); the up
   `server=/<domain>/<server>` lines, and exists only while there is something to say. With nothing set every file is unchanged.
   Checked with the **real dnsmasq answering real queries** in a namespace (`TestTheRealDnsmasqAnswersAsTheFileSays`) and
   `dnsmasq --test`.
-- Not yet: the API, the DNS page (Services, DNS), the domain field on Settings, the lookup test. See the build plan.
+- **Stage 3, API** (`netapi/dns.go`, `settings.go`): the upstream servers, what each network is told, local names, forwarded domains and the domain on Settings, with notes about a network's chosen servers. The upstream servers (the old Internet-page `dns`) now also refuse loopback and duplicate servers. Endpoints are in the document.
+- Not yet: the DNS page (Services, DNS), the domain field on Settings, the lookup test. See the build plan.
 
 ## 7e. Static routes (built 2026-10-08)
 
@@ -896,6 +897,10 @@ every future page works on every screen automatically.
 | `GET /api/v1/firewall/counters` | session | `known`, `counters` by rule or forward id: `packets`, `bytes` |
 | `POST /api/v1/firewall/rules`, `PUT`/`DELETE /api/v1/firewall/rules/{id}`, `PUT /api/v1/firewall/order` | session + CSRF | rules and their order within a tab (see `docs/firewall.md`) |
 | `POST /api/v1/firewall/forwards`, `PUT`/`DELETE /api/v1/firewall/forwards/{id}` | session + CSRF | port forwards |
+| `GET /api/v1/dns` | session | `upstream`, `domain`, `networks`, `hosts`, `forwards`, `editable` (see `docs/dns.md`) |
+| `PUT /api/v1/dns/upstream`, `PUT /api/v1/dns/networks/{id}` | session + CSRF | the servers the router asks / a network is told to use |
+| `POST /api/v1/dns/hosts`, `PUT`/`DELETE /api/v1/dns/hosts/{id}`, `POST /api/v1/dns/forwards`, `PUT`/`DELETE /api/v1/dns/forwards/{id}` | session + CSRF | local names and forwarded domains |
+| `PUT /api/v1/settings/domain` | session + CSRF | `{"domain": "lan"}`; empty clears it |
 | `GET /api/v1/settings` | session | `country` (the draft), `country_pending`, `countries` (`code`, `name`), `editable` |
 | `PUT /api/v1/settings/country` | session + CSRF | `{"country": "US"}`; an empty string clears it (committing Wi-Fi without a country is refused) |
 | `GET /api/v1/wifi` | session | `country` (read only: it is set under settings), `radios` (`name`, `band`, `channel` (0: automatic), `width`, `enabled`, `ht`, `vht`, `he`, `pending`), `networks` (`id` `wifi1`..., `ssid`, `passphrase`, `network`, `security`, `bands`, `band_steering`, `hidden`, `client_isolation`, `enabled`, `pending`), `editable` |
