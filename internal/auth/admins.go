@@ -32,6 +32,12 @@ type AdminAPI struct {
 	Attempts *RateLimiter
 	// Logf records who did what (never a password); nil uses the standard logger.
 	Logf func(format string, args ...any)
+	// Idle says whether a change to the configuration is neither being applied nor waiting for confirmation (nil: always).
+	// The router is not restarted or switched off in the middle of one.
+	Idle func() bool
+	// Power restarts or switches off the machine: action is "reboot" or "poweroff". It returns at once; the action follows
+	// a moment later, so that the answer reaches the browser first.
+	Power func(action string) error
 }
 
 func (a *AdminAPI) logf(format string, args ...any) {
@@ -488,4 +494,40 @@ func (a *AdminAPI) HandleSessionTimeout(w http.ResponseWriter, r *http.Request) 
 	}
 	a.logf("[+] Session timeout set to %d minutes by %q", req.Minutes, info.Username)
 	writeJSON(w, http.StatusOK, a.view(info))
+}
+
+// HandlePower: POST /api/v1/system/power {"action": "reboot"} restarts the router; {"action": "poweroff"} switches it off.
+// Administrators only, and not while a configuration change is being applied or waits for confirmation.
+func (a *AdminAPI) HandlePower(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, http.MethodPost) {
+		return
+	}
+	info, ok := a.admin(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Action string `json:"action"`
+	}
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	if req.Action != "reboot" && req.Action != "poweroff" {
+		refuseField(w, http.StatusBadRequest, "action", "Choose restart or power off.")
+		return
+	}
+	if a.Idle != nil && !a.Idle() {
+		refuse(w, http.StatusConflict, "A change is being applied or is waiting for confirmation. Confirm or revert it first.")
+		return
+	}
+	if a.Power == nil {
+		refuse(w, http.StatusServiceUnavailable, "This router cannot be restarted from here.")
+		return
+	}
+	if err := a.Power(req.Action); err != nil {
+		refuse(w, http.StatusInternalServerError, "The request could not be carried out.")
+		return
+	}
+	a.logf("[+] %s requested by %q", map[string]string{"reboot": "Restart", "poweroff": "Power off"}[req.Action], info.Username)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": req.Action})
 }

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -109,6 +110,7 @@ func (l *lab) do(who *loggedIn, method, path, body string) reply {
 	mux.HandleFunc("/api/v1/admins/{username}/sessions", wrap(l.api.HandleAdminSessions))
 	mux.HandleFunc(OwnPasswordPath, wrap(l.api.HandleOwnPassword))
 	mux.HandleFunc("/api/v1/session/timeout", wrap(l.api.HandleSessionTimeout))
+	mux.HandleFunc("/api/v1/system/power", wrap(l.api.HandlePower))
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
@@ -786,5 +788,86 @@ func TestSessionsThatTimedOutAreNotCounted(t *testing.T) {
 	}
 	if carol.Sessions != 0 {
 		t.Fatalf("%+v", carol)
+	}
+}
+
+func TestRestartingAndPoweringOff(t *testing.T) {
+	l := newLab(t)
+	var asked []string
+	l.api.Power = func(action string) error { asked = append(asked, action); return nil }
+	alice, carol := l.signIn("alice"), l.signIn("carol")
+	if r := l.do(&alice, http.MethodPost, "/api/v1/system/power", `{"action":"reboot"}`); r.code != http.StatusOK || !strings.Contains(r.body, `"action":"reboot"`) {
+		t.Fatalf("%d %s", r.code, r.body)
+	}
+	if r := l.do(&alice, http.MethodPost, "/api/v1/system/power", `{"action":"poweroff"}`); r.code != http.StatusOK {
+		t.Fatalf("%d %s", r.code, r.body)
+	}
+	if strings.Join(asked, ",") != "reboot,poweroff" {
+		t.Fatalf("%v", asked)
+	}
+	joined := strings.Join(l.logs, "\n")
+	if !strings.Contains(joined, `Restart requested by "alice"`) || !strings.Contains(joined, `Power off requested by "alice"`) {
+		t.Fatalf("not logged: %v", l.logs)
+	}
+	asked = nil
+	for name, c := range map[string]struct {
+		who    *loggedIn
+		method string
+		body   string
+		code   int
+	}{
+		"a read-only account":   {&carol, http.MethodPost, `{"action":"reboot"}`, 403},
+		"signed out":            {nil, http.MethodPost, `{"action":"reboot"}`, 401},
+		"another action":        {&alice, http.MethodPost, `{"action":"halt"}`, 400},
+		"an action in capitals": {&alice, http.MethodPost, `{"action":"REBOOT"}`, 400},
+		"no action":             {&alice, http.MethodPost, `{}`, 400},
+		"a flag too many":       {&alice, http.MethodPost, `{"action":"reboot","now":true}`, 400},
+		"GET":                   {&alice, http.MethodGet, ``, 405},
+		"PUT":                   {&alice, http.MethodPut, `{"action":"reboot"}`, 405},
+	} {
+		if r := l.do(c.who, c.method, "/api/v1/system/power", c.body); r.code != c.code {
+			t.Errorf("%s: %d %s", name, r.code, r.body)
+		}
+	}
+	if r := l.do(&alice, http.MethodPost, "/api/v1/system/power", `{"action":"halt"}`); r.fields()["action"] == "" {
+		t.Errorf("%s", r.body)
+	}
+	if len(asked) != 0 {
+		t.Fatalf("a refused request restarted the router: %v", asked)
+	}
+	// the handler checks the role itself, not only the wrapper in front of it
+	req := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"action":"reboot"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(carol.cookie)
+	rec := httptest.NewRecorder()
+	l.api.HandlePower(rec, req)
+	if rec.Code != http.StatusForbidden || len(asked) != 0 {
+		t.Fatalf("%d %v", rec.Code, asked)
+	}
+}
+
+func TestTheRouterIsNotRestartedInTheMiddleOfAChange(t *testing.T) {
+	l := newLab(t)
+	alice := l.signIn("alice")
+	called := 0
+	l.api.Power = func(string) error { called++; return nil }
+	idle := false
+	l.api.Idle = func() bool { return idle }
+	if r := l.do(&alice, http.MethodPost, "/api/v1/system/power", `{"action":"reboot"}`); r.code != http.StatusConflict || called != 0 {
+		t.Fatalf("%d %s (%d calls)", r.code, r.body, called)
+	}
+	idle = true
+	if r := l.do(&alice, http.MethodPost, "/api/v1/system/power", `{"action":"reboot"}`); r.code != http.StatusOK || called != 1 {
+		t.Fatalf("%d %s (%d calls)", r.code, r.body, called)
+	}
+	// nothing that can do it, or something that fails
+	l.api.Power = nil
+	if r := l.do(&alice, http.MethodPost, "/api/v1/system/power", `{"action":"reboot"}`); r.code != http.StatusServiceUnavailable {
+		t.Fatalf("%d", r.code)
+	}
+	l.api.Power = func(string) error { return errors.New("boom") }
+	n := len(l.logs)
+	if r := l.do(&alice, http.MethodPost, "/api/v1/system/power", `{"action":"reboot"}`); r.code != http.StatusInternalServerError || strings.Contains(r.body, "boom") || len(l.logs) != n {
+		t.Fatalf("%d %s", r.code, r.body)
 	}
 }

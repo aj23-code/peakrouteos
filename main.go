@@ -371,6 +371,18 @@ func main() {
 	mux.HandleFunc("/api/v1/admins/{username}/sessions", requireAuth(adminAPI.HandleAdminSessions))
 	mux.HandleFunc(auth.OwnPasswordPath, requireAuth(adminAPI.HandleOwnPassword))
 	mux.HandleFunc("/api/v1/session/timeout", requireAuth(adminAPI.HandleSessionTimeout))
+	adminAPI.Idle = configSvc.Idle
+	adminAPI.Power = func(action string) error {
+		// a moment later, so that the answer reaches the browser first (-dev only logs the command)
+		go func() {
+			time.Sleep(2 * time.Second)
+			if out, err := runner.Run(context.Background(), "systemctl", action); err != nil {
+				log.Printf("[-] systemctl %s failed: %v %s", action, err, out)
+			}
+		}()
+		return nil
+	}
+	mux.HandleFunc("/api/v1/system/power", requireAuth(adminAPI.HandlePower))
 	mux.HandleFunc("/api/v1/dns", requireAuth(netAPI.HandleDNS))
 	mux.HandleFunc("/api/v1/dns/lookup", requireAuth(netAPI.HandleDNSLookup))
 	mux.HandleFunc("/api/v1/dns/upstream", requireAuth(netAPI.HandleDNSUpstream))

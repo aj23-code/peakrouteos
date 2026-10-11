@@ -1,11 +1,11 @@
 # PeakRoute OS settings
 
-Status (2026-10-11): in progress. System, Settings holds the choices that belong to the whole router rather than to one network or
+Status (2026-10-11): built. System, Settings holds the choices that belong to the whole router rather than to one network or
 port. Like the network pages, everything here is saved as a **draft** and applied when you commit (the review shows each change in
 words), except where a section says otherwise. This file is a living document: every commit that changes the page updates it, and
 it is meant to become the settings chapter of the user documentation.
 
-Contents: 1 General (host name, country, local domain), 2 Time, 3 Logging (syslog forwarding), 4 Power, 5 Internals, 6 Not planned.
+Contents: 1 General (host name, country, local domain), 2 Time, 3 Logging (syslog forwarding), 4 Power (restart, power off), 5 Internals, 6 Not planned.
 
 ---
 
@@ -93,7 +93,15 @@ them (the firewall log holds 7 days or 100,000 entries; the journal 100 MB).
 
 ## 4. Power
 
-*(not built yet)*
+**Restart the router** and **Power off**, for administrators. Each button asks twice (the first click turns it into *Click again to
+confirm* for five seconds). They are refused (409) while a configuration change is being applied or waits for confirmation, so a
+restart never cuts a change off halfway; what was committed is kept.
+
+- The router answers first and acts two seconds later (`systemctl reboot` or `systemctl poweroff`), so that the page gets its answer.
+- After a restart the page waits until the router has gone away and come back, then reloads by itself. After *Power off* it says to
+  switch the router back on.
+- The request is written to the log (`Restart requested by "alice"`). A read-only account is refused like for every change.
+- In `-dev` mode the command is only logged, so a developer's own machine is never restarted.
 
 ## 5. Internals
 
@@ -111,6 +119,7 @@ a change is being applied):
 | `PUT /api/v1/settings/country` | `{"country": "US"}` |
 | `PUT /api/v1/settings/domain` | `{"domain": "lan"}` |
 | `PUT /api/v1/settings/syslog` | `{"servers": [{"host", "port", "protocol"}], "system", "firewall"}`; replaces the forwarding (a port left out is 514, a protocol left out is udp; hosts lower-cased); no servers turns it off |
+| `POST /api/v1/system/power` | `{"action": "reboot"}` or `{"action": "poweroff"}`; administrators only; 409 while a change is being applied or waits for confirmation |
 | `POST /api/v1/syslog/test` | sends one test message to every syslog server in effect: `results` (`host`, `port`, `protocol`, `ok`, `message`) |
 | `PUT /api/v1/settings/time` | `{"timezone", "ntp_enabled", "ntp_servers"}`; a field left out stays; blank servers are dropped and names lower-cased; an empty list means the default |
 
@@ -134,4 +143,15 @@ restarted for a change.
 
 ## 6. Not planned (yet)
 
-*(see the end of each section as it is written)*
+Looked at, because other routers have them, and left out for now:
+
+- **Setting the time by hand** (with the time servers off) and **serving time to the networks** (an NTP server for the LAN, and
+  telling DHCP clients about it). The clock follows time servers or it does not.
+- **Encrypted syslog (TLS)**, syslog over the VPN, per-server choices of what to send, and **syslog from other sources** (the DNS
+  query log, a per-rule choice of server).
+- **The web interface's own address, port and certificate**, and allowing the web interface from the internet: certificates will
+  have their own page (System, Certificates) and the firewall keeps the web interface to the default network for now.
+- **Automatic updates** (the Updates page), **backup and restore** (it comes last, once every setting has its place), **factory
+  reset**, **UPnP and NAT-PMP** (a service of its own, if ever), **scheduled restarts**, **a login banner**, **a contact name and
+  location** for the device, **e-mail or push alerts**, **LED and fan control**.
+- **A choice of language, units and date format.** The page uses the browser's.

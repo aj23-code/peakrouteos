@@ -9,6 +9,8 @@ window.SettingsModule = (function () {
     let busy = false;
     let wired = false;
     let clockTimer = null;
+    let power = { arming: null, state: null };   // arming: the button pressed once; state: what is happening after it was confirmed
+    let powerTimer = null;
 
     const $ = (id) => document.getElementById(id);
 
@@ -182,6 +184,55 @@ window.SettingsModule = (function () {
         </section>`;
     }
 
+    function powerCard() {
+        if (power.state) {
+            const text = power.state === 'reboot'
+                ? 'The router is restarting. This page comes back by itself when it is up again, usually after a minute or two.'
+                : 'The router is shutting down. To use it again, switch it back on.';
+            return `<section class="card" id="settings-power"><div class="net-card-head"><h2>Restart or power off</h2></div><div class="form-message form-message--ok" role="status">${text}</div></section>`;
+        }
+        const btn = (action, label) => `<button type="button" class="cfg-btn ${action === 'poweroff' ? 'cfg-btn--danger' : ''} settings-power-btn" data-action="${action}"${locked() ? ' disabled' : ''}>${power.arming === action ? 'Click again to confirm' : label}</button>`;
+        return `<section class="card" id="settings-power">
+            <div class="net-card-head"><h2>Restart or power off</h2></div>
+            <p class="form-hint">Every device behind the router loses its connection while it restarts, usually for a minute or two; what you have committed is kept. Powering off needs someone to switch the router back on. This is not possible while a change is being applied or waits for confirmation.</p>
+            <div class="form-actions">${btn('reboot', 'Restart the router')}${btn('poweroff', 'Power off')}</div>
+        </section>`;
+    }
+
+    async function doPower(action) {
+        if (power.arming !== action) {
+            power.arming = action;
+            render();
+            setTimeout(() => { if (power.arming === action) { power.arming = null; render(); } }, 5000);
+            return;
+        }
+        power.arming = null;
+        showMessage('');
+        busy = true; render();
+        const res = await apiFetch('/api/v1/system/power', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
+        busy = false;
+        if (!res || !res.ok) {
+            let e = {};
+            try { e = res ? await res.json() : {}; } catch (x) { /* not JSON */ }
+            render();
+            showMessage((e.errors || []).map(x => x.message).join(' ') || e.error || 'The request could not be made.', 'error');
+            return;
+        }
+        power.state = action;
+        render();
+        if (action === 'reboot') {
+            // wait until the router has gone and come back, then reload
+            let seenDown = false;
+            clearInterval(powerTimer);
+            powerTimer = setInterval(async () => {
+                let up = false;
+                try { const r = await fetch('/api/v1/config/status', { credentials: 'same-origin' }); up = r.ok || r.status === 401; } catch (e) { up = false; }
+                if (!up) seenDown = true;
+                else if (seenDown) { clearInterval(powerTimer); window.location.reload(); }
+            }, 3000);
+        }
+    }
+
     function render() {
         if (!settings) return;
         const options = option('', 'Choose a country…', settings.country) +
@@ -205,7 +256,9 @@ window.SettingsModule = (function () {
             '<h2 class="settings-group">Time</h2>' +
             timeCard() +
             '<h2 class="settings-group">Logging</h2>' +
-            syslogCard();
+            syslogCard() +
+            '<h2 class="settings-group">Power</h2>' +
+            powerCard();
         keys.concat('time', 'syslog').forEach(updateButton);
         startClock();
     }
@@ -379,6 +432,7 @@ window.SettingsModule = (function () {
         body.addEventListener('click', (e) => {
             if (e.target.id === 'settings-time-save') { saveTime(); return; }
             if (e.target.id === 'settings-syslog-save') { saveSyslog(); return; }
+            if (e.target.classList.contains('settings-power-btn')) { doPower(e.target.dataset.action); return; }
             if (e.target.id === 'sl-add') {
                 const s = syslogEdit();
                 if (s.servers.length === 0) { s.system = true; s.firewall = true; }
@@ -406,6 +460,7 @@ window.SettingsModule = (function () {
         settings = null;
         typed = blankTyped();
         load();
+        power = { arming: null, state: null };
         return () => { clearInterval(clockTimer); clockTimer = null; };
     }
 
