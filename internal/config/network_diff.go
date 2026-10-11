@@ -184,6 +184,7 @@ func DiffNetwork(active, candidate NetworkConfig) []Change {
 	changes = append(changes, diffWifi(active, candidate)...)
 	changes = append(changes, diffFirewall(active, candidate)...)
 	changes = append(changes, diffDNS(active, candidate)...)
+	changes = append(changes, diffDDNS(active, candidate)...)
 	changes = append(changes, diffNetworks(active, candidate)...)
 	changes = append(changes, diffPortNetworks(active, candidate)...)
 	return append(changes, diffRoutes(active.Routes, candidate.Routes)...)
@@ -628,6 +629,45 @@ func diffDNS(active, candidate NetworkConfig) []Change {
 	for _, f := range a.Forwards {
 		if !newFwd[f.ID] {
 			changes = append(changes, Change{Field: "dns_forwards", Label: "Domain forwarding " + f.Domain, Old: DNSForwardText(f), New: "(removed)"})
+		}
+	}
+	return changes
+}
+
+// diffDDNS describes Dynamic DNS changes in words: one line per name added, removed or changed. A password is never shown: a
+// change of it is "set" or "changed".
+func diffDDNS(active, candidate NetworkConfig) []Change {
+	a, b := active.DDNSSettings(), candidate.DDNSSettings()
+	var changes []Change
+	label := func(e DDNSEntry) string { return "Dynamic DNS " + e.Hostname }
+	same := func(x, y DDNSEntry) bool { x.Password, y.Password = "", ""; return x == y }
+	newIDs := map[string]bool{}
+	for _, e := range b.Entries {
+		newIDs[e.ID] = true
+		old, had := a.FindDDNS(e.ID)
+		switch {
+		case !had:
+			changes = append(changes, Change{Field: "ddns", Label: label(e), Old: valueNone, New: DDNSText(e)})
+		case !same(old, e):
+			before := DDNSText(old)
+			if old.Hostname != e.Hostname {
+				before = fmt.Sprintf("%q: %s", old.Hostname, before)
+			}
+			changes = append(changes, Change{Field: "ddns", Label: label(e), Old: before, New: DDNSText(e)})
+		}
+		if had && old.Password != e.Password {
+			change := Change{Field: "ddns_password", Label: "Dynamic DNS password of " + e.Hostname, Old: "set", New: "changed"}
+			if old.Password == "" {
+				change.Old, change.New = valueNone, "set"
+			} else if e.Password == "" {
+				change.New = valueNone
+			}
+			changes = append(changes, change)
+		}
+	}
+	for _, e := range a.Entries {
+		if !newIDs[e.ID] {
+			changes = append(changes, Change{Field: "ddns", Label: label(e), Old: DDNSText(e), New: "(removed)"})
 		}
 	}
 	return changes

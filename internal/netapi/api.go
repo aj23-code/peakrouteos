@@ -17,6 +17,7 @@ import (
 
 	"peakroute/internal/auth"
 	"peakroute/internal/config"
+	"peakroute/internal/ddns"
 	"peakroute/internal/network"
 	"peakroute/internal/syslogfwd"
 	"peakroute/internal/wireless"
@@ -49,6 +50,10 @@ type API struct {
 	// Nil means syslog forwarding is not reported.
 	SyslogStatuses func() []syslogfwd.ServerStatus
 	SyslogTest     func(ctx context.Context) []syslogfwd.TestResult
+	// DDNSStatuses says how each name that is kept up to date is going; DDNSUpdate updates one now (ok false: it is not running).
+	// Nil means Dynamic DNS is not reported.
+	DDNSStatuses func() []ddns.Status
+	DDNSUpdate   func(ctx context.Context, id string) (ddns.Status, bool)
 	// FirewallLog is the store of the packets that firewall rules with logging matched. Nil means it is not reported.
 	FirewallLog FirewallLogStore
 	// Connections reads the kernel's table of connections passing through the router: the connections, how many are

@@ -23,6 +23,7 @@ import (
 	"peakroute/internal/auth"
 	"peakroute/internal/cert"
 	"peakroute/internal/config"
+	"peakroute/internal/ddns"
 	"peakroute/internal/fwlog"
 	"peakroute/internal/netapi"
 	"peakroute/internal/network"
@@ -201,6 +202,21 @@ func main() {
 		}
 	}()
 
+	// Keep the names of the Dynamic DNS page pointed at the internet connection's address
+	ddnsUpdater := &ddns.Updater{
+		Entries: func() []config.DDNSEntry { return cfgMgr.NetworkConfig().DDNSSettings().Entries },
+		WAN: func() (netip.Addr, bool) {
+			up, addr, _ := network.WANConnection(cfgMgr.NetworkConfig().WanDevice())
+			if !up || addr == "" {
+				return netip.Addr{}, false
+			}
+			host, _, _ := strings.Cut(addr, "/")
+			ip, err := netip.ParseAddr(host)
+			return ip, err == nil
+		},
+	}
+	go ddnsUpdater.Run(pollerCtx)
+
 	// Keep the firewall log: the packets that rules with logging matched, read from the kernel log into a database
 	// of their own (the journal is shared and size limited)
 	fwLogStore, err := fwlog.Open(filepath.Join(configDir, "firewall_log.db"))
@@ -348,6 +364,11 @@ func main() {
 	mux.HandleFunc("/api/v1/settings/country", requireAuth(netAPI.HandleSettingsCountry))
 	mux.HandleFunc("/api/v1/settings/domain", requireAuth(netAPI.HandleSettingsDomain))
 	netAPI.TimeStatus = network.ReadTimeStatus
+	netAPI.DDNSStatuses = ddnsUpdater.Statuses
+	netAPI.DDNSUpdate = ddnsUpdater.UpdateNow
+	mux.HandleFunc("/api/v1/ddns", requireAuth(netAPI.HandleDDNS))
+	mux.HandleFunc("/api/v1/ddns/{id}", requireAuth(netAPI.HandleDDNSEntry))
+	mux.HandleFunc("/api/v1/ddns/{id}/update", requireAuth(netAPI.HandleDDNSUpdate))
 	netAPI.SyslogStatuses = syslogForwarder.Statuses
 	netAPI.SyslogTest = func(ctx context.Context) []syslogfwd.TestResult {
 		return syslogForwarder.SendTest(ctx, "PeakRoute test message")

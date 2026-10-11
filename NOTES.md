@@ -458,6 +458,26 @@ syslog forwarding, a Power card (restart, shut down), and a regrouped page. Buil
 - **Power** (`auth.AdminAPI.HandlePower`, `POST /api/v1/system/power`): restart or power off, administrators only, refused while a change is being applied or awaits confirmation (`Idle` is the pipeline's `Idle`), answered first and carried out two seconds later with `systemctl reboot|poweroff` through the same runner as the applier (so `-dev` only logs it). The page asks twice, then waits for the router to go away and come back and reloads itself. The Settings page is now four groups: General, Time, Logging, Power.
 - **Syslog forwarding** (`internal/syslogfwd`, `config/settings.go`). `syslog` in `network.json`: up to three servers (name or IPv4, port, `udp` or `tcp`), `system` and `firewall` switches. Not a system service: the daemon sends itself. `Forwarder.Update` (fed every 5 s with the configuration *in effect*) starts, keeps or stops one sender per server (a goroutine with a 2,000-message queue: oldest dropped when full, TCP reconnects with 1 s doubling to 30 s and re-sends the message it was holding) and a `journalctl -f -n 0` follower that runs only while the system log is wanted; firewall packets arrive from the firewall log reader through `fwlog.Collector.OnPacket` (every packet, not the folded rows; packets older than two minutes are skipped so a restart does not replay the journal). RFC 5424, TCP lines end in LF, no TLS (not planned yet). Firewall messages carry the rule's name and action; the journal's own facility and severity are kept. `Statuses()` shows per server sent, dropped, connected and the last error on the Settings page, and `POST /api/v1/syslog/test` (Diagnostics, Syslog test) sends one message to every server in effect. Checked end to end against a real UDP listener in the sandbox (a real journal entry and the test message arrived with the router's host name). The mutation check found a hang-prone harness (a mutant that wrote invalid UTF-8 killed the script that restores the files) and four weak spots that now have tests.
 
+## 7l. Dynamic DNS (built 2026-10-11)
+
+Design, services, rules and API are in **`docs/ddns.md`**. Services → Dynamic DNS keeps names pointed at the internet connection's
+address. In short: `ddns` in `network.json` (up to ten entries: provider `dyndns2`/`duckdns`/`cloudflare`/`custom`, name, server, user,
+password or token, custom https URL with `{ip}`/`{hostname}`/`{username}`/`{password}`, source `wan` or `web`); the daemon does the
+updating itself (`internal/ddns`: a 30 s loop over the configuration *in effect*, one function per service, an HTTP client that only
+follows https redirects), so a commit that changes only this has an empty plan.
+
+- **Rules:** a connection address that is private or in `100.64.0.0/10` is never published (the page says so; the `web` source asks
+  api.ipify.org then icanhazip.com over https instead); an unchanged name is told again after a week; trouble that may pass backs off
+  1, 2, 4... up to 30 minutes; trouble that needs a change (bad login, no such name, abuse) stops the name until it is edited or *Update
+  now* is pressed. A changed entry starts afresh (its state is keyed by all its fields).
+- **Secrets are write-only** (stored 0600 in `network.json`; the API says `password_set`; the review says *set* or *changed*; no status or
+  log line holds one). A provider change drops the fields that belong to the old provider. Cloudflare: zone found by taking labels off
+  from the left (never the bare TLD), record changed keeping TTL and proxy setting, or added.
+- **Tests:** fake services over real TLS (`internal/ddns/ddns_test.go`), API tests (`netapi/ddns_test.go`), config tests; mutation
+  checks on all three. A harness lesson: the checking script must decode the test output leniently, or a mutant that writes bad text
+  can crash it and leave a file broken.
+- Not checked against a real service. The Services menu now has DNS and Dynamic DNS; VPN is the one planned entry left there.
+
 ## 7e. Static routes (built 2026-10-08)
 
 **Model.** `NetworkConfig.Routes` is a list of `{name, destination, gateway, metric, disabled}` (JSON keys

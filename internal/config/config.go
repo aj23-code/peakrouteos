@@ -112,6 +112,7 @@ type NetworkConfig struct {
 	NTPDisabled   bool          `json:"ntp_disabled,omitempty"`  // do not keep the time with time servers
 	NTPServers    []string      `json:"ntp_servers,omitempty"`   // empty: the default (pool.ntp.org)
 	Syslog        *SyslogConfig `json:"syslog,omitempty"`        // send the logs to syslog servers
+	DDNS          *DDNSConfig   `json:"ddns,omitempty"`          // names kept pointed at the internet connection's address
 	WanPPPoE      *PPPoEConfig  `json:"wan_pppoe,omitempty"`
 	LanInterfaces []string      `json:"lan_interfaces,omitempty"`
 	LanIP         string        `json:"lan_ip,omitempty"`
@@ -221,6 +222,10 @@ func (c NetworkConfig) clone() NetworkConfig {
 	if c.Syslog != nil {
 		s := c.Syslog.clone()
 		c.Syslog = &s
+	}
+	if c.DDNS != nil {
+		d := c.DDNS.clone()
+		c.DDNS = &d
 	}
 	if c.WanPPPoE != nil {
 		p := *c.WanPPPoE

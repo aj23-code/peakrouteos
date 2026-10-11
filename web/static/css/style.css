@@ -1674,3 +1674,7 @@ height: 260px;
 @media (max-width: 640px) { .settings-sl-row { grid-template-columns: 1fr 5rem; } .settings-sl-row .cfg-btn { grid-column: 1 / -1; } }
 .settings-sl-row select { min-width: 0; width: 100%; }
 .settings-sl-row .cfg-btn { white-space: nowrap; }
+
+/* ---------- Dynamic DNS ---------- */
+.ddns-status { margin-top: 0.35rem; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: baseline; }
+.ddns-row .fw-main { min-width: 0; }
