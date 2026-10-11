@@ -26,12 +26,18 @@ type Band struct {
 	Name     string    `json:"name"`   // "2.4 GHz", "5 GHz" or "6 GHz"
 	Widths   []int     `json:"widths"` // channel widths in MHz the adapter can use in this band
 	Channels []Channel `json:"channels"`
+	HT       bool      `json:"ht"`  // 802.11n
+	VHT      bool      `json:"vht"` // 802.11ac
+	HE       bool      `json:"he"`  // 802.11ax (Wi-Fi 6)
 }
 
 // Phy is what `iw phy <name> info` says about an adapter.
 type Phy struct {
 	Modes []string // interface modes: managed, AP, monitor, ...
 	Bands []Band
+	// MaxAP is how many access point interfaces (Wi-Fi networks) the adapter can run at the same time;
+	// 0 when it does not say.
+	MaxAP int
 }
 
 // CanAP reports whether the adapter can act as an access point.
@@ -84,6 +90,8 @@ func ParsePhyInfo(text string) Phy {
 		break
 	}
 
+	phy.MaxAP = parseMaxAP(lines)
+
 	// the bands: each starts at "\tBand N:" and runs to the next line with a single tab of indent
 	for i := 0; i < len(lines); i++ {
 		if !bandHeader.MatchString(lines[i]) {
@@ -103,12 +111,14 @@ func ParsePhyInfo(text string) Phy {
 
 func parseBand(lines []string) (Band, bool) {
 	var b Band
-	var ht40, vht, vht160, he, he160 bool
+	var ht40, ht, vht, vht160, he, he160 bool
 	for _, l := range lines {
 		t := strings.TrimSpace(l)
 		switch {
 		case strings.Contains(t, "HT20/HT40"):
 			ht40 = true
+		case strings.HasPrefix(t, "HT Max RX data rate"):
+			ht = true
 		case strings.HasPrefix(t, "VHT Capabilities"):
 			vht = true
 		case strings.HasPrefix(t, "Supported Channel Width:"):
@@ -141,6 +151,7 @@ func parseBand(lines []string) (Band, bool) {
 		return Band{}, false
 	}
 
+	b.HT, b.VHT, b.HE = ht40 || ht, vht, he
 	b.Widths = []int{20}
 	if ht40 {
 		b.Widths = append(b.Widths, 40)
@@ -165,4 +176,56 @@ func ParseCountry(text string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+var (
+	comboGroup = regexp.MustCompile(`#\{ ([^}]*) \} <= (\d+)`)
+	comboTotal = regexp.MustCompile(`total <= (\d+)`)
+)
+
+// parseMaxAP reads the "valid interface combinations" block: each combination limits how many
+// interfaces of each kind run together. The adapter can run as many access points as its best
+// combination allows (and never more than that combination's total).
+func parseMaxAP(lines []string) int {
+	best := 0
+	for i := 0; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) != "valid interface combinations:" {
+			continue
+		}
+		// each combination starts with "\t\t * " and may continue on lines indented further
+		var combos []string
+		for _, l := range lines[i+1:] {
+			switch {
+			case strings.HasPrefix(l, "\t\t * "):
+				combos = append(combos, l)
+			case strings.HasPrefix(l, "\t\t   ") && len(combos) > 0:
+				combos[len(combos)-1] += " " + strings.TrimSpace(l)
+			default:
+				goto done
+			}
+		}
+	done:
+		for _, c := range combos {
+			ap := 0
+			for _, g := range comboGroup.FindAllStringSubmatch(c, -1) {
+				for _, kind := range strings.Split(g[1], ",") {
+					if strings.TrimSpace(kind) == "AP" {
+						n, _ := strconv.Atoi(g[2])
+						if n > ap {
+							ap = n
+						}
+					}
+				}
+			}
+			if t := comboTotal.FindStringSubmatch(c); t != nil && ap > 0 {
+				if total, _ := strconv.Atoi(t[1]); total < ap {
+					ap = total
+				}
+			}
+			if ap > best {
+				best = ap
+			}
+		}
+	}
+	return best
 }

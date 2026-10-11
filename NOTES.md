@@ -515,6 +515,35 @@ This rule is about *where roles are chosen*, not a statement that Wi-Fi is alway
 - Station mode needs `wpasupplicant`, which the image does not have yet (hostapd is only the AP side); it
   would be added with that work. The AP side of a PtP bridge is hostapd with `wds_sta=1`.
 
+### Wi-Fi networks: model and rules (stage 1 of the build, 2026-10-10)
+
+Built in stages: (1) config, validation and review lines, (2) translator and the wifi service, (3) API, (4) page.
+- **Model** (`internal/config/wifi.go`, in `network.json` under `wifi`, so it goes through the same draft, review,
+  commit and confirm steps): `country` (ISO code, from a generated list of 249 in `countries.go`), `radios`
+  (one per adapter used as an access point: `name`, `band` 2.4 or 5 GHz, `channel` (0 = automatic), `width` 20/40/80/160,
+  `disabled`) and `networks` (the SSIDs: `id`, `ssid`, `network` (the id of the Local Network it joins, `lan`
+  being the default), `security` (`wpa2`, `wpa3` or `wpa2-wpa3`), `passphrase`, `bands`, `band_steering`,
+  `hidden`, `client_isolation`, `disabled`). 6 GHz is not offered (it needs WPA3-only and a different set-up).
+- **Band steering** is a flag on an SSID that is broadcast on both bands: devices that can use 5 GHz are pushed
+  off 2.4 GHz. It needs both bands (validated).
+- **Validation** (errors on `wifi.country`, `wifi.radios[i].x`, `wifi.networks[i].x`, and `wifi.coverage`):
+  the country must be known and is required once an adapter and a network are both switched on; an adapter is
+  listed once, with a band that allows its width and a channel that exists in the band and **can be the primary
+  channel of that width** (40 MHz needs a neighbouring pair, 80 and 160 MHz fixed blocks: `ChannelFitsWidth`,
+  `HT40Direction` and `CentreChannel` are the same tables hostapd's settings are computed from); an SSID is
+  1 to 32 *bytes*, no control characters, no space at either end, and unique (a duplicate is reported on both);
+  the passphrase is 8 to 63 printable ASCII characters; the local network must exist; every band a switched-on
+  SSID uses needs a switched-on adapter for it (`wifi.coverage`, a commit-time problem: an SSID can be made before
+  its adapter is set up). Open networks are not offered.
+- **Review dialog:** one line per adapter and per Wi-Fi network (added, removed, changed; a rename is one
+  change) and one for the country, naming the local network. **A passphrase never appears:** a changed one is
+  reported as "new password" and a new network as "password set".
+- **`network.json` is now written 0600** (it can hold passphrases; it used to be 0644). The staged copy and the
+  snapshot kept for a revert (`confirm.json`, already 0600) follow the same rule.
+- **Adapter facts the page needs** (`internal/wireless`): `max_ap` (how many Wi-Fi networks an adapter can run at
+  once, from its "valid interface combinations": 1 on the dev laptop's Intel adapter) and per band `ht`, `vht`,
+  `he` (802.11n, ac, ax).
+
 **Next, in order:** the config model for Wi-Fi networks (an SSID tied to a Local Network, so a Guest SSID lands
 on the Guest VLAN: name, WPA2/WPA3 passphrase, band, channel, width), the translator for hostapd, the country
 setting, then AP mode (the limited GUI and a translator that bridges everything to one port).

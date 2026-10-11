@@ -98,6 +98,7 @@ func DiffNetwork(active, candidate NetworkConfig) []Change {
 			changes = append(changes, Change{Field: s.field, Label: s.label, Old: before, New: after})
 		}
 	}
+	changes = append(changes, diffWifi(active, candidate)...)
 	changes = append(changes, diffNetworks(active, candidate)...)
 	changes = append(changes, diffPortNetworks(active, candidate)...)
 	return append(changes, diffRoutes(active.Routes, candidate.Routes)...)
@@ -285,4 +286,117 @@ func (m *Manager) StagedChanges() []Change {
 		return nil
 	}
 	return DiffNetwork(m.network, m.staged)
+}
+
+// ---- Wi-Fi -----------------------------------------------------------------------------------------
+//
+// The review shows what changes, never a passphrase: a changed one is reported as "new password".
+
+func radioText(r WifiRadio) string {
+	channel := "automatic channel"
+	if r.Channel != 0 {
+		channel = fmt.Sprintf("channel %d", r.Channel)
+	}
+	out := fmt.Sprintf("%s, %s, %d MHz", r.Band, channel, r.Width)
+	if r.Disabled {
+		out += " (switched off)"
+	}
+	return out
+}
+
+func localNetworkName(c NetworkConfig, id string) string {
+	if id == DefaultNetworkID {
+		return "LAN"
+	}
+	if n, ok := c.FindNetwork(id); ok && strings.TrimSpace(n.Name) != "" {
+		return strings.TrimSpace(n.Name)
+	}
+	return id
+}
+
+func wifiNetworkText(c NetworkConfig, n WifiNetwork) string {
+	security := map[string]string{SecurityWPA2: "WPA2", SecurityWPA3: "WPA3", SecurityWPA2WPA3: "WPA2/WPA3"}[n.Security]
+	if security == "" {
+		security = text(n.Security)
+	}
+	parts := []string{"joins " + localNetworkName(c, n.Network), security, strings.Join(n.Bands, " + ")}
+	if n.BandSteering {
+		parts = append(parts, "band steering")
+	}
+	if n.Hidden {
+		parts = append(parts, "hidden")
+	}
+	if n.ClientIsolation {
+		parts = append(parts, "devices isolated from each other")
+	}
+	if n.Disabled {
+		parts = append(parts, "switched off")
+	}
+	return strings.Join(parts, ", ")
+}
+
+func diffWifi(active, candidate NetworkConfig) []Change {
+	a, b := active.WifiSettings(), candidate.WifiSettings()
+	var changes []Change
+
+	if a.Country != b.Country {
+		changes = append(changes, Change{Field: "wifi_country", Label: "Wi-Fi country", Old: text(a.Country), New: text(b.Country)})
+	}
+
+	// adapters, by name
+	before := map[string]WifiRadio{}
+	for _, r := range a.Radios {
+		before[r.Name] = r
+	}
+	seen := map[string]bool{}
+	for _, r := range b.Radios {
+		seen[r.Name] = true
+		old, existed := before[r.Name]
+		switch {
+		case !existed:
+			changes = append(changes, Change{Field: "wifi_radios", Label: "Wi-Fi adapter " + r.Name, Old: valueNone, New: radioText(r)})
+		case old != r:
+			changes = append(changes, Change{Field: "wifi_radios", Label: "Wi-Fi adapter " + r.Name, Old: radioText(old), New: radioText(r)})
+		}
+	}
+	for _, r := range a.Radios {
+		if !seen[r.Name] {
+			changes = append(changes, Change{Field: "wifi_radios", Label: "Wi-Fi adapter " + r.Name, Old: radioText(r), New: "(removed)"})
+		}
+	}
+
+	// Wi-Fi networks, by id
+	prev := map[string]WifiNetwork{}
+	for _, n := range a.Networks {
+		prev[n.ID] = n
+	}
+	seenNet := map[string]bool{}
+	label := func(n WifiNetwork) string { return "Wi-Fi network " + text(n.SSID) }
+	for _, n := range b.Networks {
+		seenNet[n.ID] = true
+		old, existed := prev[n.ID]
+		if !existed {
+			changes = append(changes, Change{Field: "wifi_networks", Label: label(n), Old: valueNone, New: wifiNetworkText(candidate, n) + ", password set"})
+			continue
+		}
+		oldText, newText := wifiNetworkText(active, old), wifiNetworkText(candidate, n)
+		passwordChanged := old.Passphrase != n.Passphrase
+		if oldText == newText && !passwordChanged && old.SSID == n.SSID {
+			continue
+		}
+		l := label(n)
+		if old.SSID != n.SSID {
+			l = label(old) + " (now " + text(n.SSID) + ")"
+		}
+		if passwordChanged {
+			newText += ", new password"
+		}
+		changes = append(changes, Change{Field: "wifi_networks", Label: l, Old: oldText, New: newText})
+	}
+	for _, n := range a.Networks {
+		if !seenNet[n.ID] {
+			changes = append(changes, Change{Field: "wifi_networks", Label: label(n), Old: wifiNetworkText(active, n), New: "(removed)"})
+		}
+	}
+	return changes
 }

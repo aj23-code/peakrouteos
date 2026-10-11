@@ -339,3 +339,44 @@ func TestDetectionEdges(t *testing.T) {
 		}
 	}
 }
+
+func TestAccessPointCountAndStandardsFromARealAdapter(t *testing.T) {
+	phy := ParsePhyInfo(fixture(t))
+	if phy.MaxAP != 1 {
+		t.Errorf("MaxAP = %d: the adapter allows one access point at a time (the second combination)", phy.MaxAP)
+	}
+	b24, b5 := band(t, phy, "2.4 GHz"), band(t, phy, "5 GHz")
+	if !b24.HT || b24.VHT || b24.HE {
+		t.Errorf("2.4 GHz: %+v", b24)
+	}
+	if !b5.HT || !b5.VHT || b5.HE {
+		t.Errorf("5 GHz: %+v", b5)
+	}
+}
+
+func TestMaxAPFromVariousCombinations(t *testing.T) {
+	cases := map[string]struct {
+		text string
+		want int
+	}{
+		"several, limited by the total":  {"\tvalid interface combinations:\n\t\t * #{ AP } <= 8, #{ managed } <= 2,\n\t\t   total <= 4, #channels <= 1\n\tBand 1:\n", 4},
+		"the best combination wins":      {"\tvalid interface combinations:\n\t\t * #{ managed } <= 1, #{ AP } <= 2,\n\t\t   total <= 3, #channels <= 1\n\t\t * #{ AP } <= 5,\n\t\t   total <= 5, #channels <= 2\n", 5},
+		"AP/VLAN is not an access point": {"\tvalid interface combinations:\n\t\t * #{ AP/VLAN } <= 8, #{ managed } <= 1,\n\t\t   total <= 9, #channels <= 1\n", 0},
+		"AP sharing a group":             {"\tvalid interface combinations:\n\t\t * #{ managed } <= 1, #{ AP, P2P-client, P2P-GO } <= 1,\n\t\t   total <= 3, #channels <= 1\n", 1},
+		"no total stated":                {"\tvalid interface combinations:\n\t\t * #{ AP } <= 3, #channels <= 1\n", 3},
+		"no combinations":                {"\tSupported interface modes:\n\t\t * AP\n", 0},
+	}
+	for name, c := range cases {
+		if got := ParsePhyInfo(c.text).MaxAP; got != c.want {
+			t.Errorf("%s: %d, want %d", name, got, c.want)
+		}
+	}
+}
+
+func TestADetectedAdapterCarriesItsAccessPointCount(t *testing.T) {
+	var calls []string
+	rep := Detector{SysClassNet: fakeSys(t, map[string]string{"wlan0": "phy0"}), Run: runnerWith(fixture(t), &calls)}.Detect(context.Background())
+	if rep.Adapters[0].MaxAP != 1 {
+		t.Errorf("%+v", rep.Adapters[0])
+	}
+}

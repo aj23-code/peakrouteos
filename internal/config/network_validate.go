@@ -218,6 +218,9 @@ func (c NetworkConfig) Validate() error {
 	// --- Static routes ---
 	c.validateRoutes(add, lanPrefix, lanOK, lanIP, wanPrefix, haveWanPrefix)
 
+	// --- Wi-Fi ---
+	c.validateWifi(add)
+
 	if len(errs) == 0 {
 		return nil
 	}

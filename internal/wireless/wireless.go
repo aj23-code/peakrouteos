@@ -21,6 +21,7 @@ type Adapter struct {
 	State             string   `json:"state"` // the link state the kernel reports
 	CapabilitiesKnown bool     `json:"capabilities_known"`
 	APCapable         bool     `json:"ap_capable"`
+	MaxAP             int      `json:"max_ap"` // Wi-Fi networks the adapter can run at once (0: not stated)
 	Modes             []string `json:"modes"`
 	Bands             []Band   `json:"bands"`
 }
@@ -100,6 +101,7 @@ func (d Detector) Detect(ctx context.Context) Report {
 		phy := ParsePhyInfo(out)
 		a.CapabilitiesKnown = true
 		a.APCapable = phy.CanAP()
+		a.MaxAP = phy.MaxAP
 		if phy.Modes != nil {
 			a.Modes = phy.Modes
 		}

@@ -56,8 +56,8 @@ func TestSaveAndLoadRoundTripWithExpectedPermissions(t *testing.T) {
 		t.Errorf("sys round trip = %+v, %v", gotSys, err)
 	}
 
-	// The password file must not be readable by other users
-	for path, want := range map[string]os.FileMode{authPath: 0600, netPath: 0644, sysPath: 0644} {
+	// The password file and the network file (which can hold Wi-Fi passphrases) must not be readable by other users
+	for path, want := range map[string]os.FileMode{authPath: 0600, netPath: 0600, sysPath: 0644} {
 		info, err := os.Stat(path)
 		if err != nil {
 			t.Fatal(err)

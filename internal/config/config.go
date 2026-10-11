@@ -109,11 +109,13 @@ type NetworkConfig struct {
 	Routes        []Route     `json:"routes,omitempty"`
 	// Further local networks, and which LAN ports carry them. LanIsolated is the default network's
 	// own isolation switch (the extra networks carry theirs).
-	LanIsolated     bool                    `json:"lan_isolated,omitempty"`
-	Networks        []Network               `json:"networks,omitempty"`
-	PortNetworks    map[string]PortNetworks `json:"port_networks,omitempty"`
-	Interfaces      []SystemInterface       `json:"interfaces,omitempty"`
-	ManagedSwitches []ManagedSwitchConfig   `json:"managed_switches,omitempty"`
+	LanIsolated  bool                    `json:"lan_isolated,omitempty"`
+	Networks     []Network               `json:"networks,omitempty"`
+	PortNetworks map[string]PortNetworks `json:"port_networks,omitempty"`
+	// Wi-Fi: the country, which adapters serve as access points and the Wi-Fi networks (SSIDs)
+	Wifi            *WifiConfig           `json:"wifi,omitempty"`
+	Interfaces      []SystemInterface     `json:"interfaces,omitempty"`
+	ManagedSwitches []ManagedSwitchConfig `json:"managed_switches,omitempty"`
 }
 
 type SysConfig struct {
@@ -207,6 +209,10 @@ func (c NetworkConfig) clone() NetworkConfig {
 		c.Networks = nil
 	}
 	c.PortNetworks = clonePortNetworks(c.PortNetworks)
+	if c.Wifi != nil {
+		w := c.Wifi.clone()
+		c.Wifi = &w
+	}
 	c.Interfaces = append([]SystemInterface(nil), c.Interfaces...)
 
 	if len(c.ManagedSwitches) > 0 {
@@ -713,7 +719,8 @@ func SaveNetworkConfig(filepath string, cfg *NetworkConfig) error {
 	if err != nil {
 		return err
 	}
-	return fsutil.WriteFileAtomic(filepath, data, 0644)
+	// 0600: the file can hold Wi-Fi passphrases
+	return fsutil.WriteFileAtomic(filepath, data, 0600)
 }
 
 func LoadNetworkConfig(filepath string) (*NetworkConfig, error) {
