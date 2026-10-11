@@ -123,6 +123,7 @@ type NetworkConfig struct {
 	Country string `json:"country,omitempty"`
 	// Wi-Fi: which adapters serve as access points and the Wi-Fi networks (SSIDs)
 	Wifi            *WifiConfig           `json:"wifi,omitempty"`
+	Firewall        *FirewallConfig       `json:"firewall,omitempty"` // the rules and port forwards (docs/firewall.md)
 	Interfaces      []SystemInterface     `json:"interfaces,omitempty"`
 	ManagedSwitches []ManagedSwitchConfig `json:"managed_switches,omitempty"`
 }
@@ -225,6 +226,10 @@ func (c NetworkConfig) clone() NetworkConfig {
 	if c.Wifi != nil {
 		w := c.Wifi.clone()
 		c.Wifi = &w
+	}
+	if c.Firewall != nil {
+		f := c.Firewall.clone()
+		c.Firewall = &f
 	}
 	c.Interfaces = append([]SystemInterface(nil), c.Interfaces...)
 

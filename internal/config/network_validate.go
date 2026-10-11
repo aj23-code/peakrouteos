@@ -230,6 +230,9 @@ func (c NetworkConfig) Validate() error {
 	// --- Wi-Fi ---
 	c.validateWifi(add)
 
+	// --- Firewall ---
+	c.validateFirewall(add)
+
 	if len(errs) == 0 {
 		return nil
 	}

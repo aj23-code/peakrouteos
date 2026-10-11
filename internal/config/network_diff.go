@@ -159,6 +159,7 @@ func DiffNetwork(active, candidate NetworkConfig) []Change {
 	}
 	changes = append(changes, diffWanSecret(active, candidate)...)
 	changes = append(changes, diffWifi(active, candidate)...)
+	changes = append(changes, diffFirewall(active, candidate)...)
 	changes = append(changes, diffNetworks(active, candidate)...)
 	changes = append(changes, diffPortNetworks(active, candidate)...)
 	return append(changes, diffRoutes(active.Routes, candidate.Routes)...)
@@ -455,4 +456,98 @@ func diffWifi(active, candidate NetworkConfig) []Change {
 		}
 	}
 	return changes
+}
+
+// diffFirewall describes rule and port forward changes in words: one line per rule added, removed or changed
+// (a rename is one change), and one line when the order of the rules changed.
+func diffFirewall(active, candidate NetworkConfig) []Change {
+	a, b := active.FirewallSettings(), candidate.FirewallSettings()
+	var changes []Change
+
+	oldRules := map[string]FirewallRule{}
+	for _, r := range a.Rules {
+		oldRules[r.ID] = r
+	}
+	newRules := map[string]FirewallRule{}
+	for _, r := range b.Rules {
+		newRules[r.ID] = r
+	}
+	for _, r := range b.Rules {
+		old, had := oldRules[r.ID]
+		label := "Firewall rule " + r.Name
+		switch {
+		case !had:
+			changes = append(changes, Change{Field: "firewall_rules", Label: label, Old: valueNone, New: candidate.RuleText(r)})
+		case old != r:
+			before := active.RuleText(old)
+			if old.Name != r.Name {
+				before = fmt.Sprintf("%q: %s", old.Name, before)
+			}
+			changes = append(changes, Change{Field: "firewall_rules", Label: label, Old: before, New: candidate.RuleText(r)})
+		}
+	}
+	for _, r := range a.Rules {
+		if _, kept := newRules[r.ID]; !kept {
+			changes = append(changes, Change{Field: "firewall_rules", Label: "Firewall rule " + r.Name, Old: active.RuleText(r), New: "(removed)"})
+		}
+	}
+	// the order of the rules that exist both before and after
+	var before, after []string
+	for _, r := range a.Rules {
+		if _, kept := newRules[r.ID]; kept {
+			before = append(before, r.ID)
+		}
+	}
+	for _, r := range b.Rules {
+		if _, had := oldRules[r.ID]; had {
+			after = append(after, r.ID)
+		}
+	}
+	if strings.Join(before, ",") != strings.Join(after, ",") {
+		names := func(ids []string, c NetworkConfig) string {
+			var out []string
+			for _, id := range ids {
+				if r, ok := c.FirewallSettings().FindRule(id); ok {
+					out = append(out, r.Name)
+				}
+			}
+			return strings.Join(out, ", then ")
+		}
+		changes = append(changes, Change{Field: "firewall_order", Label: "Firewall rule order", Old: names(before, active), New: names(after, candidate)})
+	}
+
+	oldFwd := map[string]PortForward{}
+	for _, p := range a.Forwards {
+		oldFwd[p.ID] = p
+	}
+	newFwd := map[string]PortForward{}
+	for _, p := range b.Forwards {
+		newFwd[p.ID] = p
+	}
+	for _, p := range b.Forwards {
+		old, had := oldFwd[p.ID]
+		label := "Port forward " + p.Name
+		switch {
+		case !had:
+			changes = append(changes, Change{Field: "firewall_forwards", Label: label, Old: valueNone, New: candidate.ForwardText(p)})
+		case !portForwardEqual(old, p):
+			before := active.ForwardText(old)
+			if old.Name != p.Name {
+				before = fmt.Sprintf("%q: %s", old.Name, before)
+			}
+			changes = append(changes, Change{Field: "firewall_forwards", Label: label, Old: before, New: candidate.ForwardText(p)})
+		}
+	}
+	for _, p := range a.Forwards {
+		if _, kept := newFwd[p.ID]; !kept {
+			changes = append(changes, Change{Field: "firewall_forwards", Label: "Port forward " + p.Name, Old: active.ForwardText(p), New: "(removed)"})
+		}
+	}
+	return changes
+}
+
+func portForwardEqual(a, b PortForward) bool {
+	return a.ID == b.ID && a.Name == b.Name && a.Disabled == b.Disabled && a.Protocol == b.Protocol &&
+		a.ExternalPorts == b.ExternalPorts && a.ToIP == b.ToIP && a.InternalPorts == b.InternalPorts &&
+		strings.Join(a.Sources, ",") == strings.Join(b.Sources, ",")
 }
