@@ -526,8 +526,8 @@ window.InternetModule = (function () {
         if (v.mode !== uplink.mode) return true;
         const same = (a, b) => String(a) === String(b);
         if (!same(v.vlan, uplink.vlan || '') || !same(v.mtu, uplink.mtu || '') || v.mac !== (uplink.mac || '')) return true;
-        if (v.dns.join(',') !== (uplink.dns || []).join(',')) return true;
         if (v.mode === 'static') {
+            if (v.dns.join(',') !== (uplink.dns || []).join(',')) return true;
             return v.ip !== (uplink.ip || '') || v.netmask !== (uplink.netmask || '') || v.gateway !== (uplink.gateway || '');
         }
         if (v.mode === 'dhcp') return v.hostname !== (uplink.hostname || '');
@@ -541,7 +541,7 @@ window.InternetModule = (function () {
         if (v.mode === 'static') {
             Object.assign(out, { ip: v.ip, netmask: v.netmask, gateway: v.gateway, dns: v.dns });
         } else {
-            out.dns = v.dns; // replaces the provider's servers; empty puts them back
+            // the servers the router asks instead of the provider's are chosen on the DNS page: left alone here
             if (v.mode === 'dhcp') out.hostname = v.hostname;
             else out.pppoe = Object.assign({ username: v.pppoeUser, service: v.pppoeService }, v.pppoePass !== '' ? { password: v.pppoePass } : {});
         }
@@ -571,11 +571,11 @@ window.InternetModule = (function () {
         $('inet-pppoe-fields').classList.toggle('hidden', m !== 'pppoe');
         $('inet-dhcp-fields').classList.toggle('hidden', m !== 'dhcp');
 
-        // DNS: needed with a static address, an option otherwise
-        $('inet-dns-label').textContent = m === 'static' ? 'DNS servers' : 'DNS servers instead of the provider\'s (optional)';
-        $('inet-dns-hint').textContent = m === 'static'
-            ? 'Up to three, separated by commas. The first one is also what the health chart pings.'
-            : 'Up to three, separated by commas. Leave empty to use the servers your provider hands out.';
+        // DNS: required here with a static address; otherwise it is chosen on the DNS page
+        $('inet-dns-grid').classList.toggle('hidden', m !== 'static');
+        $('inet-dns-moved').classList.toggle('hidden', m === 'static');
+        $('inet-dns-label').textContent = 'DNS servers';
+        $('inet-dns-hint').textContent = 'Up to three, separated by commas. The first one is also what the health chart pings.';
         // the MTU the connection uses when this is empty
         const usual = m === 'pppoe' ? 1492 : 1500;
         $('inet-mtu').placeholder = String(usual);

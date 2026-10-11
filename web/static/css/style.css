@@ -1626,3 +1626,9 @@ height: 260px;
 .fw-group { padding: 0.4rem 0.9rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); background: rgba(255, 255, 255, 0.045); border-top: 1px solid var(--border-color); }
 .fw-group:first-child { border-top: 0; }
 .fw-builtin { margin-bottom: 0.25rem; }
+
+/* ---------- DNS ---------- */
+.dns-net { padding: 1rem 0; border-top: 1px solid var(--border-color); }
+.dns-net:first-of-type { border-top: 0; }
+.dns-net-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.dns-net-head .tag { margin-left: 0; }

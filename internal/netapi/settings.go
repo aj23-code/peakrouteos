@@ -75,7 +75,15 @@ func (a *API) HandleSettingsDomain(w http.ResponseWriter, r *http.Request) {
 	}
 	err := a.Manager.StageNetwork(func(c *config.NetworkConfig) error {
 		c.Domain = domain
-		// a forwarded domain that would now be inside the local domain is refused too
+		// a forwarded domain that would now be inside the local domain is refused too, said so that it can be found
+		if c.DNS != nil && domain != "" {
+			for _, f := range c.DNS.Forwards {
+				if f.Domain == domain || strings.HasSuffix(f.Domain, "."+domain) {
+					return config.ValidationError{{Field: "domain", Message: "would contain the forwarded domain " + f.Domain +
+						", and the router answers a local domain itself, so that forwarding would never be used. Change or remove it on the DNS page first"}}
+				}
+			}
+		}
 		if errs := ownedErrors(c.Validate(), "domain", "dns"); len(errs) > 0 {
 			return errs
 		}

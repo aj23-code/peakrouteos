@@ -418,7 +418,8 @@ dnsmasq stays the engine (no Unbound: no DNS over TLS or DNSSEC for now); the up
   Checked with the **real dnsmasq answering real queries** in a namespace (`TestTheRealDnsmasqAnswersAsTheFileSays`) and
   `dnsmasq --test`.
 - **Stage 3, API** (`netapi/dns.go`, `settings.go`): the upstream servers, what each network is told, local names, forwarded domains and the domain on Settings, with notes about a network's chosen servers. The upstream servers (the old Internet-page `dns`) now also refuse loopback and duplicate servers. Endpoints are in the document.
-- Not yet: the DNS page (Services, DNS), the domain field on Settings, the lookup test. See the build plan.
+- **Stage 4, page** (`web/static/scripts/dns.js`, Services, DNS): the upstream servers (the provider's, or servers of your own; a static connection forces its own), what each network is told (this router, or other servers), local names and forwarded domains as lists with an editor, each saved as a draft; the local domain is shown and linked to Settings. The Internet page keeps the DNS field only for a static address (otherwise it points to the DNS page and no longer sends `dns`); Settings gained a Local domain card. A domain that would contain a forwarded domain is refused on Settings by naming that forward. Checked in a browser against a sandbox build (errors, adding, editing, switching off, two-click delete, review lines).
+- Not yet: the lookup test on the page. See the build plan.
 
 ## 7e. Static routes (built 2026-10-08)
 

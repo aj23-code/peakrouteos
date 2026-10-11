@@ -1,10 +1,10 @@
 # PeakRoute OS DNS
 
-Status (2026-10-11): **stages 1 to 3 built** (the model, the files dnsmasq reads, and the API; there is no page yet). This file was written first and every stage's commit updates it. It is meant to become the DNS chapter of the user documentation.
+Status (2026-10-11): **stages 1 to 4 built** (the model, the files dnsmasq reads, the API and the page; the lookup test is still to come). This file was written first and every stage's commit updates it. It is meant to become the DNS chapter of the user documentation.
 
 Contents: 1 What exists today, 2 Two sides: what the router asks, what the devices are told, 3 What each network is told,
 4 The router's own DNS server, 5 The local domain, 6 Local names, 7 Domain forwarding, 8 Staying out of trouble, 9 Recipes,
-10 Internals, 11 Build plan, 12 Not planned.
+10 The page, 11 Internals, 12 Build plan, 13 Not planned.
 
 ---
 
@@ -115,7 +115,23 @@ under it go to the servers listed (up to three), instead of the upstream servers
 4. **A company domain from a VPN gateway.** Domain forwarding: `corp.example.com` to `10.8.0.1`.
 5. **Use short device names.** System, Settings: domain `lan`; then `laptop` works.
 
-## 10. Internals
+## 10. The page
+
+**Services, DNS.** Top to bottom; every change is saved to the draft and applied when you commit, like the rest:
+
+1. **Where the router asks**: *The provider's servers* (the card shows which ones are in use right now) or *These servers instead*
+   (up to three). With a fixed address on the internet connection only the second is possible. Save, or Reset to what is saved.
+2. **What each network is told**: one block per Local Network with *This router (its address)* or *Other servers* and the
+   servers. Advice (no DHCP from the router there, a server on another network, a public server for a network without
+   internet) is shown under the block.
+3. **Local names**: a list with a switch, Edit and a two-click Delete per entry, and *Add name*. The local domain is shown here
+   but changed under **System, Settings** (the link is on the page).
+4. **Domain forwarding**: the same, with *Add domain*.
+
+The Internet page only shows a *DNS servers* field for a fixed address; otherwise it says that the DNS page decides. Errors
+appear under the field they belong to; a draft entry carries a *Draft* tag until it is committed.
+
+## 11. Internals
 
 **Storage** in `network.json`; every key is written only when it has something in it:
 
@@ -194,18 +210,18 @@ DNS name, a forwarded domain with a slash or a newline in it, and any server or 
 4. What dnsmasq would tell a DHCP client is *not* checked with a real client (no DHCP client is available to the tests); the
    lines are compared as text and accepted by `dnsmasq --test`.
 
-## 11. Build plan
+## 12. Build plan
 
 Each stage is its own commit with tests and updates this document.
 
 1. **Model** (done): domain, local names, forwards, per-network servers; validation; review lines.
 2. **Files** (done): the translator writes them; checked with `dnsmasq --test` and with real queries to the real dnsmasq in a namespace.
 3. **API** (done): the DNS settings, the local names, the forwards, per-network choice, the domain on Settings.
-4. **DNS page** (Services, DNS) and the domain field on Settings.
+4. **DNS page** (done, Services, DNS) and the domain field on Settings.
 5. **Lookup test** on the page: ask the router a name and see the answer and how long it took.
 6. Polish; screenshots in this document.
 
-## 12. Not planned (yet)
+## 13. Not planned (yet)
 
 DNS over TLS and DoH upstream · DNSSEC validation · ad and tracker blocking lists · IPv6 records (AAAA, the whole router is IPv4
 for now) · wildcard names · CNAME and other record types (only name-to-address entries) · different upstream servers per network ·

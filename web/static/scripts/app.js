@@ -204,6 +204,11 @@ function loadView(viewName) {
                 activeViewCleanup = window.FirewallConnectionsModule.init();
             }
             break;
+        case 'dns':
+            if (window.DNSModule) {
+                activeViewCleanup = window.DNSModule.init();
+            }
+            break;
         case 'settings':
             if (window.SettingsModule) {
                 activeViewCleanup = window.SettingsModule.init();

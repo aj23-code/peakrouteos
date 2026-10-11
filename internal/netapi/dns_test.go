@@ -410,6 +410,10 @@ func TestTheLocalDomainIsSetOnTheSettingsPage(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
+	// ...and the answer names the forward and belongs to the domain field, so the Settings page can show it under the input
+	if !errorFields(t, rec)["domain"] || !strings.Contains(rec.Body.String(), "lab.home.example.com") {
+		t.Errorf("the refusal does not name the forward: %s", rec.Body)
+	}
 	if rec := e.do(e.api.HandleSettingsDomain, http.MethodPost, `{}`, "application/json"); rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("method: %d", rec.Code)
 	}

@@ -61,7 +61,7 @@
               <span class="chevron">▸</span>
             </summary>
             <div class="folder-content">
-              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">DNS</span>
+              <a href="#" class="nav-item" data-view="dns">DNS</a>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">VPN</span>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Dynamic DNS</span>
             </div>
@@ -403,7 +403,7 @@
             </div>
           </div>
 
-          <div class="form-grid">
+          <div class="form-grid" id="inet-dns-grid">
             <div class="form-field form-field--wide" data-field="dns">
               <label for="inet-dns" id="inet-dns-label">DNS servers</label>
               <input type="text" id="inet-dns" autocomplete="off" placeholder="9.9.9.9, 149.112.112.112" spellcheck="false">
@@ -411,6 +411,7 @@
               <p class="field-error hidden" data-error="dns"></p>
             </div>
           </div>
+          <p class="form-hint hidden" id="inet-dns-moved">Which DNS servers the router asks is chosen on the <a href="#" data-goto="dns">DNS</a> page: the provider&rsquo;s by default, or servers of your own.</p>
 
           <details class="inet-advanced" id="inet-advanced">
             <summary>Advanced</summary>
@@ -694,6 +695,19 @@
         <p class="form-hint" id="cx-note"></p>
       </div>
 
+      <!-- View: DNS -->
+      <div id="view-dns" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>DNS</h1>
+            <p class="subtitle">Where the router looks names up, and what the devices on each network are told to use. Changes are saved as a draft until you commit them.</p>
+          </div>
+        </header>
+
+        <div id="dns-message" class="form-message hidden" role="alert"></div>
+        <div id="dns-body"></div>
+      </div>
+
       <!-- View: System Logs -->
       <div id="view-logs" class="view-section hidden">
         <header class="dash-header">
@@ -785,6 +799,7 @@
   <script src="/static/scripts/firewall_rules.js"></script>
   <script src="/static/scripts/firewall_forwards.js"></script>
   <script src="/static/scripts/firewall_connections.js"></script>
+  <script src="/static/scripts/dns.js"></script>
   <script src="/static/scripts/leases.js"></script>
   <script src="/static/scripts/syslogs.js"></script>
 </body>
