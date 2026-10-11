@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -60,14 +61,16 @@ func SystemResolvers(read func(string) ([]byte, error)) []netip.Addr {
 // UpstreamResolvers returns the DNS servers the internet connection uses, and where they came
 // from: the configured ones for a static address, the provider's otherwise.
 func UpstreamResolvers(cfg config.NetworkConfig, read func(string) ([]byte, error)) ([]netip.Addr, string) {
-	if strings.EqualFold(cfg.WanMode, "static") {
-		var out []netip.Addr
-		for _, s := range cfg.WanDNS {
-			if a, err := netip.ParseAddr(s); err == nil && a.Is4() {
-				out = append(out, a)
-			}
+	var configured []netip.Addr
+	for _, s := range cfg.WanDNS {
+		if a, err := netip.ParseAddr(s); err == nil && a.Is4() {
+			configured = append(configured, a)
 		}
-		return out, "DNS server you configured"
+	}
+	// servers set by hand win with every connection type; a static address never falls back to the
+	// machine's own resolvers
+	if len(configured) > 0 || strings.EqualFold(cfg.WanMode, "static") {
+		return configured, "DNS server you configured"
 	}
 	return SystemResolvers(read), "DNS server from your provider"
 }
@@ -105,6 +108,12 @@ func WANConnection(port string) (up bool, address, gateway string) {
 				}
 			}
 		}
+		// a PPP link reports its state as "unknown": it is up when the kernel says so and it has an address
+		if !up && address != "" && iface.Flags&net.FlagUp != 0 {
+			if data, err := os.ReadFile("/sys/class/net/" + port + "/operstate"); err == nil && strings.TrimSpace(string(data)) == "unknown" {
+				up = true
+			}
+		}
 	}
 	if route, err := os.ReadFile("/proc/net/route"); err == nil {
 		gateway = DefaultGateway(route, port)
@@ -118,8 +127,13 @@ func UpstreamGateway(cfg config.NetworkConfig, read func(string) ([]byte, error)
 	gw := cfg.WanGateway
 	if !strings.EqualFold(cfg.WanMode, "static") {
 		gw = ""
+		dev := cfg.WanDevice()
 		if route, err := read("/proc/net/route"); err == nil {
-			gw = DefaultGateway(route, cfg.WanInterface)
+			gw = DefaultGateway(route, dev)
+		}
+		// a PPPoE session has no gateway address: the provider's end of the link is what is in front of us
+		if gw == "" && cfg.WanKind() == config.WanPPPoE {
+			gw = PPPPeer(dev)
 		}
 	}
 	a, err := netip.ParseAddr(gw)
@@ -175,4 +189,42 @@ func ParseRoutingTable(data []byte) []KernelRoute {
 		out = append(out, r)
 	}
 	return out
+}
+
+// ParsePeer returns the far end of a point-to-point link from `ip -4 -o addr show dev <ppp>` text, such
+// as "5: ppp0    inet 10.0.0.2 peer 10.64.64.64/32 scope global ppp0".
+func ParsePeer(text string) string {
+	f := strings.Fields(text)
+	for i := 0; i+1 < len(f); i++ {
+		if f[i] == "peer" {
+			if p, err := netip.ParsePrefix(f[i+1]); err == nil && p.Addr().Is4() {
+				return p.Addr().String()
+			}
+			if a, err := netip.ParseAddr(f[i+1]); err == nil && a.Is4() {
+				return a.String()
+			}
+		}
+	}
+	return ""
+}
+
+// PPPPeer finds the provider's end of a PPP link ("" when there is none). A variable so tests can replace it.
+var PPPPeer = func(device string) string {
+	out, err := exec.Command("ip", "-4", "-o", "addr", "show", "dev", device).Output()
+	if err != nil {
+		return ""
+	}
+	return ParsePeer(string(out))
+}
+
+// LinkDetails reads an interface's hardware address and MTU from the kernel (zero values when it is not there).
+func LinkDetails(name string) (mac string, mtu int) {
+	if name == "" {
+		return "", 0
+	}
+	iface, err := net.InterfaceByName(name)
+	if err != nil {
+		return "", 0
+	}
+	return strings.ToLower(iface.HardwareAddr.String()), iface.MTU
 }

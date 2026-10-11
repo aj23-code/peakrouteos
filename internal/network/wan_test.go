@@ -79,10 +79,21 @@ func TestUpstreamResolversByMode(t *testing.T) {
 	if got, _ := UpstreamResolvers(config.NetworkConfig{WanMode: "STATIC"}, files); len(got) != 0 {
 		t.Fatalf("static without DNS used %v", got)
 	}
-	for _, mode := range []string{"dhcp", ""} {
-		got, src = UpstreamResolvers(config.NetworkConfig{WanMode: mode, WanDNS: []string{"9.9.9.9"}}, files)
+	for _, mode := range []string{"dhcp", "", "pppoe"} {
+		// no servers set by hand: the provider's
+		got, src = UpstreamResolvers(config.NetworkConfig{WanMode: mode}, files)
 		if !eq(strs(got), []string{"192.168.0.1"}) || src != "DNS server from your provider" {
 			t.Fatalf("mode %q: %v %q", mode, got, src)
+		}
+		// servers set by hand replace the provider's, with every connection type
+		got, src = UpstreamResolvers(config.NetworkConfig{WanMode: mode, WanDNS: []string{"9.9.9.9", "bogus"}}, files)
+		if !eq(strs(got), []string{"9.9.9.9"}) || src != "DNS server you configured" {
+			t.Fatalf("mode %q with an override: %v %q", mode, got, src)
+		}
+		// an override that is all junk does not leave the connection without any
+		got, src = UpstreamResolvers(config.NetworkConfig{WanMode: mode, WanDNS: []string{"bogus"}}, files)
+		if !eq(strs(got), []string{"192.168.0.1"}) || src != "DNS server from your provider" {
+			t.Fatalf("mode %q with a junk override: %v %q", mode, got, src)
 		}
 	}
 }
@@ -179,6 +190,49 @@ func TestIsWireless(t *testing.T) {
 	for name, want := range map[string]bool{"eth0": false, "wlan0": true, "wlx1": true, "nope": false} {
 		if got := IsWireless(root, name); got != want {
 			t.Errorf("%s: %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestUpstreamGatewayFollowsTheDeviceThatCarriesTheConnection(t *testing.T) {
+	route := "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n" +
+		"eth0\t00000000\t0100A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n" +
+		"eth0.835\t00000000\t010011AC\t0003\t0\t0\t100\t00000000\t0\t0\t0\n" +
+		"ppp0\t00000000\t00000000\t0001\t0\t0\t0\t00000000\t0\t0\t0\n"
+	files := reader(map[string]string{"/proc/net/route": route})
+
+	if a, ok := UpstreamGateway(config.NetworkConfig{WanInterface: "eth0", WanVlan: 835}, files); !ok || a.String() != "172.17.0.1" {
+		t.Fatalf("vlan: %v %v", a, ok)
+	}
+	saved := PPPPeer
+	defer func() { PPPPeer = saved }()
+	var asked string
+	PPPPeer = func(dev string) string { asked = dev; return "10.64.64.64" }
+	if a, ok := UpstreamGateway(config.NetworkConfig{WanInterface: "eth0", WanMode: "pppoe"}, files); !ok || a.String() != "10.64.64.64" || asked != "ppp0" {
+		t.Fatalf("pppoe: %v %v (asked %q)", a, ok, asked)
+	}
+	PPPPeer = func(string) string { return "" }
+	if _, ok := UpstreamGateway(config.NetworkConfig{WanInterface: "eth0", WanMode: "pppoe"}, files); ok {
+		t.Fatal("a PPPoE session that is not up has no gateway")
+	}
+	// a plain connection never asks for a peer
+	PPPPeer = func(string) string { t.Fatal("asked for a peer"); return "" }
+	UpstreamGateway(config.NetworkConfig{WanInterface: "eth9"}, files) // no default route there either
+}
+
+func TestParsePeer(t *testing.T) {
+	cases := map[string]string{
+		"5: ppp0    inet 10.0.0.2 peer 10.64.64.64/32 scope global ppp0\\       valid_lft forever preferred_lft forever\n": "10.64.64.64",
+		"5: ppp0 inet 10.0.0.2 peer 10.64.64.64 scope global ppp0":                                                         "10.64.64.64",
+		"2: eth0    inet 192.168.1.1/24 brd 192.168.1.255 scope global eth0":                                               "",
+		"inet 10.0.0.2 peer 2001:db8::1/128 scope global":                                                                  "",
+		"inet 10.0.0.2 peer":                       "",
+		"inet 10.0.0.2 peer nonsense scope global": "",
+		"": "",
+	}
+	for in, want := range cases {
+		if got := ParsePeer(in); got != want {
+			t.Errorf("%q: %q, want %q", in, got, want)
 		}
 	}
 }

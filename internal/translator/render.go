@@ -20,6 +20,7 @@ const (
 	PathNftables    = "/etc/nftables.conf"
 	PathDnsmasqDHCP = "/etc/dnsmasq.d/peakroute-dhcp.conf"
 	PathDnsmasqDNS  = "/etc/dnsmasq.d/peakroute-upstream.conf"
+	PathPPPPeer     = "/etc/ppp/peers/peakroute-wan" // the PPPoE login, when the connection is PPPoE
 
 	// Static routes. ifupdown runs every script in if-up.d whenever an interface comes up, so
 	// the routes come back after a reboot or a networking restart without touching /etc/network/interfaces.
@@ -106,6 +107,10 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	}
 
 	tokens := append([]string{cfg.WanInterface, cfg.LanIP, cfg.LanSubnet}, cfg.LanInterfaces...)
+	if err := ensureSafeWan(cfg); err != nil {
+		return Desired{}, err
+	}
+	tokens = append(tokens, cfg.WanLink())
 	if strings.EqualFold(cfg.WanMode, "static") {
 		tokens = append(tokens, cfg.WanIP, cfg.WanSubnet)
 		if cfg.WanGateway != "" {
@@ -142,9 +147,16 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 		routesArtifact = Artifact{Path: PathRoutes, Content: []byte(script), Mode: 0755, Service: SvcRoutes}
 	}
 
+	// The PPPoE login: only present while the connection is PPPoE (it holds the password)
+	pppArtifact := Artifact{Path: PathPPPPeer, Remove: true, Service: SvcNetworking}
+	if cfg.WanKind() == config.WanPPPoE {
+		pppArtifact = Artifact{Path: PathPPPPeer, Content: []byte(renderPPPPeer(cfg)), Mode: 0600, Service: SvcNetworking}
+	}
+
 	d.Artifacts = append(d.Artifacts,
 		Artifact{Path: PathSysctl, Content: []byte("net.ipv4.ip_forward=1\n"), Mode: 0644, Service: SvcSysctl},
 		Artifact{Path: PathInterfaces, Content: []byte(renderInterfaces(cfg, lan)), Mode: 0644, Service: SvcNetworking},
+		pppArtifact,
 		routesArtifact,
 		// Debian ships nftables.conf as an executable script (it has a shebang)
 		Artifact{Path: PathNftables, Content: []byte(renderNftables(cfg, lan)), Mode: 0755, Service: SvcNftables},
@@ -174,8 +186,9 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	// always managed, so that taking the Wi-Fi section out of the configuration clears the files too
 	d.ManagedDirs = append(d.ManagedDirs, ManagedDir{Path: PathHostapdDir, Service: SvcWifi})
 
-	// Upstream DNS servers for LAN clients when the WAN has a fixed address and its own DNS
-	if strings.EqualFold(cfg.WanMode, "static") && len(cfg.WanDNS) > 0 {
+	// Upstream DNS servers for LAN clients: the ones set with a static address, or the ones that replace
+	// the provider's with DHCP or PPPoE
+	if len(cfg.WanDNS) > 0 {
 		d.Artifacts = append(d.Artifacts, Artifact{
 			Path: PathDnsmasqDNS, Content: []byte(renderDnsmasqUpstream(cfg)), Mode: 0644, Service: SvcDnsmasq,
 		})
@@ -237,25 +250,6 @@ func renderRoutes(routes []config.Route) (string, bool) {
 	b.WriteString("[ \"$1\" = strict ] && exit \"$rc\"\n")
 	b.WriteString("exit 0\n")
 	return b.String(), true
-}
-
-func writeWanStanza(b *strings.Builder, cfg config.NetworkConfig) {
-	fmt.Fprintf(b, "auto %s\n", cfg.WanInterface)
-	if strings.EqualFold(cfg.WanMode, "static") {
-		fmt.Fprintf(b, "iface %s inet static\n", cfg.WanInterface)
-		fmt.Fprintf(b, "    address %s\n", cfg.WanIP)
-		fmt.Fprintf(b, "    netmask %s\n", cfg.WanSubnet)
-		if cfg.WanGateway != "" {
-			fmt.Fprintf(b, "    gateway %s\n", cfg.WanGateway)
-		}
-		if len(cfg.WanDNS) > 0 {
-			fmt.Fprintf(b, "    dns-nameservers %s\n", strings.Join(cfg.WanDNS, " "))
-		}
-	} else {
-		fmt.Fprintf(b, "iface %s inet dhcp\n", cfg.WanInterface)
-	}
-	b.WriteString("\n")
-
 }
 
 func renderInterfaces(cfg config.NetworkConfig, lan string) string {
@@ -321,7 +315,7 @@ table inet filter {
         type filter hook forward priority filter; policy drop;
         ct state established,related accept
         ct state invalid drop
-        iifname "%[1]s" oifname "%[2]s" accept
+%[5]s        iifname "%[1]s" oifname "%[2]s" accept
 %[4]s    }
     chain output {
         type filter hook output priority filter; policy accept;
@@ -334,5 +328,5 @@ table ip nat {
         oifname "%[2]s" masquerade
     }
 }
-`, lan, cfg.WanInterface, inputExtra, forwardExtra)
+`, lan, cfg.WanDevice(), inputExtra, forwardExtra, mssClamp(cfg))
 }

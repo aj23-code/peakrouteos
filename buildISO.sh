@@ -71,7 +71,7 @@ sudo debootstrap \
     --variant=minbase \
     --components=main,non-free-firmware \
     --keyring="${DEBIAN_KEYRING}" \
-    --include=linux-image-amd64,systemd-sysv,live-boot,live-config,dosfstools,e2fsprogs,rsync,ifupdown,bridge-utils,vlan,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,hostapd,iw,wireless-regdb,rfkill,firmware-iwlwifi,firmware-atheros,firmware-mediatek,firmware-realtek,ca-certificates,lsb-release,util-linux,fdisk,grub-efi-amd64,nano,passwd \
+    --include=linux-image-amd64,systemd-sysv,live-boot,live-config,dosfstools,e2fsprogs,rsync,ifupdown,bridge-utils,vlan,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ppp,hostapd,iw,wireless-regdb,rfkill,firmware-iwlwifi,firmware-atheros,firmware-mediatek,firmware-realtek,ca-certificates,lsb-release,util-linux,fdisk,grub-efi-amd64,nano,passwd \
     trixie "${ROOTFS_DIR}" http://deb.debian.org/debian/
 
 echo "[3/5] Configuring rootfs, security, and embedding PeakRoute binary..."
