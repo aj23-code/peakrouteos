@@ -737,7 +737,7 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 | Clients | DHCP leases and per-client usage | yes (`dhcp`) |
 | Traffic | per-port throughput history | yes (`traffic`) |
 | Network: Internet, **Local Networks**, Ports, Wireless, Routes | WAN uplink; each local network with its address range *and* DHCP; physical ports; static routes | Internet (`internet`), Local Networks (`networks`), Ports (`network-physical`), Wireless (`wireless`) and Routes (`routes`) |
-| Firewall: Rules, Port forwarding, Connections | | planned |
+| Firewall: Rules, Port forwarding, Connections | | planned: design in `docs/firewall.md` |
 | Services: DNS, VPN, Dynamic DNS | | planned |
 | System: Settings, Administrators, Certificates, Backup and restore, Updates, Logs, Diagnostics | | Logs only (`logs`) |
 
