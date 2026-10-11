@@ -17,6 +17,7 @@ type Port struct {
 	MTU        int    `json:"mtu"`
 	Driver     string `json:"driver"`
 	Present    bool   `json:"present"`     // false: configured, but the hardware is not there
+	Wireless   bool   `json:"wireless"`    // a Wi-Fi adapter: set up on the Wireless page, never a WAN or LAN port
 	Role       string `json:"role"`        // what the draft says: wan, lan or unassigned
 	ActiveRole string `json:"active_role"` // what is in effect now
 	Pending    bool   `json:"pending"`     // the draft differs from what is in effect
@@ -52,7 +53,19 @@ func portNames(hardware []config.SystemInterface, cfgs ...config.NetworkConfig) 
 			names = append(names, n)
 		}
 	}
+	// A Wi-Fi adapter is not a port. One that is configured as a port anyway (a box set up before this
+	// rule, or a laptop used for development) is still listed so that it can be moved off.
+	configured := map[string]bool{}
+	for _, c := range cfgs {
+		configured[c.WanInterface] = true
+		for _, l := range c.LanInterfaces {
+			configured[l] = true
+		}
+	}
 	for _, h := range hardware {
+		if h.Wireless && !configured[h.Name] {
+			continue
+		}
 		add(h.Name)
 	}
 	for _, c := range cfgs {
@@ -83,6 +96,7 @@ func (a *API) portsView() (portsResponse, error) {
 		p := Port{
 			Name: name, MAC: hw.MAC, State: hw.State, Speed: hw.Speed, MTU: hw.MTU, Driver: hw.Driver,
 			Present:    present,
+			Wireless:   hw.Wireless,
 			Role:       roleOf(draft, name),
 			ActiveRole: roleOf(active, name),
 		}
@@ -162,8 +176,17 @@ func (a *API) putPorts(w http.ResponseWriter, r *http.Request) {
 			roles[n] = roleOf(*c, n)
 		}
 
+		wireless := map[string]bool{}
+		for _, h := range hardware {
+			if h.Wireless {
+				wireless[h.Name] = true
+			}
+		}
+
 		for name, role := range req.Assignments {
 			switch {
+			case wireless[name] && role != RoleUnassigned && role != roles[name]:
+				problems = append(problems, config.FieldError{Field: "assignments." + name, Message: "a Wi-Fi adapter cannot be a WAN or LAN port: it is set up on the Wireless page"})
 			case !known[name]:
 				problems = append(problems, config.FieldError{Field: "assignments." + name, Message: "there is no port with this name"})
 			case role != RoleWAN && role != RoleLAN && role != RoleUnassigned:

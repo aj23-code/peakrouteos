@@ -501,6 +501,20 @@ you will never use. The package names were checked against the trixie package li
   channels that are closed). It checks again every 10 s, so a USB adapter plugged in appears by itself. A
   "Wi-Fi networks" card is shown as **Planned** (greyed unless some adapter can be an access point).
 
+**Wi-Fi adapters are not ports** (2026-10-10): the Ports page no longer lists them (`SystemInterface.Wireless`,
+set from the same sysfs test the Wireless page uses) and refuses to give one a WAN or LAN role through
+`PUT /api/v1/ports`; they are set up on the Wireless page. An adapter that is *already* configured as a port
+(a box set up before this rule, or the dev laptop using Wi-Fi as its uplink) stays listed, tagged "Wi-Fi
+adapter", and can only be moved off its role; once it is no longer a port in the active config it drops out.
+This rule is about *where roles are chosen*, not a statement that Wi-Fi is always the LAN side:
+- **Point-to-point links** (a radio as the client end of a PtP link, or a wireless uplink) must stay possible.
+  Design: each radio gets a **mode on the Wireless page**, "access point" or "station" (a PtP/uplink client).
+  A station is either the internet uplink (it becomes `wan_interface`) or a member of a Local Network
+  (bridged, using 4-address/WDS mode so two PeakRoute boxes can join two sites). Nothing in the config or the
+  translator assumes a radio is LAN-side; the guard above only blocks the *Ports endpoint*.
+- Station mode needs `wpasupplicant`, which the image does not have yet (hostapd is only the AP side); it
+  would be added with that work. The AP side of a PtP bridge is hostapd with `wds_sta=1`.
+
 **Next, in order:** the config model for Wi-Fi networks (an SSID tied to a Local Network, so a Guest SSID lands
 on the Guest VLAN: name, WPA2/WPA3 passphrase, band, channel, width), the translator for hostapd, the country
 setting, then AP mode (the limited GUI and a translator that bridges everything to one port).

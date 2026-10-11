@@ -522,3 +522,75 @@ func TestPortNetworkErrorsNameThePortAndField(t *testing.T) {
 		t.Fatalf("a refused save changed the draft: %+v", e.draft().PortNetworks)
 	}
 }
+
+// ---- Wi-Fi adapters are not ports --------------------------------------------------------------
+
+func withWifi(e *env) {
+	w := hw("wlan0", "up")
+	w.Wireless = true
+	e.ports = append(e.ports, w)
+}
+
+func TestAWifiAdapterIsNotListedAsAPort(t *testing.T) {
+	e := standard(t)
+	withWifi(e)
+	view := decodeInto[portsResponse](t, e.get(e.api.HandlePorts))
+	for _, p := range view.Ports {
+		if p.Name == "wlan0" {
+			t.Fatalf("a Wi-Fi adapter was offered as a port: %+v", p)
+		}
+	}
+	if len(view.Ports) != 3 {
+		t.Fatalf("%+v", view.Ports)
+	}
+}
+
+func TestAWifiAdapterCannotBeGivenARole(t *testing.T) {
+	e := standard(t)
+	withWifi(e)
+	rec := e.putJSON(e.api.HandlePorts, `{"assignments":{"wlan0":"lan"}}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "Wireless page") || !errorFields(t, rec)["assignments.wlan0"] {
+		t.Fatalf("the refusal should say where Wi-Fi is set up: %d %s", rec.Code, rec.Body)
+	}
+	if e.stageFileExists() {
+		t.Fatal("a refused request left a draft")
+	}
+}
+
+func TestAWifiAdapterThatIsAlreadyAPortStaysListedAndCanBeMovedOff(t *testing.T) {
+	c := baseline()
+	c.WanInterface = "wlan0" // a box (or a laptop used for development) set up with Wi-Fi as its uplink
+	e := newEnv(t, &c)
+	withWifi(e)
+
+	view := decodeInto[portsResponse](t, e.get(e.api.HandlePorts))
+	p := portByName(t, view.Ports, "wlan0")
+	if !p.Wireless || p.Role != RoleWAN {
+		t.Fatalf("%+v", p)
+	}
+
+	// saving something else, with the role left as it is, still works
+	if rec := e.putJSON(e.api.HandlePorts, `{"assignments":{"wlan0":"wan","eth1":"lan","eth2":"unassigned"}}`); rec.Code != http.StatusOK {
+		t.Fatalf("keeping the role must not be refused: %d %s", rec.Code, rec.Body)
+	}
+	// moving the WAN to a wired port frees the adapter
+	if rec := e.putJSON(e.api.HandlePorts, `{"assignments":{"wlan0":"unassigned","eth0":"wan"}}`); rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if e.draft().WanInterface != "eth0" {
+		t.Fatalf("%+v", e.draft())
+	}
+	// while the change is only a draft the adapter is still the WAN in effect, so it stays listed
+	view = decodeInto[portsResponse](t, e.get(e.api.HandlePorts))
+	if p := portByName(t, view.Ports, "wlan0"); p.Role != RoleUnassigned || p.ActiveRole != RoleWAN || !p.Pending {
+		t.Fatalf("%+v", p)
+	}
+	// once committed it is no longer a port and drops out of the list
+	e.commit()
+	view = decodeInto[portsResponse](t, e.get(e.api.HandlePorts))
+	for _, p := range view.Ports {
+		if p.Name == "wlan0" {
+			t.Fatalf("an unused Wi-Fi adapter should drop out of the list once it is no longer a port: %+v", p)
+		}
+	}
+}

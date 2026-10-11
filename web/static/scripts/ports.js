@@ -76,11 +76,15 @@ window.PortsModule = (function () {
         } else {
             tbody.innerHTML = ports.map(p => {
                 const role = chosen[p.name];
-                const options = Object.keys(ROLE_LABELS).map(r =>
+                // a Wi-Fi adapter can only be taken off a role, never given one
+                const choices = Object.keys(ROLE_LABELS).filter(r => !p.wireless || r === 'unassigned' || r === p.role);
+                const options = choices.map(r =>
                     `<option value="${r}"${r === role ? ' selected' : ''}>${ROLE_LABELS[r]}</option>`).join('');
 
                 let note = '';
-                if (!p.present) {
+                if (p.wireless) {
+                    note = '<span class="tag tag-warn" title="Wi-Fi is set up on the Wireless page">Wi-Fi adapter</span>';
+                } else if (!p.present) {
                     note = '<span class="tag tag-warn">Hardware missing</span>';
                 } else if (p.pending && role === p.role) {
                     note = `<span class="tag tag-draft" title="In effect now: ${escapeHtml(ROLE_LABELS[p.active_role] || p.active_role)}">Draft</span>`;

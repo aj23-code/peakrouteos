@@ -39,12 +39,13 @@ func GetPhysicalInterfaces() ([]config.SystemInterface, error) {
 			state, speed, mtu, driver := EnrichInterfaceDetails(name)
 
 			physical = append(physical, config.SystemInterface{
-				Name:   name,
-				MAC:    mac,
-				State:  state,
-				Speed:  speed,
-				MTU:    mtu,
-				Driver: driver,
+				Name:     name,
+				MAC:      mac,
+				State:    state,
+				Speed:    speed,
+				MTU:      mtu,
+				Driver:   driver,
+				Wireless: IsWireless("/sys/class/net", name),
 			})
 	}
 
@@ -128,4 +129,15 @@ func StagePhysicalInterfacesUpdates(mgr *config.Manager) error {
 		cfg.Interfaces = physIfaces
 		return nil
 	})
+}
+
+// IsWireless reports whether a network interface is a Wi-Fi adapter: the kernel gives those a
+// "wireless" folder or a "phy80211" link next to the interface.
+func IsWireless(sysClassNet, name string) bool {
+	base := filepath.Join(sysClassNet, name)
+	if _, err := os.Stat(filepath.Join(base, "wireless")); err == nil {
+		return true
+	}
+	_, err := os.Lstat(filepath.Join(base, "phy80211"))
+	return err == nil
 }

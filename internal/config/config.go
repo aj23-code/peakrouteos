@@ -55,6 +55,9 @@ type SystemInterface struct {
 	Speed  string `json:"speed"`  // e.g., "1000Mb/s"
 	MTU    int    `json:"mtu"`    // e.g., 1500
 	Driver string `json:"driver"` // e.g., "igb", "e1000e"
+	// Wireless marks a Wi-Fi adapter. It is never a WAN or LAN port: it is the radio side of a
+	// local network and is set up on the Wireless page.
+	Wireless bool `json:"wireless,omitempty"`
 }
 
 // Unused for now until OS can run on a managed switch

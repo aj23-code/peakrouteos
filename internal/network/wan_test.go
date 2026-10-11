@@ -2,6 +2,8 @@ package network
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"peakroute/internal/config"
@@ -164,5 +166,19 @@ func TestParseRoutingTable(t *testing.T) {
 	}
 	if len(ParseRoutingTable(nil)) != 0 || len(ParseRoutingTable([]byte("Iface\tDestination\n"))) != 0 {
 		t.Error("an empty table should give nothing")
+	}
+}
+
+func TestIsWireless(t *testing.T) {
+	root := t.TempDir()
+	mk := func(p string) { os.MkdirAll(filepath.Join(root, p), 0755) }
+	mk("eth0")
+	mk("wlan0/wireless")
+	mk("wlx1/other")
+	os.Symlink("../../ieee80211/phy1", filepath.Join(root, "wlx1", "phy80211"))
+	for name, want := range map[string]bool{"eth0": false, "wlan0": true, "wlx1": true, "nope": false} {
+		if got := IsWireless(root, name); got != want {
+			t.Errorf("%s: %v, want %v", name, got, want)
+		}
 	}
 }
