@@ -102,6 +102,13 @@ var networkSettings = []networkSetting{
 		}
 		return strings.Join(c.NTPServers, ", ")
 	}},
+	{"syslog_servers", "Syslog servers", func(c NetworkConfig) string { return c.SyslogText() }},
+	{"syslog_sends", "Syslog sends", func(c NetworkConfig) string {
+		if len(c.SyslogSettings().Servers) == 0 {
+			return valueNone
+		}
+		return c.SyslogSendsText()
+	}},
 	{"country", "Country", func(c NetworkConfig) string { return text(c.Country) }},
 	{"domain", "Local domain", func(c NetworkConfig) string { return text(c.Domain) }},
 	{"lan_dns_servers", "DNS told to the default network", func(c NetworkConfig) string { return serversText(c.LanDNSServers) }},

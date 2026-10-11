@@ -3,6 +3,7 @@ package netapi
 import (
 	"context"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -27,6 +28,9 @@ type Settings struct {
 	NTPDefault      []string          `json:"ntp_default_servers"`
 	TimePending     bool              `json:"time_pending"`
 	Time            *TimeInfo         `json:"time"` // the clock as it is right now (nil: it cannot be read)
+	Syslog          SyslogView        `json:"syslog"`
+	SyslogPending   bool              `json:"syslog_pending"`
+	SyslogStatus    []SyslogStatus    `json:"syslog_status"` // how sending to each server of the configuration in effect is going
 	Editable        bool              `json:"editable"`
 }
 
@@ -50,13 +54,45 @@ func (a *API) timeInfo() *TimeInfo {
 	return &TimeInfo{Now: time.Now().UnixMilli(), Timezone: st.Timezone, NTPEnabled: st.NTPEnabled, Synchronized: st.Synchronized, Server: st.Server}
 }
 
+// SyslogView is the draft's syslog forwarding.
+type SyslogView struct {
+	Servers  []config.SyslogServer `json:"servers"`
+	System   bool                  `json:"system"`
+	Firewall bool                  `json:"firewall"`
+}
+
+// SyslogStatus is how sending to one server is going.
+type SyslogStatus struct {
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	Protocol  string `json:"protocol"`
+	Sent      int64  `json:"sent"`
+	Dropped   int64  `json:"dropped"`
+	Connected bool   `json:"connected"` // TCP: a connection is open
+	LastError string `json:"last_error"`
+}
+
+func (a *API) syslogStatus() []SyslogStatus {
+	out := []SyslogStatus{}
+	if a.SyslogStatuses == nil {
+		return out
+	}
+	for _, s := range a.SyslogStatuses() {
+		out = append(out, SyslogStatus{Host: s.Server.Host, Port: s.Server.Port, Protocol: s.Server.Protocol, Sent: s.Sent, Dropped: s.Dropped, Connected: s.Connected, LastError: s.LastError})
+	}
+	return out
+}
+
 func (a *API) settingsView() Settings {
 	active := a.Manager.NetworkConfig()
 	draft, _ := a.Manager.StagedNetworkConfig()
 	return Settings{Timezone: draft.Timezone, Timezones: config.Timezones, Suggested: append([]string{}, config.TimezonesOf(draft.Country)...),
 		NTPEnabled: !draft.NTPDisabled, NTPServers: append([]string{}, draft.NTPServers...), NTPDefault: config.DefaultNTPServers,
-		TimePending: draft.Timezone != active.Timezone || draft.NTPDisabled != active.NTPDisabled || strings.Join(draft.NTPServers, ",") != strings.Join(active.NTPServers, ","),
-		Time:        a.timeInfo(), Country: draft.Country, Pending: draft.Country != active.Country, Countries: config.Countries,
+		TimePending:   draft.Timezone != active.Timezone || draft.NTPDisabled != active.NTPDisabled || strings.Join(draft.NTPServers, ",") != strings.Join(active.NTPServers, ","),
+		Time:          a.timeInfo(),
+		Syslog:        SyslogView{Servers: append([]config.SyslogServer{}, draft.SyslogSettings().Servers...), System: draft.SyslogSettings().System, Firewall: draft.SyslogSettings().Firewall},
+		SyslogPending: !reflect.DeepEqual(draft.SyslogSettings(), active.SyslogSettings()) && (len(draft.SyslogSettings().Servers) > 0 || len(active.SyslogSettings().Servers) > 0),
+		SyslogStatus:  a.syslogStatus(), Country: draft.Country, Pending: draft.Country != active.Country, Countries: config.Countries,
 		Domain: draft.Domain, DomainPending: draft.Domain != active.Domain,
 		Hostname: draft.Hostname, SendHostname: draft.SendHostname,
 		HostnamePending: draft.Hostname != active.Hostname || draft.SendHostname != active.SendHostname, Editable: a.editable()}
@@ -199,4 +235,72 @@ func (a *API) HandleSettingsTime(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	a.answerStaged(w, err, http.StatusOK, "", a.settingsView())
+}
+
+// HandleSettingsSyslog: PUT /api/v1/settings/syslog {"servers": [{"host", "port", "protocol"}], "system": true, "firewall": true}
+// replaces the syslog forwarding. A port left out is 514 and a protocol left out is udp; hosts are lower-cased. No servers turns
+// it off.
+func (a *API) HandleSettingsSyslog(w http.ResponseWriter, r *http.Request) {
+	if !allowMethods(w, r, http.MethodPut) || !a.requireEditable(w) {
+		return
+	}
+	var req struct {
+		Servers []struct {
+			Host     string `json:"host"`
+			Port     int    `json:"port"`
+			Protocol string `json:"protocol"`
+		} `json:"servers"`
+		System   bool `json:"system"`
+		Firewall bool `json:"firewall"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	err := a.Manager.StageNetwork(func(c *config.NetworkConfig) error {
+		s := config.SyslogConfig{System: req.System, Firewall: req.Firewall}
+		for _, in := range req.Servers {
+			srv := config.SyslogServer{Host: strings.ToLower(strings.TrimSpace(in.Host)), Port: in.Port, Protocol: strings.ToLower(strings.TrimSpace(in.Protocol))}
+			if srv.Port == 0 {
+				srv.Port = config.DefaultSyslogPort
+			}
+			if srv.Protocol == "" {
+				srv.Protocol = "udp"
+			}
+			s.Servers = append(s.Servers, srv)
+		}
+		if len(s.Servers) == 0 {
+			c.Syslog = nil // no servers: nothing is kept
+		} else {
+			c.Syslog = &s
+		}
+		if errs := ownedErrors(c.Validate(), "syslog"); len(errs) > 0 {
+			return errs
+		}
+		return nil
+	})
+	a.answerStaged(w, err, http.StatusOK, "", a.settingsView())
+}
+
+// SyslogTestResult is what happened to a test message sent to one server.
+type SyslogTestResult struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"`
+	OK       bool   `json:"ok"`
+	Message  string `json:"message"`
+}
+
+// HandleSyslogTest: POST /api/v1/syslog/test sends one test message to every syslog server in effect and says what happened to
+// each. It tests the configuration that is running, not the draft.
+func (a *API) HandleSyslogTest(w http.ResponseWriter, r *http.Request) {
+	if !allowMethods(w, r, http.MethodPost) {
+		return
+	}
+	out := []SyslogTestResult{}
+	if a.SyslogTest != nil {
+		for _, t := range a.SyslogTest(r.Context()) {
+			out = append(out, SyslogTestResult{Host: t.Server.Host, Port: t.Server.Port, Protocol: t.Server.Protocol, OK: t.OK, Message: t.Message})
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": out})
 }

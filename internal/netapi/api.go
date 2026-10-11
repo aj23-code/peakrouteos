@@ -18,6 +18,7 @@ import (
 	"peakroute/internal/auth"
 	"peakroute/internal/config"
 	"peakroute/internal/network"
+	"peakroute/internal/syslogfwd"
 	"peakroute/internal/wireless"
 )
 
@@ -44,6 +45,10 @@ type API struct {
 	DNSAddr string
 	// TimeStatus reads how the router's clock stands (the time zone, whether it follows a time server). Nil means it is not reported.
 	TimeStatus func(ctx context.Context) (network.TimeStatus, bool)
+	// SyslogStatuses says how sending to each syslog server in effect is going; SyslogTest sends a test message to each.
+	// Nil means syslog forwarding is not reported.
+	SyslogStatuses func() []syslogfwd.ServerStatus
+	SyslogTest     func(ctx context.Context) []syslogfwd.TestResult
 	// FirewallLog is the store of the packets that firewall rules with logging matched. Nil means it is not reported.
 	FirewallLog FirewallLogStore
 	// Connections reads the kernel's table of connections passing through the router: the connections, how many are

@@ -298,3 +298,33 @@ func TestJournalSourceReportsWhyJournalctlStopped(t *testing.T) {
 		t.Errorf("a plain end: %v", err)
 	}
 }
+
+func TestEveryPacketIsHandedOnAsItIsRead(t *testing.T) {
+	now := t0
+	s := open(t, &now)
+	src := &fakeSource{texts: []string{
+		journalLine("c1", 1791720000000000, fwMsg) + journalLine("c2", 1791720001000000, fwMsg) + // the same kind: folded in the log, two packets here
+			journalLine("c3", 1791720002000000, "kernel: not the firewall"),
+	}}
+	var mu sync.Mutex
+	var seen []string
+	c := &Collector{Store: s, Source: src.source, Every: 20 * time.Millisecond, Retry: time.Hour, OnPacket: func(e network.FirewallLogEntry) {
+		mu.Lock()
+		seen = append(seen, fmt.Sprintf("%s:%d", e.Rule, e.Time))
+		mu.Unlock()
+	}}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { c.Run(ctx); close(done) }()
+	waitFor(t, "the entry", func() bool { st, _ := s.Stats(); return st.Entries == 1 })
+	cancel()
+	<-done
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 2 || seen[0] != "fw2:1791720000000" || seen[1] != "fw2:1791720001000" {
+		t.Fatalf("%v", seen)
+	}
+	if got, _ := s.Query(Query{}); len(got) != 1 || got[0].Count != 2 {
+		t.Fatalf("%+v", got)
+	}
+}

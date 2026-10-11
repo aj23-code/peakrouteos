@@ -103,20 +103,21 @@ type NetworkConfig struct {
 	WanGateway   string   `json:"wan_gateway,omitempty"`
 	WanDNS       []string `json:"wan_dns,omitempty"` // static: the servers to use; DHCP and PPPoE: servers to use instead of the provider's
 	// How the connection is carried and presented to the provider
-	WanVlan       int          `json:"wan_vlan,omitempty"`      // tagged VLAN the provider wants (0: none)
-	WanMTU        int          `json:"wan_mtu,omitempty"`       // 0: the usual 1500 (1492 for PPPoE)
-	WanMAC        string       `json:"wan_mac,omitempty"`       // hardware address to present instead of the port's own
-	Hostname      string       `json:"hostname,omitempty"`      // the router's host name (System, Settings): written to /etc/hostname
-	SendHostname  bool         `json:"send_hostname,omitempty"` // tell the provider's DHCP server the name (only a DHCP connection sends it)
-	Timezone      string       `json:"timezone,omitempty"`      // an IANA name such as Europe/Berlin; empty: the machine keeps its own
-	NTPDisabled   bool         `json:"ntp_disabled,omitempty"`  // do not keep the time with time servers
-	NTPServers    []string     `json:"ntp_servers,omitempty"`   // empty: the default (pool.ntp.org)
-	WanPPPoE      *PPPoEConfig `json:"wan_pppoe,omitempty"`
-	LanInterfaces []string     `json:"lan_interfaces,omitempty"`
-	LanIP         string       `json:"lan_ip,omitempty"`
-	LanSubnet     string       `json:"lan_subnet,omitempty"`
-	DHCP          *DHCPConfig  `json:"dhcp,omitempty"`
-	Routes        []Route      `json:"routes,omitempty"`
+	WanVlan       int           `json:"wan_vlan,omitempty"`      // tagged VLAN the provider wants (0: none)
+	WanMTU        int           `json:"wan_mtu,omitempty"`       // 0: the usual 1500 (1492 for PPPoE)
+	WanMAC        string        `json:"wan_mac,omitempty"`       // hardware address to present instead of the port's own
+	Hostname      string        `json:"hostname,omitempty"`      // the router's host name (System, Settings): written to /etc/hostname
+	SendHostname  bool          `json:"send_hostname,omitempty"` // tell the provider's DHCP server the name (only a DHCP connection sends it)
+	Timezone      string        `json:"timezone,omitempty"`      // an IANA name such as Europe/Berlin; empty: the machine keeps its own
+	NTPDisabled   bool          `json:"ntp_disabled,omitempty"`  // do not keep the time with time servers
+	NTPServers    []string      `json:"ntp_servers,omitempty"`   // empty: the default (pool.ntp.org)
+	Syslog        *SyslogConfig `json:"syslog,omitempty"`        // send the logs to syslog servers
+	WanPPPoE      *PPPoEConfig  `json:"wan_pppoe,omitempty"`
+	LanInterfaces []string      `json:"lan_interfaces,omitempty"`
+	LanIP         string        `json:"lan_ip,omitempty"`
+	LanSubnet     string        `json:"lan_subnet,omitempty"`
+	DHCP          *DHCPConfig   `json:"dhcp,omitempty"`
+	Routes        []Route       `json:"routes,omitempty"`
 	// Further local networks, and which LAN ports carry them. LanIsolated is the default network's
 	// own isolation switch (the extra networks carry theirs).
 	LanIsolated  bool                    `json:"lan_isolated,omitempty"`
@@ -217,6 +218,10 @@ func (c NetworkConfig) clone() NetworkConfig {
 	}
 	c.WanDNS = append([]string(nil), c.WanDNS...)
 	c.NTPServers = append([]string(nil), c.NTPServers...)
+	if c.Syslog != nil {
+		s := c.Syslog.clone()
+		c.Syslog = &s
+	}
 	if c.WanPPPoE != nil {
 		p := *c.WanPPPoE
 		c.WanPPPoE = &p

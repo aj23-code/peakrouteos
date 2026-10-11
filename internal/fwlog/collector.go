@@ -111,6 +111,8 @@ type Collector struct {
 	Source Source
 	Every  time.Duration // how often the packets read so far are saved (default 2 s: one write, not one per packet)
 	Retry  time.Duration // how long to wait before reading again after a failure (default 30 s)
+	// OnPacket, when set, is called with every packet as it is read (before it is saved), for forwarding to syslog servers.
+	OnPacket func(network.FirewallLogEntry)
 }
 
 func (c *Collector) Run(ctx context.Context) {
@@ -192,6 +194,9 @@ func (c *Collector) follow(ctx context.Context, every time.Duration) error {
 	for {
 		select {
 		case it := <-lines:
+			if c.OnPacket != nil {
+				c.OnPacket(it.e)
+			}
 			batch = append(batch, it.e)
 			if it.cursor != "" {
 				cursor = it.cursor

@@ -1,9 +1,11 @@
 // web/static/scripts/diagnostics.js
-// Diagnostics page: small tools for finding out why something does not work. Today one: the DNS lookup, which asks the
-// router's own DNS server a question and shows the answer and how long it took. It changes nothing.
+// Diagnostics page: small tools for finding out why something does not work: the DNS lookup (asks the router's own DNS
+// server a question and shows the answer and how long it took) and the syslog test (sends a test message to the syslog
+// servers). They change nothing.
 
 window.DiagnosticsModule = (function () {
     let lk = { text: '', busy: false, results: [], error: null };   // what was typed, and the latest answers (newest first)
+    let sl = { busy: false, results: null, error: null };   // the syslog test
     let wired = false;
 
     const $ = (id) => document.getElementById(id);
@@ -31,8 +33,36 @@ window.DiagnosticsModule = (function () {
         </section>`;
     }
 
+    function syslogHtml() {
+        const rows = (sl.results || []).map(r => `<div class="fw-row diag-row"><span class="tag ${r.ok ? 'tag-ok' : 'tag-warn'}">${r.ok ? 'Sent' : 'Failed'}</span>
+            <div class="fw-main"><div class="fw-name"><strong>${escapeHtml(r.host)}</strong><span class="cx-port">:${r.port}</span> ${escapeHtml(r.protocol.toUpperCase())}</div><div class="fw-text form-hint">${escapeHtml(r.message)}</div></div></div>`).join('');
+        const none = sl.results && !sl.results.length ? '<p class="form-hint">No syslog server is running yet. Servers set up in Settings start receiving once the change is committed.</p>' : '';
+        return `<section class="card" id="diag-syslog">
+            <div class="net-card-head"><h2>Syslog test</h2></div>
+            <p class="form-hint">Sends one test message to every syslog server that is running now and says what happened to each: a TCP server is reached or it is not; a UDP message is sent and nobody can say whether it arrived, so look on the server. The servers are set up in <a href="#" data-goto="settings">Settings</a>.</p>
+            <div class="diag-ask"><button type="button" class="cfg-btn cfg-btn--primary" id="diag-syslog-send"${sl.busy ? ' disabled' : ''}>${sl.busy ? 'Sending…' : 'Send a test message'}</button></div>
+            ${sl.error ? `<div class="form-message" role="alert">${escapeHtml(sl.error)}</div>` : ''}${none}
+            <div class="fw-list">${rows}</div>
+        </section>`;
+    }
+
     function render() {
-        $('diagnostics-body').innerHTML = lookupHtml();
+        $('diagnostics-body').innerHTML = lookupHtml() + syslogHtml();
+    }
+
+    async function sendSyslogTest() {
+        if (sl.busy) return;
+        sl.busy = true; sl.error = null; render();
+        const res = await apiFetch('/api/v1/syslog/test', { method: 'POST' });
+        sl.busy = false;
+        if (res && res.ok) {
+            sl.results = (await res.json()).results || [];
+        } else {
+            let err = {};
+            try { err = res ? await res.json() : {}; } catch (e) { /* not JSON */ }
+            sl.error = err.error || (res ? 'The test could not be run.' : 'The router did not answer. Try again.');
+        }
+        render();
     }
 
     async function ask() {
@@ -60,6 +90,7 @@ window.DiagnosticsModule = (function () {
         const body = $('diagnostics-body');
         body.addEventListener('click', (e) => {
             if (e.target.id === 'diag-dns-ask') ask();
+            else if (e.target.id === 'diag-syslog-send') sendSyslogTest();
         });
         body.addEventListener('input', (e) => {
             if (e.target.id !== 'diag-dns-text') return;
@@ -74,6 +105,7 @@ window.DiagnosticsModule = (function () {
     function init() {
         wire();
         lk = { text: '', busy: false, results: [], error: null };
+        sl = { busy: false, results: null, error: null };
         render();
         return () => {};
     }

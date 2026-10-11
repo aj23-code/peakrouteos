@@ -165,3 +165,138 @@ func TestTheTimeZoneListIsGoodAndSorted(t *testing.T) {
 		}
 	}
 }
+
+func logNet(f func(*SyslogConfig)) NetworkConfig {
+	c := validNet()
+	c.Syslog = &SyslogConfig{Servers: []SyslogServer{{Host: "logs.example.com", Port: 514, Protocol: "udp"}}, System: true, Firewall: true}
+	if f != nil {
+		f(c.Syslog)
+	}
+	return c
+}
+
+func TestSyslogSettingsThatAreAccepted(t *testing.T) {
+	cases := map[string]NetworkConfig{
+		"none":                  validNet(),
+		"an empty block":        settingsNet(func(c *NetworkConfig) { c.Syslog = &SyslogConfig{} }),
+		"one server":            logNet(nil),
+		"tcp":                   logNet(func(s *SyslogConfig) { s.Servers[0].Protocol = "tcp"; s.Servers[0].Port = 6514 }),
+		"an address":            logNet(func(s *SyslogConfig) { s.Servers[0].Host = "192.168.1.9" }),
+		"the system log only":   logNet(func(s *SyslogConfig) { s.Firewall = false }),
+		"the firewall log only": logNet(func(s *SyslogConfig) { s.System = false }),
+		"three servers": logNet(func(s *SyslogConfig) {
+			s.Servers = append(s.Servers, SyslogServer{"a.example", 514, "udp"}, SyslogServer{"a.example", 514, "tcp"})
+		}),
+		"nothing chosen, no server": settingsNet(func(c *NetworkConfig) { c.Syslog = &SyslogConfig{} }),
+	}
+	for name, c := range cases {
+		if err := c.Validate(); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+func TestSyslogSettingsThatAreRefused(t *testing.T) {
+	cases := []struct {
+		name  string
+		c     NetworkConfig
+		field string
+	}{
+		{"a bad name", logNet(func(s *SyslogConfig) { s.Servers[0].Host = "not a host" }), "syslog.servers[0].host"},
+		{"upper case", logNet(func(s *SyslogConfig) { s.Servers[0].Host = "Logs.Example.com" }), "syslog.servers[0].host"},
+		{"empty", logNet(func(s *SyslogConfig) { s.Servers[0].Host = "" }), "syslog.servers[0].host"},
+		{"this router", logNet(func(s *SyslogConfig) { s.Servers[0].Host = "127.0.0.1" }), "syslog.servers[0].host"},
+		{"localhost", logNet(func(s *SyslogConfig) { s.Servers[0].Host = "localhost" }), "syslog.servers[0].host"},
+		{"a localhost name", logNet(func(s *SyslogConfig) { s.Servers[0].Host = "logs.localhost" }), "syslog.servers[0].host"},
+		{"nothing", logNet(func(s *SyslogConfig) { s.Servers[0].Host = "0.0.0.0" }), "syslog.servers[0].host"},
+		{"a url", logNet(func(s *SyslogConfig) { s.Servers[0].Host = "udp://logs.example.com" }), "syslog.servers[0].host"},
+		{"a host with a port", logNet(func(s *SyslogConfig) { s.Servers[0].Host = "logs.example.com:514" }), "syslog.servers[0].host"},
+		{"a line break", logNet(func(s *SyslogConfig) { s.Servers[0].Host = "a.example\nb" }), "syslog.servers[0].host"},
+		{"port 0", logNet(func(s *SyslogConfig) { s.Servers[0].Port = 0 }), "syslog.servers[0].port"},
+		{"port 65536", logNet(func(s *SyslogConfig) { s.Servers[0].Port = 65536 }), "syslog.servers[0].port"},
+		{"a negative port", logNet(func(s *SyslogConfig) { s.Servers[0].Port = -1 }), "syslog.servers[0].port"},
+		{"no protocol", logNet(func(s *SyslogConfig) { s.Servers[0].Protocol = "" }), "syslog.servers[0].protocol"},
+		{"tls", logNet(func(s *SyslogConfig) { s.Servers[0].Protocol = "tls" }), "syslog.servers[0].protocol"},
+		{"upper case protocol", logNet(func(s *SyslogConfig) { s.Servers[0].Protocol = "UDP" }), "syslog.servers[0].protocol"},
+		{"the same server twice", logNet(func(s *SyslogConfig) { s.Servers = append(s.Servers, s.Servers[0]) }), "syslog.servers"},
+		{"four servers", logNet(func(s *SyslogConfig) {
+			s.Servers = append(s.Servers, SyslogServer{"a.example", 514, "udp"}, SyslogServer{"b.example", 514, "udp"}, SyslogServer{"c.example", 514, "udp"})
+		}), "syslog.servers"},
+		{"nothing to send", logNet(func(s *SyslogConfig) { s.System, s.Firewall = false, false }), "syslog"},
+	}
+	for _, tc := range cases {
+		if !errorFieldsOf(t, tc.c)[tc.field] {
+			t.Errorf("%s: no error on %s (got %v)", tc.name, tc.field, errorFieldsOf(t, tc.c))
+		}
+	}
+}
+
+func TestSyslogSettingsAreCopiedAndWrittenOnlyWhenUsed(t *testing.T) {
+	plain, _ := json.Marshal(validNet())
+	if strings.Contains(string(plain), "syslog") {
+		t.Errorf("syslog written for a plain configuration: %s", plain)
+	}
+	c := logNet(nil)
+	b, _ := json.Marshal(c)
+	if !strings.Contains(string(b), `"syslog":{"servers":[{"host":"logs.example.com","port":514,"protocol":"udp"}],"system":true,"firewall":true}`) {
+		t.Fatalf("%s", b)
+	}
+	// a copy shares nothing with the original
+	cp := c.clone()
+	cp.Syslog.Servers[0].Host = "other.example"
+	cp.Syslog.System = false
+	if c.Syslog.Servers[0].Host != "logs.example.com" || !c.Syslog.System {
+		t.Fatal("the copy shares the syslog settings with the original")
+	}
+	if got := validNet().SyslogSettings(); len(got.Servers) != 0 || got.System {
+		t.Fatalf("%+v", got)
+	}
+	s := c.SyslogSettings()
+	s.Servers[0].Host = "changed"
+	if c.Syslog.Servers[0].Host != "logs.example.com" {
+		t.Fatal("SyslogSettings shares its servers")
+	}
+}
+
+func TestSyslogReviewLines(t *testing.T) {
+	base := validNet()
+	line := func(a, b NetworkConfig, field string) *Change {
+		for _, c := range DiffNetwork(a, b) {
+			if c.Field == field {
+				c := c
+				return &c
+			}
+		}
+		return nil
+	}
+	c := logNet(func(s *SyslogConfig) {
+		s.Servers = append(s.Servers, SyslogServer{"10.0.0.9", 6514, "tcp"})
+	})
+	if l := line(base, c, "syslog_servers"); l == nil || l.Old != "(none)" || l.New != "udp://logs.example.com:514, tcp://10.0.0.9:6514" {
+		t.Errorf("servers: %+v", l)
+	}
+	if l := line(base, c, "syslog_sends"); l == nil || l.Old != "(none)" || l.New != "the system log and the firewall log" {
+		t.Errorf("sends: %+v", l)
+	}
+	for _, tc := range []struct {
+		set  func(*SyslogConfig)
+		want string
+	}{
+		{func(s *SyslogConfig) { s.Firewall = false }, "the system log"},
+		{func(s *SyslogConfig) { s.System = false }, "the firewall log"},
+	} {
+		if l := line(logNet(nil), logNet(tc.set), "syslog_sends"); l == nil || l.New != tc.want {
+			t.Errorf("%+v", l)
+		}
+	}
+	// switching the servers off again shows as a removal
+	if l := line(logNet(nil), base, "syslog_servers"); l == nil || l.New != "(none)" {
+		t.Errorf("%+v", l)
+	}
+	if got := DiffNetwork(logNet(nil), logNet(nil)); len(got) != 0 {
+		t.Errorf("no change, but %+v", got)
+	}
+	if (SyslogServer{"a.example", 1, "tcp"}).Host == "" || SyslogServerText(SyslogServer{"a.example", 1, "tcp"}) != "tcp://a.example:1" {
+		t.Error("SyslogServerText")
+	}
+}

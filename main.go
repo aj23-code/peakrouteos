@@ -28,6 +28,7 @@ import (
 	"peakroute/internal/network"
 	"peakroute/internal/pipeline"
 	"peakroute/internal/presence"
+	"peakroute/internal/syslogfwd"
 	"peakroute/internal/system"
 	"peakroute/internal/translator"
 	"peakroute/internal/wanhealth"
@@ -181,6 +182,25 @@ func main() {
 	}
 	go wanProbe.Run(pollerCtx)
 
+	// Send the logs to syslog servers, as the configuration in effect says
+	syslogForwarder := &syslogfwd.Forwarder{Rule: func(id string) (string, string, bool) {
+		rule, ok := cfgMgr.NetworkConfig().FirewallSettings().FindRule(id)
+		return rule.Name, rule.Action, ok
+	}}
+	syslogForwarder.Start(pollerCtx)
+	go func() {
+		tick := time.NewTicker(5 * time.Second)
+		defer tick.Stop()
+		for {
+			syslogForwarder.Update(syslogConfig())
+			select {
+			case <-pollerCtx.Done():
+				return
+			case <-tick.C:
+			}
+		}
+	}()
+
 	// Keep the firewall log: the packets that rules with logging matched, read from the kernel log into a database
 	// of their own (the journal is shared and size limited)
 	fwLogStore, err := fwlog.Open(filepath.Join(configDir, "firewall_log.db"))
@@ -188,7 +208,7 @@ func main() {
 		log.Printf("[!] Firewall log unavailable: %v", err)
 	} else {
 		defer fwLogStore.Close()
-		go (&fwlog.Collector{Store: fwLogStore, Source: fwlog.JournalSource}).Run(pollerCtx)
+		go (&fwlog.Collector{Store: fwLogStore, Source: fwlog.JournalSource, OnPacket: syslogForwarder.Packet}).Run(pollerCtx)
 	}
 
 	// Drop timed-out web sessions in the background
@@ -328,6 +348,12 @@ func main() {
 	mux.HandleFunc("/api/v1/settings/country", requireAuth(netAPI.HandleSettingsCountry))
 	mux.HandleFunc("/api/v1/settings/domain", requireAuth(netAPI.HandleSettingsDomain))
 	netAPI.TimeStatus = network.ReadTimeStatus
+	netAPI.SyslogStatuses = syslogForwarder.Statuses
+	netAPI.SyslogTest = func(ctx context.Context) []syslogfwd.TestResult {
+		return syslogForwarder.SendTest(ctx, "PeakRoute test message")
+	}
+	mux.HandleFunc("/api/v1/settings/syslog", requireAuth(netAPI.HandleSettingsSyslog))
+	mux.HandleFunc("/api/v1/syslog/test", requireAuth(netAPI.HandleSyslogTest))
 	mux.HandleFunc("/api/v1/settings/time", requireAuth(netAPI.HandleSettingsTime))
 	mux.HandleFunc("/api/v1/settings/hostname", requireAuth(netAPI.HandleSettingsHostname))
 	netAPI.ProviderDNS = func() []string {
@@ -629,4 +655,18 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 
 	sessionMgr.DestroySession(w, r)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+// syslogConfig is the syslog forwarding the configuration in effect asks for.
+func syslogConfig() syslogfwd.Config {
+	cfg := cfgMgr.NetworkConfig()
+	s := cfg.SyslogSettings()
+	out := syslogfwd.Config{System: s.System, Firewall: s.Firewall, Hostname: cfg.Hostname}
+	if out.Hostname == "" {
+		out.Hostname = cfgMgr.SysConfig().Hostname
+	}
+	for _, srv := range s.Servers {
+		out.Servers = append(out.Servers, syslogfwd.Server{Host: srv.Host, Port: srv.Port, Protocol: srv.Protocol})
+	}
+	return out
 }

@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"peakroute/internal/config"
 	"peakroute/internal/network"
+	"peakroute/internal/syslogfwd"
 )
 
 func (e *env) settings() Settings {
@@ -307,5 +309,109 @@ func TestTheSettingsShowTheClockWhenItCanBeRead(t *testing.T) {
 	e.api.TimeStatus = func(context.Context) (network.TimeStatus, bool) { return network.TimeStatus{}, false }
 	if s := e.settings(); s.Time != nil {
 		t.Fatalf("an unreadable clock reported as known: %+v", s.Time)
+	}
+}
+
+func TestSyslogForwardingIsSetOnTheSettingsPage(t *testing.T) {
+	e := standard(t)
+	if s := e.settings(); len(s.Syslog.Servers) != 0 || s.Syslog.Servers == nil || s.Syslog.System || s.SyslogPending || s.SyslogStatus == nil || len(s.SyslogStatus) != 0 {
+		t.Fatalf("%+v", s)
+	}
+	set := func(body string) (*httptest.ResponseRecorder, Settings) {
+		rec := e.do(e.api.HandleSettingsSyslog, http.MethodPut, body, "application/json")
+		var s Settings
+		if rec.Code == http.StatusOK {
+			s = decodeInto[Settings](t, rec)
+		}
+		return rec, s
+	}
+	// a port and a protocol left out are 514 and udp; the host is lower-cased and trimmed
+	rec, s := set(`{"servers":[{"host":" Logs.Example.com "},{"host":"10.0.0.9","port":6514,"protocol":"TCP"}],"system":true,"firewall":false}`)
+	if rec.Code != http.StatusOK || len(s.Syslog.Servers) != 2 || s.Syslog.Servers[0] != (config.SyslogServer{Host: "logs.example.com", Port: 514, Protocol: "udp"}) ||
+		s.Syslog.Servers[1] != (config.SyslogServer{Host: "10.0.0.9", Port: 6514, Protocol: "tcp"}) || !s.Syslog.System || s.Syslog.Firewall || !s.SyslogPending {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if e.mgr.NetworkConfig().Syslog != nil {
+		t.Fatal("the active configuration changed")
+	}
+	if !e.changed("syslog_servers") || !e.changed("syslog_sends") {
+		t.Fatalf("no review lines: %+v", e.staged())
+	}
+	e.commit()
+	if s := e.settings(); s.SyslogPending || len(s.Syslog.Servers) != 2 {
+		t.Fatalf("%+v", s)
+	}
+	// the page is told how sending is going
+	e.api.SyslogStatuses = func() []syslogfwd.ServerStatus {
+		return []syslogfwd.ServerStatus{{Server: syslogfwd.Server{Host: "logs.example.com", Port: 514, Protocol: "udp"}, Sent: 12, Dropped: 1, LastError: "boom"}}
+	}
+	if st := e.settings().SyslogStatus; len(st) != 1 || st[0].Host != "logs.example.com" || st[0].Sent != 12 || st[0].Dropped != 1 || st[0].LastError != "boom" {
+		t.Fatalf("%+v", st)
+	}
+	// no servers turns it off, and nothing of it is kept
+	if rec, s := set(`{"servers":[],"system":true,"firewall":true}`); rec.Code != http.StatusOK || len(s.Syslog.Servers) != 0 || s.Syslog.System || !s.SyslogPending || e.draft().Syslog != nil {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	// putting it back: no draft is left behind
+	set(`{"servers":[{"host":"logs.example.com","port":514,"protocol":"udp"},{"host":"10.0.0.9","port":6514,"protocol":"tcp"}],"system":true,"firewall":false}`)
+	if e.changed("syslog_servers") || e.changed("syslog_sends") || e.stageFileExists() {
+		t.Fatalf("putting it back left a draft: %+v", e.staged())
+	}
+	for name, body := range map[string]string{
+		"a bad host":       `{"servers":[{"host":"not a host"}],"system":true}`,
+		"this router":      `{"servers":[{"host":"127.0.0.1"}],"system":true}`,
+		"a bad port":       `{"servers":[{"host":"a.example","port":70000}],"system":true}`,
+		"a negative port":  `{"servers":[{"host":"a.example","port":-5}],"system":true}`,
+		"tls":              `{"servers":[{"host":"a.example","protocol":"tls"}],"system":true}`,
+		"the same twice":   `{"servers":[{"host":"a.example"},{"host":"A.example","port":514,"protocol":"udp"}],"system":true}`,
+		"four servers":     `{"servers":[{"host":"a.example"},{"host":"b.example"},{"host":"c.example"},{"host":"d.example"}],"system":true}`,
+		"nothing to send":  `{"servers":[{"host":"a.example"}]}`,
+		"an unknown field": `{"servers":[],"system":true,"x":1}`,
+	} {
+		rec, _ := set(body)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body)
+		}
+	}
+	if rec, _ := set(`{"servers":[{"host":"x y"}],"system":true}`); !errorFields(t, rec)["syslog.servers[0].host"] {
+		t.Errorf("%s", rec.Body)
+	}
+	if rec, _ := set(`{"servers":[{"host":"a.example"}]}`); !errorFields(t, rec)["syslog"] {
+		t.Errorf("%s", rec.Body)
+	}
+	if rec := e.do(e.api.HandleSettingsSyslog, http.MethodPost, `{}`, "application/json"); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("method: %d", rec.Code)
+	}
+	e.editable = false
+	if rec, _ := set(`{"servers":[],"system":false}`); rec.Code != http.StatusConflict {
+		t.Errorf("while applying: %d", rec.Code)
+	}
+}
+
+func TestTheSyslogTest(t *testing.T) {
+	e := standard(t)
+	post := func() (int, []SyslogTestResult) {
+		rec := e.do(e.api.HandleSyslogTest, http.MethodPost, ``, "")
+		var out struct {
+			Results []SyslogTestResult `json:"results"`
+		}
+		json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out.Results
+	}
+	if code, res := post(); code != http.StatusOK || res == nil || len(res) != 0 {
+		t.Fatalf("%d %v", code, res)
+	}
+	e.api.SyslogTest = func(context.Context) []syslogfwd.TestResult {
+		return []syslogfwd.TestResult{
+			{Server: syslogfwd.Server{Host: "a.example", Port: 514, Protocol: "udp"}, OK: true, Message: "sent"},
+			{Server: syslogfwd.Server{Host: "b.example", Port: 6514, Protocol: "tcp"}, Message: "could not connect: refused"},
+		}
+	}
+	code, res := post()
+	if code != http.StatusOK || len(res) != 2 || !res[0].OK || res[0].Host != "a.example" || res[1].OK || res[1].Port != 6514 || res[1].Protocol != "tcp" || res[1].Message != "could not connect: refused" {
+		t.Fatalf("%d %+v", code, res)
+	}
+	if rec := e.do(e.api.HandleSyslogTest, http.MethodGet, ``, ""); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET: %d", rec.Code)
 	}
 }

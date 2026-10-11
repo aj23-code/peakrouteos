@@ -12,7 +12,7 @@ window.SettingsModule = (function () {
 
     const $ = (id) => document.getElementById(id);
 
-    function blankTyped() { return { hostname: null, domain: null, send: null, tz: null, ntp: null, servers: null }; }
+    function blankTyped() { return { hostname: null, domain: null, send: null, tz: null, ntp: null, servers: null, syslog: null }; }
 
     function showMessage(text, kind) {
         const box = $('settings-message');
@@ -35,6 +35,18 @@ window.SettingsModule = (function () {
     const serversNow = () => (typed.servers !== null ? typed.servers : (settings.ntp_servers || []).join(', '));
     const serverList = (text) => text.split(/[\s,]+/).filter(Boolean);
 
+    // syslog forwarding: the working copy is {servers: [{host, port (text), protocol}], system, firewall}
+    const syslogSaved = () => {
+        const s = settings.syslog || { servers: [], system: false, firewall: false };
+        return { servers: s.servers.map(x => ({ host: x.host, port: String(x.port), protocol: x.protocol })), system: !!s.system, firewall: !!s.firewall };
+    };
+    const syslogNow = () => typed.syslog || syslogSaved();
+    const syslogEdit = () => { if (!typed.syslog) typed.syslog = syslogSaved(); return typed.syslog; };
+    const syslogBody = () => {
+        const s = syslogNow();
+        return { servers: s.servers.filter(x => x.host.trim() || x.port.trim()).map(x => ({ host: x.host.trim(), port: x.port.trim() === '' ? 0 : Number(x.port.trim()), protocol: x.protocol })), system: s.system, firewall: s.firewall };
+    };
+
     // the two settings that are a line of text: where they are saved, and what is sent
     const TEXT = {
         hostname: {
@@ -55,6 +67,7 @@ window.SettingsModule = (function () {
                 (typed.ntp !== null && typed.ntp !== !!settings.ntp_enabled) ||
                 (typed.servers !== null && serverList(typed.servers).join(',') !== (settings.ntp_servers || []).join(','));
         }
+        if (k === 'syslog') return typed.syslog !== null && JSON.stringify(typed.syslog) !== JSON.stringify(syslogSaved());
         const text = typed[k] !== null && TEXT[k].tidy(typed[k]) !== (settings[k] || '');
         return text || (k === 'hostname' && typed.send !== null && typed.send !== !!settings.send_hostname);
     }
@@ -128,6 +141,47 @@ window.SettingsModule = (function () {
         </section>`;
     }
 
+    function syslogRows() {
+        const s = syslogNow();
+        return s.servers.map((x, i) => `<div class="settings-sl-row" data-i="${i}">
+            <div class="form-field settings-sl-host"><label for="sl-host-${i}">Server</label>
+                <input type="text" id="sl-host-${i}" data-sl="host" data-i="${i}" value="${escapeHtml(x.host)}" placeholder="logs.example.com" autocomplete="off" spellcheck="false" autocapitalize="off"${locked() ? ' disabled' : ''}></div>
+            <div class="form-field settings-sl-port"><label for="sl-port-${i}">Port</label>
+                <input type="text" id="sl-port-${i}" data-sl="port" data-i="${i}" value="${escapeHtml(x.port)}" placeholder="514" inputmode="numeric" autocomplete="off"${locked() ? ' disabled' : ''}></div>
+            <div class="form-field settings-sl-proto"><label for="sl-proto-${i}">Protocol</label>
+                <select id="sl-proto-${i}" class="role-select" data-sl="protocol" data-i="${i}"${locked() ? ' disabled' : ''}><option value="udp"${x.protocol === 'udp' ? ' selected' : ''}>UDP</option><option value="tcp"${x.protocol === 'tcp' ? ' selected' : ''}>TCP</option></select></div>
+            <button type="button" class="cfg-btn cfg-btn--ghost settings-sl-remove" data-i="${i}"${locked() ? ' disabled' : ''} aria-label="Remove this server">Remove</button>
+            <p class="field-error hidden settings-sl-error" id="sl-error-${i}"></p></div>`).join('');
+    }
+
+    function syslogStatusHtml() {
+        const st = settings.syslog_status || [];
+        if (!st.length) return '';
+        const rows = st.map(x => {
+            const label = `${escapeHtml(x.host)}:${x.port} (${x.protocol.toUpperCase()})`;
+            const detail = x.last_error ? `<span class="tag tag-warn">${escapeHtml(x.last_error)}</span>`
+                : (x.protocol === 'tcp' ? (x.connected ? '<span class="tag tag-ok">connected</span>' : '<span class="tag">not connected</span>') : '');
+            return `<div class="settings-sl-status"><strong>${label}</strong> ${detail} <span class="form-hint">${x.sent.toLocaleString()} sent${x.dropped ? `, ${x.dropped.toLocaleString()} dropped (the server could not be reached and the queue was full)` : ''}</span></div>`;
+        }).join('');
+        return `<div class="settings-sl-statuses"><span class="form-hint">Running now</span>${rows}</div>`;
+    }
+
+    function syslogCard() {
+        const s = syslogNow();
+        return `<section class="card" id="settings-syslog">
+            <div class="net-card-head"><h2>Syslog forwarding</h2>${draftTag(settings.syslog_pending)}</div>
+            <p class="form-hint">Send this router&rsquo;s logs to a syslog server, so that they are kept somewhere else and for longer than the router keeps them. UDP sends each message once and does not know whether it arrived; TCP keeps a connection open and sends what waited while the server was away. Messages are RFC 5424, one line each; firewall messages name the rule and what it does. There is no encryption: send them only to a server on a network you trust.</p>
+            <div class="settings-sl-rows">${syslogRows()}</div>
+            <div class="settings-sl-add"><button type="button" class="cfg-btn" id="sl-add"${locked() || s.servers.length >= 3 ? ' disabled' : ''}>Add a server</button></div>
+            <label class="toggle toggle--block settings-send"><input type="checkbox" id="sl-system"${s.system ? ' checked' : ''}${locked() ? ' disabled' : ''}><span><strong>Send the system log</strong><span class="form-hint">What the router&rsquo;s services and the kernel say (the System logs page), without the firewall&rsquo;s lines.</span></span></label>
+            <label class="toggle toggle--block settings-send"><input type="checkbox" id="sl-firewall"${s.firewall ? ' checked' : ''}${locked() ? ' disabled' : ''}><span><strong>Send the firewall log</strong><span class="form-hint">The packets that rules with &ldquo;Log matching traffic&rdquo; matched, as they happen, with each rule&rsquo;s name and action.</span></span></label>
+            <p class="field-error hidden" id="sl-error"></p>
+            ${syslogStatusHtml()}
+            <div class="form-actions"><span class="form-hint">Servers in the draft start receiving once you commit. To check that a server is reachable, use <a href="#" data-goto="diagnostics">Diagnostics</a>.</span>
+                <button type="button" class="cfg-btn cfg-btn--primary" id="settings-syslog-save" disabled>Save to draft</button></div>
+        </section>`;
+    }
+
     function render() {
         if (!settings) return;
         const options = option('', 'Choose a country…', settings.country) +
@@ -149,8 +203,10 @@ window.SettingsModule = (function () {
                 settings.domain_pending,
                 'A name such as <code>lan</code> or <code>home.example.com</code>. Set, the devices are told it and can use short names (<code>laptop</code> finds <code>laptop.lan</code>), and the router answers for names inside it by itself. Empty until you set one. The names in it are managed on the <a href="#" data-goto="dns">DNS</a> page.') +
             '<h2 class="settings-group">Time</h2>' +
-            timeCard();
-        keys.concat('time').forEach(updateButton);
+            timeCard() +
+            '<h2 class="settings-group">Logging</h2>' +
+            syslogCard();
+        keys.concat('time', 'syslog').forEach(updateButton);
         startClock();
     }
 
@@ -188,7 +244,7 @@ window.SettingsModule = (function () {
         showMessage('');
         clearErrors(...Object.values(fieldErrors));
         busy = true;
-        keys.concat('time').forEach(updateButton);
+        keys.concat('time', 'syslog').forEach(updateButton);
         const res = await apiFetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         busy = false;
         if (!res || !res.ok) {
@@ -200,7 +256,7 @@ window.SettingsModule = (function () {
                 if (box) { box.textContent = (box.textContent ? box.textContent + ' ' : '') + x.message; box.classList.remove('hidden'); } else rest.push(x.message);
             });
             if (!e.errors || rest.length) showMessage(rest.join(' ') || e.error || fail, 'error');
-            keys.concat('time').forEach(updateButton);
+            keys.concat('time', 'syslog').forEach(updateButton);
             return;
         }
         settings = await res.json();
@@ -220,6 +276,35 @@ window.SettingsModule = (function () {
         return put('/api/v1/settings/time', { timezone: tzNow(), ntp_enabled: ntpNow(), ntp_servers: serverList(serversNow()) },
             { timezone: 'settings-tz-error', ntp_servers: 'settings-servers-error' }, 'The time settings could not be saved.',
             () => { typed.tz = typed.ntp = typed.servers = null; });
+    }
+
+    async function saveSyslog() {
+        showMessage('');
+        clearErrors('sl-error');
+        document.querySelectorAll('.settings-sl-error').forEach(e => { e.textContent = ''; e.classList.add('hidden'); });
+        busy = true;
+        updateButton('syslog');
+        const res = await apiFetch('/api/v1/settings/syslog', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(syslogBody()) });
+        busy = false;
+        if (!res || !res.ok) {
+            let e = {};
+            try { e = res ? await res.json() : {}; } catch (x) { /* not JSON */ }
+            const general = [];
+            (e.errors || []).forEach(x => {
+                const m = /^syslog\.servers\[(\d+)\]\./.exec(x.field);
+                const box = m && $(`sl-error-${m[1]}`);
+                if (box) { box.textContent = (box.textContent ? box.textContent + ' ' : '') + x.message; box.classList.remove('hidden'); } else general.push(x.message);
+            });
+            if (general.length) { const g = $('sl-error'); g.textContent = general.join(' '); g.classList.remove('hidden'); }
+            else if (!e.errors) showMessage(e.error || 'The syslog settings could not be saved.', 'error');
+            updateButton('syslog');
+            return;
+        }
+        settings = await res.json();
+        typed.syslog = null;
+        render();
+        showMessage('Saved as a draft. Review and commit it from the bar at the top when you are ready.', 'ok');
+        if (window.ConfigBanner) window.ConfigBanner.refresh();
     }
 
     async function load() {
@@ -263,6 +348,9 @@ window.SettingsModule = (function () {
             if (id === 'settings-country') saveCountry(e.target.value);
             else if (id === 'settings-send') { typed.send = e.target.checked; updateButton('hostname'); }
             else if (id === 'settings-tz') { typed.tz = e.target.value; clearErrors('settings-tz-error'); updateButton('time'); }
+            else if (id === 'sl-system') { syslogEdit().system = e.target.checked; updateButton('syslog'); }
+            else if (id === 'sl-firewall') { syslogEdit().firewall = e.target.checked; updateButton('syslog'); }
+            else if (e.target.dataset.sl === 'protocol') { syslogEdit().servers[Number(e.target.dataset.i)].protocol = e.target.value; updateButton('syslog'); }
             else if (id === 'settings-ntp') {
                 typed.ntp = e.target.checked;
                 $('settings-servers-grid').classList.toggle('hidden', !typed.ntp);
@@ -270,6 +358,12 @@ window.SettingsModule = (function () {
             }
         });
         body.addEventListener('input', (e) => {
+            if (e.target.dataset.sl === 'host' || e.target.dataset.sl === 'port') {
+                syslogEdit().servers[Number(e.target.dataset.i)][e.target.dataset.sl] = e.target.value;
+                clearErrors(`sl-error-${e.target.dataset.i}`, 'sl-error');
+                updateButton('syslog');
+                return;
+            }
             if (e.target.id === 'settings-servers') {
                 typed.servers = e.target.value;
                 clearErrors('settings-servers-error');
@@ -284,6 +378,16 @@ window.SettingsModule = (function () {
         });
         body.addEventListener('click', (e) => {
             if (e.target.id === 'settings-time-save') { saveTime(); return; }
+            if (e.target.id === 'settings-syslog-save') { saveSyslog(); return; }
+            if (e.target.id === 'sl-add') {
+                const s = syslogEdit();
+                if (s.servers.length === 0) { s.system = true; s.firewall = true; }
+                s.servers.push({ host: '', port: '514', protocol: 'udp' });
+                render();
+                $(`sl-host-${s.servers.length - 1}`).focus();
+                return;
+            }
+            if (e.target.classList.contains('settings-sl-remove')) { syslogEdit().servers.splice(Number(e.target.dataset.i), 1); render(); return; }
             const k = keys.find(x => e.target.id === `settings-${x}-save`);
             if (k) saveText(k);
         });
@@ -292,6 +396,7 @@ window.SettingsModule = (function () {
             const k = keyOf(e.target);
             if (k && dirty(k)) { e.preventDefault(); saveText(k); }
             else if (e.target.id === 'settings-servers' && dirty('time')) { e.preventDefault(); saveTime(); }
+            else if (e.target.dataset.sl && dirty('syslog')) { e.preventDefault(); saveSyslog(); }
         });
     }
 

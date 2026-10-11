@@ -17,7 +17,7 @@ func ensureSafeSettings(cfg config.NetworkConfig) error {
 		return fmt.Errorf("refusing to render %d time servers", len(cfg.NTPServers))
 	}
 	for _, s := range cfg.NTPServers {
-		if !config.ValidNTPServer(s) {
+		if !config.ValidServerHost(s) {
 			return fmt.Errorf("refusing to render the time server %q", s)
 		}
 	}

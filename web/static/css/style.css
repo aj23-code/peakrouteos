@@ -1666,3 +1666,11 @@ height: 260px;
 .settings-group { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin: 0.5rem 0 -0.5rem; }
 .settings-group:first-child { margin-top: 0; }
 .settings-clock { margin: 0.6rem 0 0.2rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
+.settings-sl-rows { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem; }
+.settings-sl-row { display: grid; grid-template-columns: minmax(10rem, 1fr) 6rem 7rem auto; gap: 0.6rem; align-items: end; }
+.settings-sl-row .settings-sl-error { grid-column: 1 / -1; margin: 0; }
+.settings-sl-add { margin-top: 0.75rem; }
+.settings-sl-statuses { margin-top: 1rem; display: flex; flex-direction: column; gap: 0.3rem; }
+@media (max-width: 640px) { .settings-sl-row { grid-template-columns: 1fr 5rem; } .settings-sl-row .cfg-btn { grid-column: 1 / -1; } }
+.settings-sl-row select { min-width: 0; width: 100%; }
+.settings-sl-row .cfg-btn { white-space: nowrap; }
