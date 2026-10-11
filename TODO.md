@@ -101,6 +101,7 @@ Effort: S = under an hour, M = one session, L = multi-session.
 2. **Batch 2:** 8, 10, 11, 12.
 3. **Batch 3, build and image:** 4, 13, 14, 15. Then 7 as a single sitting at the end.
 4. **Project on its own:** 9.
+5. **The end of the road (decided 2026-10-11):** build the remaining features first; then **Backup and restore** (System, Backup and restore: one file with the whole configuration, restored through the same review, commit and confirm path), second to last, because its format depends on every settings schema being settled; then the image (3). The Backup and restore page stays greyed out until then.
 
 ## Longer-term gaps (needs design decisions first)
 
