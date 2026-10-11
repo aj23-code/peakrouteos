@@ -65,8 +65,11 @@ func anyNetworkDHCP(cfg config.NetworkConfig) bool {
 	return false
 }
 
-// carriedBy reports whether any LAN port carries a network, natively or tagged.
+// carriedBy reports whether any LAN port or Wi-Fi network carries a network.
 func carriedBy(cfg config.NetworkConfig, id string) bool {
+	if wifiCarries(cfg, id) {
+		return true
+	}
 	for _, port := range cfg.LanInterfaces {
 		pn := cfg.PortNetworks[port]
 		if pn.NativeID() == id {

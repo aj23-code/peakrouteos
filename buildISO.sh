@@ -129,6 +129,29 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 EOF
 
+# Wi-Fi: one hostapd for every configured adapter. It only starts while the daemon has written a
+# configuration for it (the condition), and after networking, because the access points join the bridges.
+sudo mkdir -p "${ROOTFS_DIR}/usr/lib/peakroute"
+sudo cp "${PROJECT_DIR}/internal/scripts/hostapd-run.sh" "${ROOTFS_DIR}/usr/lib/peakroute/hostapd-run"
+sudo chmod 755 "${ROOTFS_DIR}/usr/lib/peakroute/hostapd-run"
+cat << 'EOF' | sudo tee "${ROOTFS_DIR}/etc/systemd/system/peakroute-wifi.service" > /dev/null
+[Unit]
+Description=PeakRoute OS Wi-Fi access points
+ConditionPathExists=!/run/live
+ConditionPathExistsGlob=/etc/peakroute/hostapd/*.conf
+After=network.target networking.service
+
+[Service]
+Type=forking
+PIDFile=/run/peakroute-hostapd.pid
+ExecStart=/usr/lib/peakroute/hostapd-run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 # Create First-Boot Systemd Service
 cat << 'EOF' | sudo tee "${ROOTFS_DIR}/etc/systemd/system/peakroute-firstboot.service" > /dev/null
 [Unit]
@@ -363,6 +386,7 @@ sudo chmod +x "${ROOTFS_DIR}/usr/local/bin/peakroute-install"
 
 # Enable PeakRoute service and clean APT inside chroot
 sudo chroot "${ROOTFS_DIR}" systemctl enable peakroute.service
+sudo chroot "${ROOTFS_DIR}" systemctl enable peakroute-wifi.service
 sudo chroot "${ROOTFS_DIR}" systemctl enable peakroute-firstboot.service
 sudo chroot "${ROOTFS_DIR}" systemctl enable peakroute-installer.service
 sudo chroot "${ROOTFS_DIR}" apt-get clean || true

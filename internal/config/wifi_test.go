@@ -8,8 +8,12 @@ import (
 	"testing"
 )
 
-func radio24() WifiRadio { return WifiRadio{Name: "wlan0", Band: Band24, Channel: 6, Width: 20} }
-func radio5() WifiRadio  { return WifiRadio{Name: "wlan1", Band: Band5, Channel: 36, Width: 80} }
+func radio24() WifiRadio {
+	return WifiRadio{Name: "wlan0", Band: Band24, Channel: 6, Width: 20, HT: true}
+}
+func radio5() WifiRadio {
+	return WifiRadio{Name: "wlan1", Band: Band5, Channel: 36, Width: 80, HT: true, VHT: true}
+}
 
 func homeWifi() WifiNetwork {
 	return WifiNetwork{ID: "wifi1", SSID: "Home", Network: "lan", Security: SecurityWPA2WPA3, Passphrase: "correct horse battery",
@@ -33,7 +37,7 @@ func TestValidWifi(t *testing.T) {
 		"dual band":                        goodWifi(),
 		"one band":                         withWifi(validNet(), "DE", []WifiRadio{radio24()}, func() WifiNetwork { n := homeWifi(); n.Bands = []string{Band24}; n.BandSteering = false; return n }()),
 		"a guest network":                  withWifi(guestNet, "US", []WifiRadio{radio24()}, WifiNetwork{ID: "wifi2", SSID: "Guest WiFi", Network: "guest", Security: SecurityWPA2, Passphrase: "visitors only!", Bands: []string{Band24}}),
-		"automatic channel":                withWifi(validNet(), "US", []WifiRadio{{Name: "wlan0", Band: Band5, Channel: 0, Width: 80}}, func() WifiNetwork { n := homeWifi(); n.Bands = []string{Band5}; n.BandSteering = false; return n }()),
+		"automatic channel":                withWifi(validNet(), "US", []WifiRadio{{Name: "wlan0", Band: Band5, Channel: 0, Width: 80, HT: true, VHT: true}}, func() WifiNetwork { n := homeWifi(); n.Bands = []string{Band5}; n.BandSteering = false; return n }()),
 		"radios set up before any network": withWifi(validNet(), "US", []WifiRadio{radio24()}),
 		"a country alone":                  withWifi(validNet(), "JP", nil),
 		"switched off things are not covered": withWifi(validNet(), "US", []WifiRadio{func() WifiRadio { r := radio5(); r.Disabled = true; return r }()},
@@ -98,6 +102,8 @@ func TestInvalidWifi(t *testing.T) {
 		{"negative channel", mutR(func(r *WifiRadio) { r.Channel = -1 }), "wifi.radios[1].channel"},
 		{"80 MHz on a channel that is in no 80 MHz block", mutR(func(r *WifiRadio) { r.Channel, r.Width = 165, 80 }), "wifi.radios[1].channel"},
 		{"160 MHz in the upper block", mutR(func(r *WifiRadio) { r.Channel, r.Width = 149, 160 }), "wifi.radios[1].channel"},
+		{"40 MHz on an adapter without 802.11n", mutR(func(r *WifiRadio) { r.Width, r.HT, r.VHT = 40, false, false }), "wifi.radios[1].width"},
+		{"80 MHz on an adapter without 802.11ac", mutR(func(r *WifiRadio) { r.VHT = false }), "wifi.radios[1].width"},
 		{"too many adapters", withWifi(validNet(), "US", []WifiRadio{{Name: "a", Band: Band24, Width: 20}, {Name: "b", Band: Band24, Width: 20}, {Name: "c", Band: Band24, Width: 20}, {Name: "d", Band: Band24, Width: 20}, {Name: "e", Band: Band24, Width: 20}}), "wifi.radios"},
 
 		{"bad id", mutN(func(n *WifiNetwork) { n.ID = "Wi Fi" }), "wifi.networks[0].id"},
@@ -143,6 +149,15 @@ func TestInvalidWifi(t *testing.T) {
 		if ve := fieldsOf(t, err); !ve.Has(c.field) {
 			t.Errorf("%s: errors were %v, want one on %s", c.name, ve, c.field)
 		}
+	}
+}
+
+func TestAWiFi6AdapterMayUse80MHzWithoutAdvertisingAC(t *testing.T) {
+	r := radio5()
+	r.VHT, r.HE = false, true
+	c := withWifi(validNet(), "US", []WifiRadio{radio24(), r}, homeWifi())
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
 	}
 }
 

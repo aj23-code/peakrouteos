@@ -173,6 +173,8 @@ var serviceCommands = map[string]command{
 	SvcNftables:   {"systemctl", []string{"reload", "nftables"}},
 	SvcDnsmasq:    {"systemctl", []string{"restart", "dnsmasq"}},
 	SvcRoutes:     routesApplyCommand(PathRoutes),
+	// With no configuration left the service's start condition is not met, so a restart leaves it stopped.
+	SvcWifi: {"systemctl", []string{"restart", "peakroute-wifi"}},
 }
 
 // routesCheckCommand syntax-checks the routes script. The script may be about to be removed (the
@@ -235,7 +237,8 @@ func (a *Applier) Apply(ctx context.Context, desired Desired, plan Plan) Result 
 	// 1. write the files
 	for _, f := range plan.Files {
 		art, ok := artifacts[f.Path]
-		if !ok {
+		// a removal of a file nothing renders (found in a managed directory) needs no artifact
+		if !ok && f.Kind != Remove {
 			res.Steps = append(res.Steps, Step{Name: "write " + f.Path, Error: "not part of the rendered configuration"})
 			return fail(fmt.Errorf("internal error: %s is in the plan but was not rendered", f.Path))
 		}

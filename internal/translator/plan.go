@@ -12,6 +12,25 @@ import (
 // planning can be tested without touching /etc.
 type FileReader interface {
 	ReadFile(path string) ([]byte, error)
+	// ListDir returns the names of the files in a directory (none if it does not exist).
+	ListDir(path string) ([]string, error)
+}
+
+func (r RootFS) ListDir(path string) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(string(r), path))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	return names, nil
 }
 
 // RootFS reads absolute paths relative to a root directory ("" or "/" is the real filesystem).
@@ -54,11 +73,12 @@ type Plan struct {
 func (p Plan) Empty() bool { return len(p.Files) == 0 && len(p.Actions) == 0 }
 
 var (
-	serviceOrder = []string{SvcSysctl, SvcNetworking, SvcRoutes, SvcNftables, SvcDnsmasq}
+	serviceOrder = []string{SvcSysctl, SvcNetworking, SvcRoutes, SvcWifi, SvcNftables, SvcDnsmasq}
 	serviceVerb  = map[string]string{
 		SvcSysctl:     "apply",
 		SvcNetworking: "restart",
 		SvcRoutes:     "apply",
+		SvcWifi:       "restart",
 		SvcNftables:   "reload",
 		SvcDnsmasq:    "restart",
 	}
@@ -96,11 +116,34 @@ func PlanChanges(fsys FileReader, desired Desired) (Plan, error) {
 		changedBy[a.Service] = append(changedBy[a.Service], a.Path)
 	}
 
+	// Files in a managed directory that nothing accounts for are removed
+	wanted := map[string]bool{}
+	for _, a := range desired.Artifacts {
+		wanted[a.Path] = true
+	}
+	for _, dir := range desired.ManagedDirs {
+		names, err := fsys.ListDir(dir.Path)
+		if err != nil {
+			return Plan{}, fmt.Errorf("list %s: %w", dir.Path, err)
+		}
+		for _, name := range names {
+			path := dir.Path + "/" + name
+			if !strings.HasSuffix(name, ".conf") || wanted[path] {
+				continue
+			}
+			plan.Files = append(plan.Files, FileChange{Path: path, Kind: Remove, Service: dir.Service})
+			changedBy[dir.Service] = append(changedBy[dir.Service], path)
+		}
+	}
+
 	// Restarting networking takes the LAN interface down and up, which drops the address
 	// dnsmasq is bound to, so a managed DHCP server must be restarted along with it
 	_, networkingChanged := changedBy[SvcNetworking]
 	_, dnsmasqChanged := changedBy[SvcDnsmasq]
 	cascadeDnsmasq := networkingChanged && !dnsmasqChanged && dhcpManaged(desired)
+	// ...and takes the bridges the access points joined away with it, so the access points start again
+	_, wifiChanged := changedBy[SvcWifi]
+	cascadeWifi := networkingChanged && !wifiChanged && wifiManaged(desired)
 
 	for _, svc := range serviceOrder {
 		switch {
@@ -109,6 +152,12 @@ func PlanChanges(fsys FileReader, desired Desired) (Plan, error) {
 				Service: svc,
 				Verb:    serviceVerb[svc],
 				Reason:  "changed: " + strings.Join(changedBy[svc], ", "),
+			})
+		case svc == SvcWifi && cascadeWifi:
+			plan.Actions = append(plan.Actions, Action{
+				Service: svc,
+				Verb:    serviceVerb[svc],
+				Reason:  "networking is restarting, which removes the bridges the access points joined",
 			})
 		case svc == SvcDnsmasq && cascadeDnsmasq:
 			plan.Actions = append(plan.Actions, Action{

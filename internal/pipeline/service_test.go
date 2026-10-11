@@ -349,6 +349,8 @@ func TestOnlyNetworkingAndFirewallChangesNeedConfirmation(t *testing.T) {
 		"sysctl,networking": true,
 		"routes":            true, // a wrong route can cut off an admin who comes from another network
 		"routes,dnsmasq":    true,
+		"wifi":              true, // restarting the access points drops every Wi-Fi device, an admin's included
+		"wifi,dnsmasq":      true,
 		"":                  false,
 	} {
 		var list []string

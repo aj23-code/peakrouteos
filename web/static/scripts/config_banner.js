@@ -14,6 +14,7 @@ window.ConfigBanner = (function () {
         sysctl: 'Apply kernel settings (IP forwarding)',
         networking: 'Restart networking (a brief interruption)',
         routes: 'Apply the static routes',
+        wifi: 'Restart Wi-Fi (devices reconnect)',
         nftables: 'Reload the firewall rules',
         dnsmasq: 'Restart the DHCP and DNS server',
     };

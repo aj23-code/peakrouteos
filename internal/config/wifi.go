@@ -31,6 +31,11 @@ type WifiRadio struct {
 	Channel  int    `json:"channel"` // 0 lets the adapter pick one
 	Width    int    `json:"width"`   // 20, 40, 80 or 160 MHz
 	Disabled bool   `json:"disabled,omitempty"`
+	// What the adapter supports, as read from it when the radio was set up (802.11n, ac and ax).
+	// hostapd refuses a setting the hardware lacks, so the configuration is written from these.
+	HT  bool `json:"ht,omitempty"`
+	VHT bool `json:"vht,omitempty"`
+	HE  bool `json:"he,omitempty"`
 }
 
 // WifiNetwork is one SSID.
@@ -294,6 +299,14 @@ func (c NetworkConfig) validateWifi(add func(field, format string, args ...any))
 		}
 		if !ValidWidth(r.Band, r.Width) {
 			add(field("width"), "the %s band allows %s", r.Band, widthsText(r.Band))
+			continue
+		}
+		if r.Width >= 40 && !r.HT {
+			add(field("width"), "this adapter does not support channels wider than 20 MHz")
+			continue
+		}
+		if r.Width >= 80 && !r.VHT && !r.HE {
+			add(field("width"), "this adapter does not support %d MHz channels", r.Width)
 			continue
 		}
 		if r.Channel != 0 {

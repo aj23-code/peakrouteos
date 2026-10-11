@@ -159,7 +159,7 @@ func (s *Service) fs() translator.FileSystem { return s.applier.FS }
 // the firewall. A DHCP-only change restarts dnsmasq and cannot, so it needs no confirmation.
 func needsConfirm(p translator.Plan) bool {
 	for _, a := range p.Actions {
-		if a.Service == translator.SvcNetworking || a.Service == translator.SvcNftables || a.Service == translator.SvcRoutes {
+		if a.Service == translator.SvcNetworking || a.Service == translator.SvcNftables || a.Service == translator.SvcRoutes || a.Service == translator.SvcWifi {
 			return true
 		}
 	}

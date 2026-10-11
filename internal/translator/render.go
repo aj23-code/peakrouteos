@@ -35,6 +35,7 @@ const (
 	SvcSysctl     = "sysctl"
 	SvcNetworking = "networking"
 	SvcRoutes     = "routes"
+	SvcWifi       = "wifi"
 	SvcNftables   = "nftables"
 	SvcDnsmasq    = "dnsmasq"
 )
@@ -54,14 +55,24 @@ type Artifact struct {
 // Desired is everything the translator wants on disk for a configuration.
 type Desired struct {
 	Artifacts []Artifact
-	Notes     []string // things the user should know about, shown with the plan
+	// ManagedDirs are directories whose *.conf files all belong to the translator: a file there that no
+	// artifact accounts for is removed (an adapter taken out of the Wi-Fi setup, say).
+	ManagedDirs []ManagedDir
+	Notes       []string // things the user should know about, shown with the plan
+}
+
+// ManagedDir is a directory the translator owns the *.conf files of.
+type ManagedDir struct {
+	Path    string
+	Service string // the service that must pick up a removal
 }
 
 // LanTarget is the interface the default network lives on: the single LAN port that carries it, or
 // the br0 bridge when several ports are combined. Without further networks this mirrors what the
 // first-boot wizard does.
 func LanTarget(cfg config.NetworkConfig) string {
-	if ports := defaultPorts(cfg); len(ports) == 1 {
+	// a Wi-Fi network on the default network needs a bridge to join, whatever the number of ports
+	if ports := defaultPorts(cfg); len(ports) == 1 && !wifiOnDefaultNetwork(cfg) {
 		return ports[0]
 	}
 	return "br0"
@@ -153,6 +164,15 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	}
 
 	d.Notes = append(d.Notes, networkNotes(cfg)...)
+
+	// Wi-Fi access points
+	wifi, err := wifiArtifacts(cfg)
+	if err != nil {
+		return Desired{}, err
+	}
+	d.Artifacts = append(d.Artifacts, wifi...)
+	// always managed, so that taking the Wi-Fi section out of the configuration clears the files too
+	d.ManagedDirs = append(d.ManagedDirs, ManagedDir{Path: PathHostapdDir, Service: SvcWifi})
 
 	// Upstream DNS servers for LAN clients when the WAN has a fixed address and its own DNS
 	if strings.EqualFold(cfg.WanMode, "static") && len(cfg.WanDNS) > 0 {
@@ -251,7 +271,7 @@ func renderInterfaces(cfg config.NetworkConfig, lan string) string {
 	fmt.Fprintf(&b, "iface %s inet static\n", lan)
 	fmt.Fprintf(&b, "    address %s\n", cfg.LanIP)
 	fmt.Fprintf(&b, "    netmask %s\n", cfg.LanSubnet)
-	if len(cfg.LanInterfaces) > 1 {
+	if lan == "br0" {
 		fmt.Fprintf(&b, "    bridge_ports %s\n", strings.Join(cfg.LanInterfaces, " "))
 	} else {
 		// The wizard leaves an empty line here for a single LAN port; keeping it means a box the

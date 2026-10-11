@@ -544,6 +544,47 @@ Built in stages: (1) config, validation and review lines, (2) translator and the
   once, from its "valid interface combinations": 1 on the dev laptop's Intel adapter) and per band `ht`, `vht`,
   `he` (802.11n, ac, ax).
 
+### Wi-Fi networks: translator and the wifi service (stage 2)
+
+- **One hostapd process for every adapter**, because band steering needs it: the 2.4 GHz side refuses a device
+  that has already been seen on the 5 GHz side, and hostapd can only look that up inside one process. The
+  translator writes one file per switched-on adapter that has networks to serve, `/etc/peakroute/hostapd/<adapter>.conf`
+  (mode 0600: it holds the passphrase), and `peakroute-wifi.service` starts `hostapd` with all of them through
+  `/usr/lib/peakroute/hostapd-run` (`internal/scripts/hostapd-run.sh`, copied and enabled by `buildISO.sh`; **the
+  ISO needs a rebuild**). The unit only runs while a configuration exists (`ConditionPathExistsGlob`), starts after
+  `networking`, and is `Type=forking` with `hostapd -B`, so a configuration hostapd rejects makes the restart, and
+  therefore the commit, fail and roll back. The script leaves out a file whose adapter is not present, and fails
+  if none is, so a commit cannot report success for an access point that never started. It also runs
+  `rfkill unblock wifi`.
+- **What a file holds** (`translator/wifi.go`): the radio (`interface`, `country_code`, `ieee80211d`,
+  `hw_mode` g or a, `channel` or 0 for automatic, with `acs_exclude_dfs=1` on 5 GHz so an automatic choice avoids
+  the radar-wait channels, `ieee80211h=1` on 5 GHz); the generations the adapter supports, **written from the flags
+  stored with the radio** (`ht`, `vht`, `he`, read from the adapter when it was set up, because hostapd refuses a
+  setting the hardware lacks): HT40 as `[HT40+]` or `[HT40-]` from the channel, VHT and HE width codes with the
+  centre channel of the 80 or 160 MHz block; then one section per Wi-Fi network: `ssid`, `bridge=<the local
+  network's bridge>`, WPA2 (`WPA-PSK`), WPA3 (`SAE`, management frame protection required) or both (`WPA-PSK SAE`,
+  protection optional for the older devices), `ignore_broadcast_ssid`, `ap_isolate`, and 802.11k/v
+  (`rrm_neighbor_report`, `bss_transition`) so devices can be told where to roam. The first network on an adapter
+  uses the adapter's own interface, the next ones `bss=<adapter>_1`, `_2`...
+- **Band steering** is `no_probe_resp_if_seen_on` and `no_auth_if_seen_on` on the 2.4 GHz side of a network that
+  is also on 5 GHz, pointing at that network's 5 GHz interface (found per network, so it is right when an adapter
+  serves several). Devices that only do 2.4 GHz are never seen on 5 GHz and are unaffected. Both sides use the same
+  name and security, which is what lets a device treat them as one network.
+- **Bridges:** an access point joins its local network's bridge through `bridge=`. A Wi-Fi network on the
+  **default** network therefore forces `br0` even when only one cable port carries it (`LanTarget` and the
+  interfaces file follow, and so do the firewall and DHCP files that name the interface).
+- **Plan:** `wifi` is a restart, ordered after `networking` and `routes`. Restarting networking removes the bridges
+  the access points joined, so **a networking restart also restarts Wi-Fi** (like the DHCP server). A new managed
+  directory mechanism removes a `.conf` file there that nothing accounts for (an adapter taken out of the setup, or
+  the whole Wi-Fi section removed); other files are left alone. Wi-Fi changes need the 60 second confirmation (they
+  drop every Wi-Fi device, an admin's included). The review notes no longer claim a network is uncarried if a Wi-Fi
+  network joins it.
+- **Checked** with the real `hostapd` (v2.10) in a test that runs it on every kind of file we write and fails on
+  anything it says about the configuration (it reads the whole file before it tries the adapter); the test first
+  proves it can see a mistake with a bogus setting, and is skipped where hostapd is not installed. What a unit
+  test cannot show: whether a particular adapter accepts the channel, width and band-steering settings at runtime.
+  That needs the hardware.
+
 **Next, in order:** the config model for Wi-Fi networks (an SSID tied to a Local Network, so a Guest SSID lands
 on the Guest VLAN: name, WPA2/WPA3 passphrase, band, channel, width), the translator for hostapd, the country
 setting, then AP mode (the limited GUI and a translator that bridges everything to one port).

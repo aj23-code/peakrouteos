@@ -183,7 +183,8 @@ func TestNothingIsAdoptedOutsideRouterMode(t *testing.T) {
 
 type failingReader struct{}
 
-func (failingReader) ReadFile(string) ([]byte, error) { return nil, os.ErrPermission }
+func (failingReader) ReadFile(string) ([]byte, error)  { return nil, os.ErrPermission }
+func (failingReader) ListDir(string) ([]string, error) { return nil, os.ErrPermission }
 
 func TestAnUnreadableDnsmasqFileLeavesDhcpUnmanaged(t *testing.T) {
 	cfg := blank()
