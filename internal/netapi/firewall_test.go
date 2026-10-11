@@ -76,7 +76,7 @@ func TestTheFirewallStartsEmptyWithItsTabsAndFixedLines(t *testing.T) {
 		t.Fatalf("lan:\n%s\n--\n%s", lines(lan.Before), lines(lan.After))
 	}
 	// the default network is not isolated, the guest network is: no line to it
-	if strings.Contains(lines(lan.After), "Allow to Guest") {
+	if strings.Contains(lines(lan.After), "Allow to the other Local Networks") || !strings.Contains(lines(lan.After), "off: No other Local Network can be reached") {
 		t.Errorf("the guest network is isolated:\n%s", lines(lan.After))
 	}
 	guest := f.Policy["net2"]
@@ -102,10 +102,10 @@ func TestThePolicyLinesFollowTheSwitchesOnLocalNetworks(t *testing.T) {
 		texts = append(texts, l.Text)
 	}
 	got := strings.Join(texts, "|")
-	if !strings.Contains(got, "Allow to the internet") || !strings.Contains(got, "Allow to LAN") || strings.Contains(got, "Isolated") {
+	if !strings.Contains(got, "Allow to the internet") || !strings.Contains(got, "Allow to the other Local Networks that are not isolated (LAN)") || strings.Contains(got, "Isolated") {
 		t.Fatalf("%s", got)
 	}
-	if lan := f.Policy["lan"].After; !strings.Contains(lan[len(lan)-2].Text, "Allow to Guest") {
+	if lan := f.Policy["lan"].After; !strings.Contains(lan[len(lan)-2].Text, "Allow to the other Local Networks that are not isolated (Guest)") {
 		t.Fatalf("%+v", lan)
 	}
 	// forwards add a line to the internet tab
@@ -531,7 +531,7 @@ func TestAnIsolatedDefaultNetworkHasNoLinesToTheOthers(t *testing.T) {
 	open := e.firewall().Policy["lan"].After
 	var hasGuest bool
 	for _, l := range open {
-		hasGuest = hasGuest || l.Text == "Allow to Guest"
+		hasGuest = hasGuest || l.Text == "Allow to the other Local Networks that are not isolated (Guest)"
 	}
 	if !hasGuest {
 		t.Fatalf("the open default network should reach the open guest network: %+v", open)
@@ -542,7 +542,7 @@ func TestAnIsolatedDefaultNetworkHasNoLinesToTheOthers(t *testing.T) {
 	f := e.firewall()
 	var isolated bool
 	for _, l := range f.Policy["lan"].After {
-		if l.Text == "Allow to Guest" {
+		if strings.HasPrefix(l.Text, "Allow to the other Local Networks") {
 			t.Errorf("an isolated default network still reaches Guest: %+v", f.Policy["lan"].After)
 		}
 		isolated = isolated || strings.HasPrefix(l.Text, "Isolated from the other networks")
@@ -551,7 +551,7 @@ func TestAnIsolatedDefaultNetworkHasNoLinesToTheOthers(t *testing.T) {
 		t.Errorf("no 'isolated' line: %+v", f.Policy["lan"].After)
 	}
 	for _, l := range f.Policy["net2"].After {
-		if l.Text == "Allow to LAN" {
+		if strings.HasPrefix(l.Text, "Allow to the other Local Networks") {
 			t.Errorf("the guest network still reaches an isolated LAN: %+v", f.Policy["net2"].After)
 		}
 	}
@@ -619,5 +619,41 @@ func TestForwardEditsAreRefusedWhileApplying(t *testing.T) {
 	}
 	if got := e.firewall().Forwards; len(got) != 1 || got[0].Name != "a" {
 		t.Fatalf("%+v", got)
+	}
+}
+
+func TestTheLocalNetworksLineNamesEveryNetworkItReaches(t *testing.T) {
+	e := fwEnv(t) // LAN and Guest (isolated), and now an open IoT network
+	if rec := e.create(`{"name":"IoT","vlan":30,"ip":"10.30.0.1","netmask":"255.255.255.0","isolated":false}`); rec.Code != http.StatusCreated {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if rec := e.net(http.MethodPut, "net2", `{"ip":"10.20.0.1","netmask":"255.255.255.0","isolated":false}`); rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	line := func(tab string) string {
+		for _, l := range e.firewall().Policy[tab].After {
+			if strings.HasPrefix(l.Text, "Allow to the other Local Networks") {
+				return l.Text
+			}
+		}
+		return ""
+	}
+	if got := line("lan"); got != "Allow to the other Local Networks that are not isolated (Guest, IoT)" {
+		t.Errorf("%q", got)
+	}
+	if got := line("net3"); got != "Allow to the other Local Networks that are not isolated (LAN, Guest)" {
+		t.Errorf("%q", got)
+	}
+	// only some of the others can be reached
+	e.net(http.MethodPut, "net3", `{"ip":"10.30.0.1","netmask":"255.255.255.0","isolated":true}`)
+	if got := line("lan"); got != "Allow to the other Local Networks that are not isolated (Guest)" {
+		t.Errorf("%q", got)
+	}
+	// a router with one network has nothing to say about the others
+	e2 := standard(t)
+	for _, l := range e2.firewall().Policy["lan"].After {
+		if strings.Contains(l.Text, "Local Network") {
+			t.Errorf("a line about other networks on a router with one: %+v", l)
+		}
 	}
 }

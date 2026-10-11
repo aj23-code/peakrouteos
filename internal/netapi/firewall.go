@@ -133,10 +133,23 @@ func firewallPolicy(c config.NetworkConfig) map[string]FirewallPolicy {
 		if networkIsolated(c, t.ID) {
 			p.After = append(p.After, PolicyLine{"Isolated from the other networks (switched on on Local Networks)", "off"})
 		} else {
+			// one line for the others that can be reached: those that are not isolated themselves
+			var reachable []string
+			others := 0
 			for _, o := range nets {
-				if o.ID != t.ID && !networkIsolated(c, o.ID) {
-					p.After = append(p.After, PolicyLine{"Allow to " + o.Name, "allow"})
+				if o.ID == t.ID {
+					continue
 				}
+				others++
+				if !networkIsolated(c, o.ID) {
+					reachable = append(reachable, o.Name)
+				}
+			}
+			switch {
+			case len(reachable) > 0:
+				p.After = append(p.After, PolicyLine{"Allow to the other Local Networks that are not isolated (" + strings.Join(reachable, ", ") + ")", "allow"})
+			case others > 0:
+				p.After = append(p.After, PolicyLine{"No other Local Network can be reached: they are all isolated (switched on on Local Networks)", "off"})
 			}
 		}
 		p.After = append(p.After, block)
