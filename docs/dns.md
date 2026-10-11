@@ -1,7 +1,7 @@
 # PeakRoute OS DNS
 
-Status: **design (2026-10-11), not built yet.** This file is written first and kept up to date as each stage is built; every
-stage's commit updates it. It is meant to become the DNS chapter of the user documentation.
+Status (2026-10-11): **stage 1 built** (the model, validation and review lines; nothing is written to the system yet and there is
+no page). This file was written first and every stage's commit updates it. It is meant to become the DNS chapter of the user documentation.
 
 Contents: 1 What exists today, 2 Two sides: what the router asks, what the devices are told, 3 What each network is told,
 4 The router's own DNS server, 5 The local domain, 6 Local names, 7 Domain forwarding, 8 Staying out of trouble, 9 Recipes,
@@ -134,7 +134,7 @@ under it go to the servers listed (up to three), instead of the upstream servers
 
 Each stage is its own commit with tests and updates this document.
 
-1. **Model**: domain, local names, forwards, per-network servers; validation; review lines.
+1. **Model** (done): domain, local names, forwards, per-network servers; validation; review lines.
 2. **Files**: the translator writes them; checked with `dnsmasq --test` and with real queries between namespaces.
 3. **API**: the DNS settings, the local names, the forwards, per-network choice, the domain on Settings.
 4. **DNS page** (Services, DNS) and the domain field on Settings.

@@ -121,6 +121,11 @@ type NetworkConfig struct {
 	// The country this router is used in (ISO 3166-1 code). A router-wide setting: today Wi-Fi uses it to know
 	// which channels and powers are allowed.
 	Country string `json:"country,omitempty"`
+	// The router's local domain (empty until one is set) and its DNS: local names and forwarded domains, and the servers
+	// the default network is told to use instead of the router (docs/dns.md).
+	Domain        string     `json:"domain,omitempty"`
+	DNS           *DNSConfig `json:"dns,omitempty"`
+	LanDNSServers []string   `json:"lan_dns_servers,omitempty"`
 	// Wi-Fi: which adapters serve as access points and the Wi-Fi networks (SSIDs)
 	Wifi            *WifiConfig           `json:"wifi,omitempty"`
 	Firewall        *FirewallConfig       `json:"firewall,omitempty"` // the rules and port forwards (docs/firewall.md)
@@ -230,6 +235,14 @@ func (c NetworkConfig) clone() NetworkConfig {
 	if c.Firewall != nil {
 		f := c.Firewall.clone()
 		c.Firewall = &f
+	}
+	if c.DNS != nil {
+		d := c.DNS.clone()
+		c.DNS = &d
+	}
+	c.LanDNSServers = append([]string(nil), c.LanDNSServers...)
+	if len(c.LanDNSServers) == 0 {
+		c.LanDNSServers = nil
 	}
 	c.Interfaces = append([]SystemInterface(nil), c.Interfaces...)
 

@@ -233,6 +233,9 @@ func (c NetworkConfig) Validate() error {
 	// --- Firewall ---
 	c.validateFirewall(add)
 
+	// --- DNS ---
+	c.validateDNS(add)
+
 	if len(errs) == 0 {
 		return nil
 	}

@@ -88,6 +88,8 @@ var networkSettings = []networkSetting{
 		return dhcpValue(c, func(d *DHCPConfig) string { return text(d.LeaseTime) })
 	}},
 	{"country", "Country", func(c NetworkConfig) string { return text(c.Country) }},
+	{"domain", "Local domain", func(c NetworkConfig) string { return text(c.Domain) }},
+	{"lan_dns_servers", "DNS told to the default network", func(c NetworkConfig) string { return serversText(c.LanDNSServers) }},
 }
 
 // The internet connection's carrier settings (VLAN, MTU, MAC, host name, PPPoE), shown right after the
@@ -160,6 +162,7 @@ func DiffNetwork(active, candidate NetworkConfig) []Change {
 	changes = append(changes, diffWanSecret(active, candidate)...)
 	changes = append(changes, diffWifi(active, candidate)...)
 	changes = append(changes, diffFirewall(active, candidate)...)
+	changes = append(changes, diffDNS(active, candidate)...)
 	changes = append(changes, diffNetworks(active, candidate)...)
 	changes = append(changes, diffPortNetworks(active, candidate)...)
 	return append(changes, diffRoutes(active.Routes, candidate.Routes)...)
@@ -178,8 +181,12 @@ func networkText(n Network) string {
 	if d := n.DHCP; d != nil && d.Enabled {
 		dhcp = fmt.Sprintf("DHCP %s to %s, lease %s", d.RangeStart, d.RangeEnd, d.LeaseTime)
 	}
-	return fmt.Sprintf("VLAN %d, router %s / %s, %s, %s, %s", n.VLAN, text(n.IP), text(n.Netmask), dhcp,
+	t := fmt.Sprintf("VLAN %d, router %s / %s, %s, %s, %s", n.VLAN, text(n.IP), text(n.Netmask), dhcp,
 		onOff(n.Internet, "internet allowed", "no internet"), onOff(n.Isolated, "isolated from other networks", "can reach other networks"))
+	if len(n.DNSServers) > 0 {
+		t += ", DNS " + strings.Join(n.DNSServers, ", ")
+	}
+	return t
 }
 
 func networkLabel(n Network) string {
@@ -550,4 +557,57 @@ func portForwardEqual(a, b PortForward) bool {
 	return a.ID == b.ID && a.Name == b.Name && a.Disabled == b.Disabled && a.Protocol == b.Protocol &&
 		a.ExternalPorts == b.ExternalPorts && a.ToIP == b.ToIP && a.InternalPorts == b.InternalPorts &&
 		strings.Join(a.Sources, ",") == strings.Join(b.Sources, ",")
+}
+
+// diffDNS describes local name and forwarded domain changes in words: one line per entry added, removed or changed.
+func diffDNS(active, candidate NetworkConfig) []Change {
+	a, b := active.DNSSettings(), candidate.DNSSettings()
+	var changes []Change
+
+	oldHosts := map[string]DNSHost{}
+	for _, h := range a.Hosts {
+		oldHosts[h.ID] = h
+	}
+	newHosts := map[string]bool{}
+	for _, h := range b.Hosts {
+		newHosts[h.ID] = true
+		old, had := oldHosts[h.ID]
+		switch {
+		case !had:
+			changes = append(changes, Change{Field: "dns_hosts", Label: "Local name " + h.Name, Old: valueNone, New: HostText(h)})
+		case old != h:
+			before := HostText(old)
+			if old.Name != h.Name {
+				before = fmt.Sprintf("%q: %s", old.Name, before)
+			}
+			changes = append(changes, Change{Field: "dns_hosts", Label: "Local name " + h.Name, Old: before, New: HostText(h)})
+		}
+	}
+	for _, h := range a.Hosts {
+		if !newHosts[h.ID] {
+			changes = append(changes, Change{Field: "dns_hosts", Label: "Local name " + h.Name, Old: HostText(h), New: "(removed)"})
+		}
+	}
+
+	oldFwd := map[string]DNSForward{}
+	for _, f := range a.Forwards {
+		oldFwd[f.ID] = f
+	}
+	newFwd := map[string]bool{}
+	for _, f := range b.Forwards {
+		newFwd[f.ID] = true
+		old, had := oldFwd[f.ID]
+		switch {
+		case !had:
+			changes = append(changes, Change{Field: "dns_forwards", Label: "Domain forwarding " + f.Domain, Old: valueNone, New: DNSForwardText(f)})
+		case old.Domain != f.Domain || old.Disabled != f.Disabled || strings.Join(old.Servers, ",") != strings.Join(f.Servers, ","):
+			changes = append(changes, Change{Field: "dns_forwards", Label: "Domain forwarding " + f.Domain, Old: DNSForwardText(old), New: DNSForwardText(f)})
+		}
+	}
+	for _, f := range a.Forwards {
+		if !newFwd[f.ID] {
+			changes = append(changes, Change{Field: "dns_forwards", Label: "Domain forwarding " + f.Domain, Old: DNSForwardText(f), New: "(removed)"})
+		}
+	}
+	return changes
 }

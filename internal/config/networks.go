@@ -33,6 +33,8 @@ type Network struct {
 	DHCP     *DHCPConfig `json:"dhcp,omitempty"`
 	Internet bool        `json:"internet"` // may reach the internet through the WAN
 	Isolated bool        `json:"isolated"` // cannot talk to other networks, and they cannot talk to it
+	// DNSServers are what the network's devices are told to use for DNS instead of this router (empty: the router)
+	DNSServers []string `json:"dns_servers,omitempty"`
 }
 
 // PortNetworks says which networks a LAN port carries. Native is the network whose traffic is
@@ -76,7 +78,7 @@ var (
 // Equal reports whether two networks are configured identically.
 func (n Network) Equal(o Network) bool {
 	if n.ID != o.ID || n.Name != o.Name || n.VLAN != o.VLAN || n.IP != o.IP || n.Netmask != o.Netmask ||
-		n.Internet != o.Internet || n.Isolated != o.Isolated {
+		n.Internet != o.Internet || n.Isolated != o.Isolated || strings.Join(n.DNSServers, ",") != strings.Join(o.DNSServers, ",") {
 		return false
 	}
 	switch {
@@ -92,6 +94,10 @@ func (n Network) clone() Network {
 	if n.DHCP != nil {
 		d := *n.DHCP
 		n.DHCP = &d
+	}
+	n.DNSServers = append([]string(nil), n.DNSServers...)
+	if len(n.DNSServers) == 0 {
+		n.DNSServers = nil
 	}
 	return n
 }
