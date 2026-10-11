@@ -1,7 +1,7 @@
 # PeakRoute OS firewall
 
-Status (2026-10-11): **stages 1 to 3 built** (the model, the ruleset and the API; there are no pages yet, so rules cannot
-be entered by a person). This file was written first and every stage's commit updates it. It is meant to become the firewall chapter of the user documentation, so it
+Status (2026-10-11): **stages 1 to 4 built** (the model, the ruleset, the API and the Rules page; port forwarding and
+Connections have no page yet). This file was written first and every stage's commit updates it. It is meant to become the firewall chapter of the user documentation, so it
 is written for a person who runs the router, with the developer details in the sections marked *Internals*.
 
 Contents: 1 What exists today, 2 The model (and why not zones), 3 Rules, 4 Order of evaluation, 5 Port forwarding,
@@ -30,9 +30,11 @@ come back automatically, and packets that belong to no connection are dropped.
 ### Per-interface rules, written as "from, to"
 
 Rules are attached to the place traffic **comes from**: one of your Local Networks, or the Internet. Each rule also
-says where the traffic is **going**: anywhere, this router, the internet, or another Local Network. The Firewall page
-has one tab per source (LAN, Guest, IoT..., Internet), the way pfSense and OPNsense do, and each tab is read top to
-bottom: **the first rule that matches decides**.
+says where the traffic is **going**: anywhere, this router, the internet, or another Local Network. The Rules page
+shows one list per source (LAN, Guest, IoT..., Internet), the way pfSense and OPNsense do, and each list is read top to
+bottom: **the first rule that matches decides**. The source is picked from a dropdown at the top of the page (like Local
+Networks), not from tabs, because there can be up to 17 networks; in this document and in the API the lists are still called
+"tabs".
 
 A new network has no rule that lets it anywhere, so it starts isolated from everything except the router's DHCP and
 DNS, which is what the Local Networks page already promises.
@@ -267,6 +269,23 @@ and only concern the rule being edited: another rule's problem does not stop you
 destination) or a forward sends to a device on it. The fixed lines are written by the API (not the page) so that the words
 always match what the ruleset does.
 
+**The Rules page** (`web/static/scripts/firewall_rules.js`, in the menu under Firewall, Rules):
+
+- The dropdown at the top chooses where the traffic comes from; it shows how many rules each source has.
+- The list is the fixed lines above (grey, with a lock: replies, DHCP, and for the default network the anti-lockout), then your
+  rules, then the fixed lines below (what the Internet and isolation switches on Local Networks mean, ending in "Block
+  everything else"). Your rules are the only part that can be edited.
+- Each rule shows its name, what it does (Allow green, Block red, Reject amber), a **Draft** tag until it is committed, a
+  **Logged** tag, the rule in words, and its **hit count** (packets since the rules were last loaded; a dash for a rule that is not
+  running yet; refreshed every 5 seconds without redrawing the list). A rule that no traffic can reach shows an amber
+  "Never matches: the rule X above already decides all of this traffic".
+- Controls: move up and down (saved at once as a new order), a switch to turn a rule on or off, **Edit**, and **Delete** (two
+  clicks, the second within four seconds). **Add rule** opens the editor below the list.
+- The editor asks for a name, what to do, where the traffic is going (the internet, anywhere, this router, or another network;
+  not "the internet" when the traffic comes from the internet), the protocol, the ports (only for TCP, UDP or both), optional
+  from and to addresses, whether to log it and whether it is on. Mistakes appear under the field they belong to.
+- Nothing is applied by the page: every save writes the draft and the bar at the top offers Review and commit.
+
 **Review lines.** One line per rule or forward added, removed or changed ("Allow TCP 9100,631, from LAN to IoT
 (10.30.0.20)" with the old text beside it), a rename is one change, and one line "Firewall rule order" when the order of
 rules that exist before and after differs.
@@ -293,7 +312,7 @@ Each stage is its own commit with tests and updates this document.
 1. **Model** (done): rules and forwards in the configuration, validation, review lines, shadow detection.
 2. **Ruleset** (done): the translator writes the rules; checked with `nft -c` and with real packets between namespaces.
 3. **API** (done): list, add, change, delete, reorder and switch rules and forwards; hit counters.
-4. **Rules page**: a tab per network and the Internet, the fixed policy lines, add / edit / reorder / switch.
+4. **Rules page** (done): a list per network and the Internet, chosen from a dropdown; the fixed policy lines, add / edit / reorder / switch / delete, hit counts.
 5. **Port forwarding page**.
 6. **Connections page** (connection table, filters).
 7. **Logging** and the Logs page filter; polish; screenshots in this document.

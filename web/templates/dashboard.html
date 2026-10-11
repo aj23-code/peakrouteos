@@ -49,7 +49,7 @@
               <span class="chevron">▸</span>
             </summary>
             <div class="folder-content">
-              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Rules</span>
+              <a href="#" class="nav-item" data-view="firewall-rules">Rules</a>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Port forwarding</span>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Connections</span>
             </div>
@@ -628,6 +628,24 @@
         <div id="settings-body"></div>
       </div>
 
+      <!-- View: Firewall rules -->
+      <div id="view-firewall-rules" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Firewall rules</h1>
+            <p class="subtitle">Rules for traffic coming from each network, checked top to bottom: the first one that matches decides. Changes are saved as a draft until you commit them.</p>
+          </div>
+          <div class="net-toolbar">
+            <label class="net-picker"><span class="form-hint">Traffic coming from</span>
+              <select id="fw-tab" class="role-select" aria-label="Choose where the traffic comes from"></select></label>
+            <button type="button" id="fw-add" class="cfg-btn">Add rule</button>
+          </div>
+        </header>
+
+        <div id="fw-message" class="form-message hidden" role="alert"></div>
+        <div id="fw-body"></div>
+      </div>
+
       <!-- View: System Logs -->
       <div id="view-logs" class="view-section hidden">
         <header class="dash-header">
@@ -716,6 +734,7 @@
   <script src="/static/scripts/routes.js"></script>
   <script src="/static/scripts/wireless.js"></script>
   <script src="/static/scripts/settings.js"></script>
+  <script src="/static/scripts/firewall_rules.js"></script>
   <script src="/static/scripts/leases.js"></script>
   <script src="/static/scripts/syslogs.js"></script>
 </body>

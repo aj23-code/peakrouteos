@@ -1579,3 +1579,36 @@ height: 260px;
 .client-status + .form-hint { white-space: nowrap; }
 .inet-advanced { margin-top: 1.25rem; }
 .inet-advanced summary { cursor: pointer; color: var(--text-muted); font-size: 0.9rem; }
+
+/* ---------- Firewall rules ---------- */
+.fw-card { margin-bottom: 1.25rem; }
+.fw-list { display: flex; flex-direction: column; margin-top: 1rem; border: 1px solid var(--border-color); border-radius: 0.6rem; overflow: hidden; }
+.fw-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 0.9rem; border-top: 1px solid var(--border-color); }
+.fw-row:first-child { border-top: 0; }
+.fw-line { background: rgba(255, 255, 255, 0.025); color: var(--text-muted); font-size: 0.9rem; padding-top: 0.5rem; padding-bottom: 0.5rem; }
+.fw-line--block .fw-line-mark { color: var(--error-color); }
+.fw-line:not(.fw-line--block):not(.fw-line--off) .fw-line-mark { color: var(--accent-green); }
+.fw-lock { font-size: 0.75rem; opacity: 0.6; }
+.fw-line-mark { width: 1rem; text-align: center; font-weight: 700; }
+.fw-line-text { flex: 1; min-width: 0; }
+.fw-empty { color: var(--text-muted); font-size: 0.9rem; }
+.fw-rule--off .fw-main { opacity: 0.55; }
+.fw-move { display: flex; flex-direction: column; gap: 0.15rem; }
+.fw-icon-btn { background: none; border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 0.3rem; font-size: 0.6rem; line-height: 1; padding: 0.25rem 0.4rem; cursor: pointer; }
+.fw-icon-btn:hover:not(:disabled) { color: var(--text-main); border-color: var(--accent-blue); }
+.fw-icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.fw-switch { min-height: 0; }
+.fw-main { flex: 1; min-width: 0; }
+.fw-name { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.fw-name .tag { margin-left: 0; }
+.fw-text { margin-top: 0.15rem; overflow-wrap: anywhere; }
+.fw-warn { margin-top: 0.3rem; font-size: 0.82rem; color: var(--accent-amber); }
+.fw-hits { display: flex; flex-direction: column; align-items: flex-end; min-width: 4rem; font-variant-numeric: tabular-nums; }
+.fw-actions { display: flex; gap: 0.4rem; }
+.fw-editor { margin-bottom: 1.25rem; }
+@media (max-width: 700px) {
+    .fw-row { flex-wrap: wrap; }
+    .fw-main { flex-basis: calc(100% - 7rem); }
+    .fw-hits { align-items: flex-start; flex-direction: row; gap: 0.4rem; min-width: 0; }
+    .fw-actions { margin-left: auto; }
+}
