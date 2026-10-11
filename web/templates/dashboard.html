@@ -50,7 +50,7 @@
             </summary>
             <div class="folder-content">
               <a href="#" class="nav-item" data-view="firewall-rules">Rules</a>
-              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Port forwarding</span>
+              <a href="#" class="nav-item" data-view="firewall-forwards">Port forwarding</a>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Connections</span>
             </div>
           </details>
@@ -646,6 +646,23 @@
         <div id="fw-body"></div>
       </div>
 
+      <!-- View: Port forwarding -->
+      <div id="view-firewall-forwards" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Port forwarding</h1>
+            <p class="subtitle">Send connections that arrive from the internet on one of this router's ports to a device inside. Changes are saved as a draft until you commit them.</p>
+          </div>
+          <div class="net-toolbar">
+            <button type="button" id="pf-add" class="cfg-btn">Add port forward</button>
+          </div>
+        </header>
+
+        <div id="pf-message" class="form-message hidden" role="alert"></div>
+        <div id="pf-body"></div>
+        <datalist id="pf-devices"></datalist>
+      </div>
+
       <!-- View: System Logs -->
       <div id="view-logs" class="view-section hidden">
         <header class="dash-header">
@@ -735,6 +752,7 @@
   <script src="/static/scripts/wireless.js"></script>
   <script src="/static/scripts/settings.js"></script>
   <script src="/static/scripts/firewall_rules.js"></script>
+  <script src="/static/scripts/firewall_forwards.js"></script>
   <script src="/static/scripts/leases.js"></script>
   <script src="/static/scripts/syslogs.js"></script>
 </body>

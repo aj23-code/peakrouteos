@@ -397,7 +397,8 @@ Local Networks switches kept as a fixed policy layer; an always-on anti-lockout)
   (`firewall_behaviour_test.go`, no privileges needed), the real `nft -c`, and exact-text tests.
 - **Stage 3, API** (`netapi/firewall.go`, `network/firewall_counters.go`): rules and forwards (add, change, delete, switch off), reordering one tab, the fixed policy lines per tab, hit counters read from `nft -j`, and a guard so a Local Network used by a rule or forward cannot be deleted. Endpoints are in the document.
 - **Stage 4, Rules page** (`firewall_rules.js`, Firewall menu, Rules): described in the document. Checked in the browser: add with errors, add, reorder, the "never matches" warning, switch off, edit, delete, and the review lines and plan the draft produces.
-- Not yet: the Port forwarding and Connections pages and logging in the Logs page. See the build plan in the document.
+- **Stage 5, Port forwarding page** (`firewall_forwards.js`, Firewall menu): described in the document; checked in the browser (errors, add, a range greys out the device port, the review lines).
+- Not yet: the Connections page and logging in the Logs page. See the build plan in the document.
 
 ## 7e. Static routes (built 2026-10-08)
 

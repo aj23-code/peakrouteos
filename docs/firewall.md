@@ -1,7 +1,7 @@
 # PeakRoute OS firewall
 
-Status (2026-10-11): **stages 1 to 4 built** (the model, the ruleset, the API and the Rules page; port forwarding and
-Connections have no page yet). This file was written first and every stage's commit updates it. It is meant to become the firewall chapter of the user documentation, so it
+Status (2026-10-11): **stages 1 to 5 built** (the model, the ruleset, the API, the Rules page and the Port forwarding page;
+Connections has no page yet). This file was written first and every stage's commit updates it. It is meant to become the firewall chapter of the user documentation, so it
 is written for a person who runs the router, with the developer details in the sections marked *Internals*.
 
 Contents: 1 What exists today, 2 The model (and why not zones), 3 Rules, 4 Order of evaluation, 5 Port forwarding,
@@ -286,6 +286,13 @@ always match what the ruleset does.
   from and to addresses, whether to log it and whether it is on. Mistakes appear under the field they belong to.
 - Nothing is applied by the page: every save writes the draft and the bar at the top offers Review and commit.
 
+**The Port forwarding page** (`firewall_forwards.js`, in the menu under Firewall): one line per forward with its on/off switch,
+its sentence ("TCP 443 from the internet to 192.168.1.50:8443, only from 203.0.113.7"), a hint with the address to use from
+outside ("Reach it at 203.0.113.10:443"; it is the internet address in effect, shown when the router has one), the hit count,
+**Edit** and **Delete** (two clicks). The editor asks for a name, the protocol, the port on the internet side (one port or one
+range), the device to send to (the field suggests the devices that hold a DHCP lease), the port on the device (empty keeps
+the number; **greyed out for a range, which keeps its numbers**), and optional allowed addresses.
+
 **Review lines.** One line per rule or forward added, removed or changed ("Allow TCP 9100,631, from LAN to IoT
 (10.30.0.20)" with the old text beside it), a rename is one change, and one line "Firewall rule order" when the order of
 rules that exist before and after differs.
@@ -313,7 +320,7 @@ Each stage is its own commit with tests and updates this document.
 2. **Ruleset** (done): the translator writes the rules; checked with `nft -c` and with real packets between namespaces.
 3. **API** (done): list, add, change, delete, reorder and switch rules and forwards; hit counters.
 4. **Rules page** (done): a list per network and the Internet, chosen from a dropdown; the fixed policy lines, add / edit / reorder / switch / delete, hit counts.
-5. **Port forwarding page**.
+5. **Port forwarding page** (done).
 6. **Connections page** (connection table, filters).
 7. **Logging** and the Logs page filter; polish; screenshots in this document.
 
