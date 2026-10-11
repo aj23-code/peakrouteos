@@ -1,7 +1,7 @@
 # PeakRoute OS firewall
 
-Status (2026-10-11): **stages 1 to 6 built** (the model, the ruleset, the API, the Rules, Port forwarding and Connections
-pages; logging into the Logs page is the last stage). This file was written first and every stage's commit updates it. It is meant to become the firewall chapter of the user documentation, so it
+Status (2026-10-11): **all seven stages built** (the model, the ruleset, the API, the Rules, Port forwarding and Connections pages, and
+logging). What is deliberately left out is listed in section 12. This file was written first and every stage's commit updates it. It is meant to become the firewall chapter of the user documentation, so it
 is written for a person who runs the router, with the developer details in the sections marked *Internals*.
 
 Contents: 1 What exists today, 2 The model (and why not zones), 3 Rules, 4 Order of evaluation, 5 Port forwarding,
@@ -134,10 +134,17 @@ connection tracking table, which the kernel keeps for the stateful rules anyway;
 
 ## 7. Logging and counters
 
-- Every rule carries a **hit counter** (packets and bytes since the rules were last loaded), shown in the list.
-- A rule with **log** on writes a line to the system log (`peakroute-fw`), readable on the Logs page, with the rule's
-  name, the interface, and the addresses and ports. Logging is limited to a few lines per second per rule so that a
-  scan cannot fill the disk.
+- Every rule carries a **hit counter** (packets since the rules were last loaded), shown in the rule's line; reloading the
+  rules (any commit that changes the ruleset) starts the counts again.
+- A rule with **log** on writes a line to the kernel log for every packet it matches, tagged `fw:<id>`, limited to five per
+  second per rule so that a scan cannot fill the disk. The lines are in the journal, so the **Logs** page shows them as they
+  are (`fw:fw2 IN=br30 OUT=eth0 SRC=10.30.0.40 DST=93.184.216.34 ... PROTO=TCP SPT=40000 DPT=443`).
+- The **Rules** page shows them **in words**: under the list of a source that has a rule with logging on, a *Logged traffic* card
+  lists the latest matches of that source's rules (time, rule and what it does, from, to, protocol), newest first, refreshed every
+  10 seconds. It looks the rule up in the configuration that is running, so a rule that is only in the draft shows by its id and
+  a rule that was deleted since shows by its id too. A rule that is not running yet cannot have logged anything.
+- `GET /api/v1/firewall/log?limit=` serves it (`known`, and `entries`: `time`, `rule`, `name`, `action`, `text`, `in`, `out`,
+  `src`, `sport`, `dst`, `dport`, `proto`; 1 to 1000, default 200).
 
 ## 8. Staying out of trouble
 
@@ -257,6 +264,7 @@ a change is being applied; everything is saved as a draft):
 |---|---|
 | `GET /api/v1/firewall` | the **tabs** (`lan`, each network's id, `wan`), the **rules** (every field plus `text`, the rule in words; `pending`, differs from what is running; `shadowed_by`, the earlier rule that makes it unreachable), the **forwards**, the **policy** (the fixed lines of every tab: `before` the rules and `after` them, each with a `kind` of `allow`, `block` or `off`), and `editable` |
 | `GET /api/v1/firewall/connections?limit=` | the connection table (`known`, `count`, `max`, `accounting`, `total`, `shown`, and `connections`: protocol, state, expiry, source and destination with ports, `source_nat`, `dest_nat` and `dest_nat_port`, bytes and packets both ways); the busiest first; `limit` 1 to 5000, default 1000 |
+| `GET /api/v1/firewall/log?limit=` | the packets that rules with logging matched, newest first, each with its rule (see section 7) |
 | `GET /api/v1/firewall/counters` | `known` and `counters` by id (`fw1`, `pf1`): packets and bytes since the ruleset was last loaded; read from `nft -j list ruleset` |
 | `POST /api/v1/firewall/rules` | adds a rule at the end of the list: `name`, `from`, `action`, `to` are required; `protocol` defaults to `any`, `enabled` to on |
 | `PUT /api/v1/firewall/rules/{id}` | changes a rule; fields left out stay. `from` cannot change (a rule stays on its tab) |
@@ -338,7 +346,7 @@ Each stage is its own commit with tests and updates this document.
 4. **Rules page** (done): a list per network and the Internet, chosen from a dropdown; the fixed policy lines, add / edit / reorder / switch / delete, hit counts.
 5. **Port forwarding page** (done).
 6. **Connections page** (done): the connection table with names, NAT, data, search and protocol filter.
-7. **Logging** and the Logs page filter; polish; screenshots in this document.
+7. **Logging** (done): the *Logged traffic* card on the Rules page; the raw lines are on the Logs page. Still to do before the user documentation: screenshots in this document.
 
 ## 12. Not planned (yet)
 

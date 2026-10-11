@@ -301,6 +301,8 @@ func main() {
 		return conns, count, max, ok
 	}
 	mux.HandleFunc("/api/v1/firewall/connections", requireAuth(netAPI.HandleConnections))
+	netAPI.FirewallLog = network.ReadFirewallLog
+	mux.HandleFunc("/api/v1/firewall/log", requireAuth(netAPI.HandleFirewallLog))
 	mux.HandleFunc("/api/v1/firewall", requireAuth(netAPI.HandleFirewall))
 	mux.HandleFunc("/api/v1/firewall/counters", requireAuth(netAPI.HandleFirewallCounters))
 	mux.HandleFunc("/api/v1/firewall/order", requireAuth(netAPI.HandleFirewallOrder))

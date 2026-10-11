@@ -399,7 +399,8 @@ Local Networks switches kept as a fixed policy layer; an always-on anti-lockout)
 - **Stage 4, Rules page** (`firewall_rules.js`, Firewall menu, Rules): described in the document. Checked in the browser: add with errors, add, reorder, the "never matches" warning, switch off, edit, delete, and the review lines and plan the draft produces.
 - **Stage 5, Port forwarding page** (`firewall_forwards.js`, Firewall menu): described in the document; checked in the browser (errors, add, a range greys out the device port, the review lines).
 - **Stage 6, Connections page** (`network/conntrack.go`, `netapi/connections.go`, `firewall_connections.js`): the kernel's connection table (from /proc or the `conntrack` tool, parsed from real output), with names, NAT, data and filters. The image gets the `conntrack` package (**ISO rebuild needed**).
-- Not yet: logging in the Logs page. See the build plan in the document.
+- **Stage 7, logging** (`network/firewall_log.go`, `netapi/firewall_log.go`, the *Logged traffic* card on the Rules page): rules with log on write kernel log lines tagged `fw:<id>`; the Logs page shows them raw and the Rules page in words. The kernel log format is parsed from the LOG target's documented format (a real line could not be captured in a network namespace: the kernel only logs from the main one).
+- **The firewall's seven stages are done.** What remains is real-hardware testing (the ISO needs a rebuild for `ppp`, `conntrack`, hostapd and the wireless firmware), screenshots for the user documentation, and the items in section 12 of the document.
 
 ## 7e. Static routes (built 2026-10-08)
 
