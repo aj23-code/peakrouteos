@@ -1652,3 +1652,5 @@ height: 260px;
 .card-stack .dns-net .form-actions { margin-top: 0.9rem; }
 .card-stack .dns-net .form-hint.net-warn { margin-top: 0.6rem; }
 .fw-list:empty { display: none; }
+.fw-log-hint { margin-top: 0.75rem; }
+.fwl-filters { margin: 0 0 1rem; }

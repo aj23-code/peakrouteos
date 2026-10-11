@@ -138,12 +138,16 @@ connection tracking table, which the kernel keeps for the stateful rules anyway;
 - Every rule carries a **hit counter** (packets since the rules were last loaded), shown in the rule's line; reloading the
   rules (any commit that changes the ruleset) starts the counts again.
 - A rule with **log** on writes a line to the kernel log for every packet it matches, tagged `fw:<id>`, limited to five per
-  second per rule so that a scan cannot fill the disk. The lines are in the journal, so the **Logs** page shows them as they
-  are (`fw:fw2 IN=br30 OUT=eth0 SRC=10.30.0.40 DST=93.184.216.34 ... PROTO=TCP SPT=40000 DPT=443`).
-- The **Rules** page shows them **in words**: under the list of a source that has a rule with logging on, a *Logged traffic* card
-  lists the latest matches of that source's rules (time, rule and what it does, from, to, protocol), newest first, refreshed every
-  10 seconds. It looks the rule up in the configuration that is running, so a rule that is only in the draft shows by its id and
-  a rule that was deleted since shows by its id too. A rule that is not running yet cannot have logged anything.
+  second per rule so that a scan cannot fill the disk (`fw:fw2 IN=br30 OUT=eth0 SRC=10.30.0.40 DST=93.184.216.34 ... PROTO=TCP
+  SPT=40000 DPT=443`). The raw lines are in the system journal, so **System, System logs** shows them as they are too.
+- **Firewall, Logs** shows them **in words**, newest first: when (and, for a repeated packet, until when), the rule and what it
+  does, from, to (with device names from DHCP where known), protocol and how many times. It looks the rule up in the
+  configuration that is running, so a rule that was deleted since shows by its id, marked *rule no longer there*; a rule that is
+  only in the draft cannot have logged anything. Filters: **search** (address, port, interface or protocol), **rule**, **what the
+  rule does** (allowed, blocked, rejected), **traffic from** (a Local Network or the internet) and **when** (last hour, 24 hours,
+  7 days, everything kept). It refreshes every 10 seconds (**Pause** stops that), loads 200 entries and *Show more* for the rest,
+  says how much the log holds, and **Download CSV** saves what the filters select. The **Rules** page only says which rules are
+  *Logged* and points there.
 - **The firewall log is kept by the router itself, not by the journal.** The system journal is shared with everything else and
   is size limited, so a busy rule must not be able to push the system's own messages out, and the journal rotating must not
   take the firewall log with it. The daemon follows the kernel lines that carry a rule's tag (`journalctl -k -f --grep=fw:`) and
@@ -159,7 +163,6 @@ connection tracking table, which the kernel keeps for the stateful rules anyway;
     (as far as the journal still has it) and nothing is saved twice. A position journalctl refuses is dropped and reading starts
     again from the start of what the journal keeps. Without a journal (no `journalctl`) it tries again every 30 seconds and the
     page says the log cannot be read.
-  - The **Logs page** (Firewall, Logs) shows it; **Download as CSV** gives a plain file.
 - `GET /api/v1/firewall/log` serves it, newest first, a page at a time: `known`; `entries` (`id`, `time` and `last` in Unix
   milliseconds, `count`, `rule`, `name`, `action`, `text`, `in`, `out`, `src`, `sport`, `dst`, `dport`, `proto`); `next` (the
   `before=` for the next page, 0 for the end); `total`, `oldest`, `keep_days` and `keep_entries`. The filters, all optional:
@@ -379,7 +382,7 @@ Each stage is its own commit with tests and updates this document.
 4. **Rules page** (done): a list per network and the Internet, chosen from a dropdown; the fixed policy lines, add / edit / reorder / switch / delete, hit counts.
 5. **Port forwarding page** (done).
 6. **Connections page** (done): the connection table with names, NAT, data, search and protocol filter.
-7. **Logging** (done): the *Logged traffic* card on the Rules page; the raw lines are on the Logs page. Still to do before the user documentation: screenshots in this document.
+7. **Logging** (done): the firewall log store and the **Firewall, Logs** page (2026-10-11; before that a *Logged traffic* card on the Rules page and the raw lines in the journal). Still to do before the user documentation: screenshots in this document.
 
 ## 12. Not planned (yet)
 

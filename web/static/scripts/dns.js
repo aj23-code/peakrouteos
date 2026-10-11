@@ -386,12 +386,12 @@ window.DNSModule = (function () {
                 editing.form[el.dataset.ed] = el.value;
                 delete editing.errors[el.dataset.ed];
                 el.removeAttribute('aria-invalid');
-                const msg = el.closest('.form-field').querySelector('.field-error');
+                const msg = el.closest('.form-field')?.querySelector('.field-error');
                 if (msg) msg.remove();
             }
             if (el.classList && (el.dataset.up || el.dataset.net)) {
                 el.removeAttribute('aria-invalid');
-                const msg = el.closest('.form-field').querySelector('.field-error');
+                const msg = el.closest('.form-field')?.querySelector('.field-error');
                 if (msg) msg.remove();
             }
         });

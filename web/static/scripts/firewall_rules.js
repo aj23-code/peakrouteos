@@ -10,11 +10,9 @@ window.FirewallRulesModule = (function () {
     let counters = {};          // rule id -> { packets, bytes } of the rules in effect
     let countersKnown = false;
     let confirmDelete = null;   // the id of the rule whose delete button is armed
-    let log = null;             // GET /api/v1/firewall/log: packets that rules with logging matched
     let busy = false;
     let wired = false;
     let timer = null;
-    let logTimer = null;
 
     const $ = (id) => document.getElementById(id);
     const editable = () => !data || data.editable !== false;
@@ -133,7 +131,7 @@ window.FirewallRulesModule = (function () {
                 ${fieldHtml('To address <span class="form-hint">(optional)</span>', 'fw-f-destination', text('fw-f-destination', 'destination', 'one device, or a range'), 'destination')}
             </div>
             <div class="net-access">
-                <label class="toggle toggle--block"><input type="checkbox" data-fw="log"${f.log ? ' checked' : ''}${dis}><span><strong>Log matching traffic</strong><span class="form-hint">Writes a line to the system log for what this rule matches (a few per second at most).</span></span></label>
+                <label class="toggle toggle--block"><input type="checkbox" data-fw="log"${f.log ? ' checked' : ''}${dis}><span><strong>Log matching traffic</strong><span class="form-hint">Writes what this rule matches to the firewall log (a few packets per second at most; repeats within a minute count as one entry).</span></span></label>
                 <label class="toggle toggle--block"><input type="checkbox" data-fw="enabled"${f.enabled ? ' checked' : ''}${dis}><span><strong>Switched on</strong><span class="form-hint">Off keeps the rule here without applying it.</span></span></label>
             </div>
             ${editing.message ? `<div class="form-message" role="alert">${escapeHtml(editing.message)}</div>` : ''}
@@ -176,30 +174,13 @@ window.FirewallRulesModule = (function () {
             <div class="fw-list fw-builtin">
                 ${policy.after.map(lineHtml).join('')}
             </div>
-        </section>${logCardHtml(t, rules)}${editing ? editorHtml() : ''}`;
+        </section>${logHintHtml(rules)}${editing ? editorHtml() : ''}`;
     }
 
-    // what the rules of this source that have logging on have matched lately, in words
-    function logCardHtml(t, rules) {
-        const logged = rules.filter(r => r.log);
-        if (!logged.length) return '';
-        const ids = new Set(rules.map(r => r.id));
-        const entries = ((log && log.entries) || []).filter(e => ids.has(e.rule)).slice(0, 50);
-        let body;
-        if (!log) body = '<p class="form-hint">Reading the log\u2026</p>';
-        else if (!log.known) body = '<p class="form-hint">The system log cannot be read on this system.</p>';
-        else if (!entries.length) body = '<p class="form-hint">Nothing has matched these rules lately (or they are not running yet: logging starts when the rules are committed).</p>';
-        else body = `<div class="table-container"><table class="data-table"><thead><tr><th>Time</th><th>Rule</th><th>From</th><th>To</th><th>Protocol</th></tr></thead><tbody>${entries.map(e => {
-            const when = new Date(e.time).toLocaleTimeString();
-            const tag = e.action ? ` <span class="tag ${e.action === 'allow' ? 'tag-ok' : (e.action === 'block' ? 'tag-warn' : 'tag-draft')}">${escapeHtml(e.action)}</span>` : '';
-            return `<tr><td>${escapeHtml(when)}</td><td><strong>${escapeHtml(e.name)}</strong>${tag}</td>
-                <td>${escapeHtml(e.src)}${e.sport ? `<span class="cx-port">:${e.sport}</span>` : ''}</td>
-                <td>${escapeHtml(e.dst)}${e.dport ? `<span class="cx-port">:${e.dport}</span>` : ''}</td><td>${escapeHtml(e.proto)}</td></tr>`;
-        }).join('')}</tbody></table></div>`;
-        return `<section class="card fw-log">
-            <div class="net-card-head"><h2>Logged traffic</h2><span class="form-hint">from ${escapeHtml(t.name)}, newest first</span></div>
-            <p class="form-hint">Packets that ${logged.length === 1 ? 'the rule' : 'rules'} <strong>${logged.map(r => escapeHtml(r.name)).join(', ')}</strong> matched. The same lines are on the <a href="#" data-goto="logs">Logs</a> page.</p>
-            ${body}</section>`;
+    // rules that log write to the firewall log: say where to read it
+    function logHintHtml(rules) {
+        if (!rules.some(r => r.log)) return '';
+        return '<p class="form-hint fw-log-hint">Rules marked <strong>Logged</strong> write the traffic they match to the firewall log: read it under <a href="#" data-goto="firewall-log">Firewall, Logs</a>.</p>';
     }
 
     function updateHits() {
@@ -221,14 +202,6 @@ window.FirewallRulesModule = (function () {
         if (!res || !res.ok) { showMessage('Could not load the firewall rules.', 'error'); return; }
         data = await res.json();
         render();
-    }
-
-    async function loadLog() {
-        const res = await apiFetch('/api/v1/firewall/log?limit=200');
-        if (!res || !res.ok) return;
-        log = await res.json();
-        // redraw only when nobody is typing in the editor
-        if (data && !editing) render();
     }
 
     async function loadCounters() {
@@ -377,13 +350,10 @@ window.FirewallRulesModule = (function () {
         confirmDelete = null;
         counters = {};
         countersKnown = false;
-        log = null;
         load();
         loadCounters();
-        loadLog();
         timer = setInterval(loadCounters, 5000);
-        logTimer = setInterval(loadLog, 10000);
-        return () => { clearInterval(timer); clearInterval(logTimer); timer = null; logTimer = null; };
+        return () => { clearInterval(timer); timer = null; };
     }
 
     return { init };

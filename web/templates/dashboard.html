@@ -52,6 +52,7 @@
               <a href="#" class="nav-item" data-view="firewall-rules">Rules</a>
               <a href="#" class="nav-item" data-view="firewall-forwards">Port forwarding</a>
               <a href="#" class="nav-item" data-view="firewall-connections">Connections</a>
+              <a href="#" class="nav-item" data-view="firewall-log">Logs</a>
             </div>
           </details>
 
@@ -688,6 +689,46 @@
         <p class="form-hint" id="cx-note"></p>
       </div>
 
+      <!-- View: Firewall log -->
+      <div id="view-firewall-log" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Firewall logs</h1>
+            <p class="subtitle">The traffic that rules with <em>Log matching traffic</em> switched on matched, newest first. Turn logging on for a rule on the <a href="#" data-goto="firewall-rules">Rules</a> page.</p>
+          </div>
+        </header>
+
+        <div class="net-toolbar fwl-filters">
+            <label class="net-picker"><span class="form-hint">Search</span>
+              <input type="text" id="fwl-q" class="role-select" placeholder="address, port, interface or protocol" autocomplete="off" spellcheck="false" aria-label="Search the firewall log"></label>
+            <label class="net-picker"><span class="form-hint">Rule</span>
+              <select id="fwl-rule" class="role-select" aria-label="Show one rule"><option value="">All rules</option></select></label>
+            <label class="net-picker"><span class="form-hint">What the rule does</span>
+              <select id="fwl-action" class="role-select" aria-label="Show allowed, blocked or rejected traffic">
+                <option value="">Allow, block and reject</option><option value="allow">Allowed</option><option value="block">Blocked</option><option value="reject">Rejected</option>
+              </select></label>
+            <label class="net-picker"><span class="form-hint">Traffic from</span>
+              <select id="fwl-network" class="role-select" aria-label="Show traffic from one network"><option value="">Anywhere</option></select></label>
+            <label class="net-picker"><span class="form-hint">When</span>
+              <select id="fwl-hours" class="role-select" aria-label="Show a period">
+                <option value="">Everything kept</option><option value="1">Last hour</option><option value="24">Last 24 hours</option><option value="168">Last 7 days</option>
+              </select></label>
+            <button type="button" id="fwl-pause" class="cfg-btn" aria-pressed="false">Pause</button>
+            <a id="fwl-csv" class="cfg-btn" href="/api/v1/firewall/log.csv" download>Download CSV</a>
+        </div>
+
+        <div id="fwl-summary" class="form-hint cx-summary"></div>
+        <section class="card card-nopadding">
+          <div class="table-container">
+            <table class="data-table cx-table">
+              <thead><tr><th>When</th><th>Rule</th><th>From</th><th>To</th><th>Protocol</th><th title="How many times the same packet was seen within a minute">Times</th></tr></thead>
+              <tbody id="fwl-body"><tr><td colspan="6" class="table-placeholder">Reading the firewall log&hellip;</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+        <p class="form-hint cx-more"><button type="button" id="fwl-more" class="cfg-btn cfg-btn--ghost hidden">Show more</button></p>
+      </div>
+
       <!-- View: DNS -->
       <div id="view-dns" class="view-section hidden">
         <header class="dash-header">
@@ -804,6 +845,7 @@
   <script src="/static/scripts/firewall_rules.js"></script>
   <script src="/static/scripts/firewall_forwards.js"></script>
   <script src="/static/scripts/firewall_connections.js"></script>
+  <script src="/static/scripts/firewall_log.js"></script>
   <script src="/static/scripts/dns.js"></script>
   <script src="/static/scripts/diagnostics.js"></script>
   <script src="/static/scripts/leases.js"></script>
