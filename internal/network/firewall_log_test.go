@@ -26,24 +26,3 @@ func TestParseFirewallLog(t *testing.T) {
 		t.Errorf("%v %+v", ok, e)
 	}
 }
-
-func TestParseFirewallLogJournal(t *testing.T) {
-	data := `{"MESSAGE":"` + tcpLine + `","__REALTIME_TIMESTAMP":"1791734400123456","SYSLOG_IDENTIFIER":"kernel"}
-{"MESSAGE":"something else entirely","__REALTIME_TIMESTAMP":"1791734401000000"}
-not json at all
-
-{"MESSAGE":"fw:fw1 IN=eth1 OUT=br30 SRC=192.168.1.5 DST=10.30.0.20 PROTO=TCP SPT=5 DPT=9100","__REALTIME_TIMESTAMP":"1791734402000000"}
-{"MESSAGE":"fw:fw1 IN=eth1 OUT=br30 SRC=192.168.1.5 DST=10.30.0.20 PROTO=TCP SPT=5 DPT=9100","__REALTIME_TIMESTAMP":"junk"}
-{"MESSAGE":["a","binary","message"],"__REALTIME_TIMESTAMP":"1"}
-`
-	got := ParseFirewallLogJournal([]byte(data))
-	if len(got) != 3 {
-		t.Fatalf("%d: %+v", len(got), got)
-	}
-	if got[0].Rule != "fw2" || got[0].Time != 1791734400123 || got[1].Rule != "fw1" || got[1].Time != 1791734402000 || got[2].Time != 0 {
-		t.Fatalf("%+v", got)
-	}
-	if got := ParseFirewallLogJournal(nil); len(got) != 0 {
-		t.Fatalf("%+v", got)
-	}
-}

@@ -1,13 +1,11 @@
 package network
 
 import (
-	"encoding/json"
-	"os/exec"
 	"strconv"
 	"strings"
 )
 
-// FirewallLogEntry is one packet a rule with "log" switched on has matched, read back from the kernel log.
+// FirewallLogEntry is one packet a rule with "log" switched on has matched, read back from the kernel log (internal/fwlog follows the journal and keeps them).
 type FirewallLogEntry struct {
 	Time    int64 // Unix milliseconds
 	Rule    string
@@ -54,46 +52,4 @@ func ParseFirewallLog(msg string) (FirewallLogEntry, bool) {
 		return FirewallLogEntry{}, false
 	}
 	return e, true
-}
-
-// ParseFirewallLogJournal reads `journalctl -o json` output (one JSON object per line) and returns the firewall
-// entries it holds, oldest first.
-func ParseFirewallLogJournal(data []byte) []FirewallLogEntry {
-	var out []FirewallLogEntry
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		var raw struct {
-			Message   string `json:"MESSAGE"`
-			Timestamp string `json:"__REALTIME_TIMESTAMP"` // microseconds
-		}
-		if err := json.Unmarshal([]byte(line), &raw); err != nil {
-			continue
-		}
-		e, ok := ParseFirewallLog(raw.Message)
-		if !ok {
-			continue
-		}
-		if us, err := strconv.ParseInt(raw.Timestamp, 10, 64); err == nil {
-			e.Time = us / 1000
-		}
-		out = append(out, e)
-	}
-	return out
-}
-
-// ReadFirewallLog reads the most recent firewall log entries from the kernel messages in the journal (newest
-// last). ok is false when the journal cannot be read.
-func ReadFirewallLog(limit int) ([]FirewallLogEntry, bool) {
-	// the journal is asked for the lines that carry the tag, so that a busy kernel log does not push them out
-	out, err := exec.Command("journalctl", "-k", "--output=json", "--no-pager", "--grep=fw:", "-n", strconv.Itoa(limit)).Output()
-	if err != nil {
-		// no match is an error for some versions of journalctl: that is an empty log, not an unreadable one
-		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 1 && len(out) == 0 {
-			return nil, true
-		}
-		return nil, false
-	}
-	return ParseFirewallLogJournal(out), true
 }

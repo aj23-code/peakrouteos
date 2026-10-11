@@ -23,6 +23,7 @@ import (
 	"peakroute/internal/auth"
 	"peakroute/internal/cert"
 	"peakroute/internal/config"
+	"peakroute/internal/fwlog"
 	"peakroute/internal/netapi"
 	"peakroute/internal/network"
 	"peakroute/internal/pipeline"
@@ -180,6 +181,16 @@ func main() {
 	}
 	go wanProbe.Run(pollerCtx)
 
+	// Keep the firewall log: the packets that rules with logging matched, read from the kernel log into a database
+	// of their own (the journal is shared and size limited)
+	fwLogStore, err := fwlog.Open(filepath.Join(configDir, "firewall_log.db"))
+	if err != nil {
+		log.Printf("[!] Firewall log unavailable: %v", err)
+	} else {
+		defer fwLogStore.Close()
+		go (&fwlog.Collector{Store: fwLogStore, Source: fwlog.JournalSource}).Run(pollerCtx)
+	}
+
 	// Drop timed-out web sessions in the background
 	sessionMgr.StartJanitor(pollerCtx, time.Minute)
 
@@ -301,8 +312,11 @@ func main() {
 		return conns, count, max, ok
 	}
 	mux.HandleFunc("/api/v1/firewall/connections", requireAuth(netAPI.HandleConnections))
-	netAPI.FirewallLog = network.ReadFirewallLog
+	if fwLogStore != nil { // a nil *Store inside the interface would not be nil
+		netAPI.FirewallLog = fwLogStore
+	}
 	mux.HandleFunc("/api/v1/firewall/log", requireAuth(netAPI.HandleFirewallLog))
+	mux.HandleFunc("/api/v1/firewall/log.csv", requireAuth(netAPI.HandleFirewallLogCSV))
 	mux.HandleFunc("/api/v1/firewall", requireAuth(netAPI.HandleFirewall))
 	mux.HandleFunc("/api/v1/firewall/counters", requireAuth(netAPI.HandleFirewallCounters))
 	mux.HandleFunc("/api/v1/firewall/order", requireAuth(netAPI.HandleFirewallOrder))

@@ -42,9 +42,8 @@ type API struct {
 	ProviderDNS func() []string
 	// DNSAddr is where the router's own DNS server is asked by the lookup test (default 127.0.0.1:53); tests point it elsewhere.
 	DNSAddr string
-	// FirewallLog reads the most recent packets that firewall rules with logging matched (oldest first, at most the
-	// given number). The second result is false when the log cannot be read. Nil means it is not reported.
-	FirewallLog func(limit int) ([]network.FirewallLogEntry, bool)
+	// FirewallLog is the store of the packets that firewall rules with logging matched. Nil means it is not reported.
+	FirewallLog FirewallLogStore
 	// Connections reads the kernel's table of connections passing through the router: the connections, how many are
 	// tracked, and how many the table can hold. The last result is false when it cannot be read. Nil means not reported.
 	Connections func() ([]network.Connection, int, int, bool)

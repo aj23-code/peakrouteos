@@ -144,8 +144,32 @@ connection tracking table, which the kernel keeps for the stateful rules anyway;
   lists the latest matches of that source's rules (time, rule and what it does, from, to, protocol), newest first, refreshed every
   10 seconds. It looks the rule up in the configuration that is running, so a rule that is only in the draft shows by its id and
   a rule that was deleted since shows by its id too. A rule that is not running yet cannot have logged anything.
-- `GET /api/v1/firewall/log?limit=` serves it (`known`, and `entries`: `time`, `rule`, `name`, `action`, `text`, `in`, `out`,
-  `src`, `sport`, `dst`, `dport`, `proto`; 1 to 1000, default 200).
+- **The firewall log is kept by the router itself, not by the journal.** The system journal is shared with everything else and
+  is size limited, so a busy rule must not be able to push the system's own messages out, and the journal rotating must not
+  take the firewall log with it. The daemon follows the kernel lines that carry a rule's tag (`journalctl -k -f --grep=fw:`) and
+  saves each packet, parsed, in `firewall_log.db` next to the other databases:
+  - **What is kept:** **7 days, or 100,000 entries, whichever comes first** (about 15 to 25 MB at the most); the oldest go first.
+    The limit is on entries, not packets, because of the next point.
+  - **Repeats are folded.** The same kind of packet (same rule, interfaces, addresses, protocol and destination port, whatever the
+    source port) that is seen again within a minute of the last time is counted in the same entry: a port scan is one row that
+    says *seen 342 times*, with the first and the last time, and does not push everything else out.
+  - **Written in batches** every couple of seconds in one transaction (one write per packet would wear flash for nothing). A
+    power cut costs at most the last few seconds.
+  - **It carries on where it stopped.** The journal position of the last saved packet is kept, so after a restart nothing is lost
+    (as far as the journal still has it) and nothing is saved twice. A position journalctl refuses is dropped and reading starts
+    again from the start of what the journal keeps. Without a journal (no `journalctl`) it tries again every 30 seconds and the
+    page says the log cannot be read.
+  - The **Logs page** (Firewall, Logs) shows it; **Download as CSV** gives a plain file.
+- `GET /api/v1/firewall/log` serves it, newest first, a page at a time: `known`; `entries` (`id`, `time` and `last` in Unix
+  milliseconds, `count`, `rule`, `name`, `action`, `text`, `in`, `out`, `src`, `sport`, `dst`, `dport`, `proto`); `next` (the
+  `before=` for the next page, 0 for the end); `total`, `oldest`, `keep_days` and `keep_entries`. The filters, all optional:
+  `limit` (1 to 1000, default 200), `before` (an entry id), `rule` (one rule by id), `action` (`allow`, `block` or `reject`:
+  the rules that do that), `network` (the rules for traffic from a Local Network by id, or `wan`), `hours` (1 to 168), and `q`
+  (text in an address, interface, protocol or port number). `rule`, `action` and `network` narrow each other and are matched
+  against the rules in effect; a rule that is no longer there can only be asked for by its id.
+- `GET /api/v1/firewall/log.csv` downloads everything the same filters select (not a page): first and last seen in UTC, times,
+  rule, action, interfaces, addresses and ports, protocol. A cell that starts like a formula (`=`, `+`, `-`, `@`) is written
+  with a leading quote so that a spreadsheet does not run it (rule names are typed by people).
 
 ## 8. Staying out of trouble
 
@@ -265,7 +289,8 @@ a change is being applied; everything is saved as a draft):
 |---|---|
 | `GET /api/v1/firewall` | the **tabs** (`lan`, each network's id, `wan`), the **rules** (every field plus `text`, the rule in words; `pending`, differs from what is running; `shadowed_by`, the earlier rule that makes it unreachable), the **forwards**, the **policy** (the fixed lines of every tab: `before` the rules and `after` them, each with a `kind` of `allow`, `block` or `off`), and `editable` |
 | `GET /api/v1/firewall/connections?limit=` | the connection table (`known`, `count`, `max`, `accounting`, `total`, `shown`, and `connections`: protocol, state, expiry, source and destination with ports, `source_nat`, `dest_nat` and `dest_nat_port`, bytes and packets both ways); the busiest first; `limit` 1 to 5000, default 1000 |
-| `GET /api/v1/firewall/log?limit=` | the packets that rules with logging matched, newest first, each with its rule (see section 7) |
+| `GET /api/v1/firewall/log` | the packets that rules with logging matched, newest first, a page at a time, filtered, each with its rule (see section 7) |
+| `GET /api/v1/firewall/log.csv` | the same as a CSV download (section 7) |
 | `GET /api/v1/firewall/counters` | `known` and `counters` by id (`fw1`, `pf1`): packets and bytes since the ruleset was last loaded; read from `nft -j list ruleset` |
 | `POST /api/v1/firewall/rules` | adds a rule at the end of the list: `name`, `from`, `action`, `to` are required; `protocol` defaults to `any`, `enabled` to on |
 | `PUT /api/v1/firewall/rules/{id}` | changes a rule; fields left out stay. `from` cannot change (a rule stays on its tab) |
