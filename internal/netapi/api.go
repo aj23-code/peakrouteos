@@ -20,6 +20,7 @@ import (
 	"peakroute/internal/ddns"
 	"peakroute/internal/network"
 	"peakroute/internal/syslogfwd"
+	"peakroute/internal/wg"
 	"peakroute/internal/wireless"
 )
 
@@ -54,6 +55,8 @@ type API struct {
 	// Nil means Dynamic DNS is not reported.
 	DDNSStatuses func() []ddns.Status
 	DDNSUpdate   func(ctx context.Context, id string) (ddns.Status, bool)
+	// WireGuard reads the WireGuard interfaces that are running (their peers and handshakes). Nil means it is not reported.
+	WireGuard func() []wg.Interface
 	// FirewallLog is the store of the packets that firewall rules with logging matched. Nil means it is not reported.
 	FirewallLog FirewallLogStore
 	// Connections reads the kernel's table of connections passing through the router: the connections, how many are

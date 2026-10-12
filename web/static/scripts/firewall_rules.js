@@ -102,7 +102,7 @@ window.FirewallRulesModule = (function () {
     function destinations() {
         const out = [['internet', 'The internet'], ['any', 'Anywhere (this router and everything behind it)'], ['router', 'This router']];
         const list = tab === 'wan' ? out.filter(o => o[0] !== 'internet') : out;
-        (data.tabs || []).filter(t => t.kind === 'network' && t.id !== tab).forEach(t => list.push([t.id, t.name]));
+        (data.tabs || []).filter(t => (t.kind === 'network' || t.kind === 'vpn') && t.id !== tab).forEach(t => list.push([t.id, t.name]));
         return list;
     }
 
@@ -127,7 +127,7 @@ window.FirewallRulesModule = (function () {
                 ${fieldHtml('Going to', 'fw-f-to', select('fw-f-to', 'to', destinations()), 'to')}
                 ${fieldHtml('Protocol', 'fw-f-protocol', select('fw-f-protocol', 'protocol', PROTOCOLS), 'protocol')}
                 ${hasPorts(f.protocol) ? fieldHtml('Ports', 'fw-f-ports', text('fw-f-ports', 'ports', '80, 443, 8000-8100', 'numeric'), 'ports', 'The ports it is going to. Empty means all of them.') : ''}
-                ${fieldHtml('From address <span class="form-hint">(optional)</span>', 'fw-f-source', text('fw-f-source', 'source', t.kind === 'network' ? 'one device, or a range like 192.168.1.0/28' : 'any'), 'source')}
+                ${fieldHtml('From address <span class="form-hint">(optional)</span>', 'fw-f-source', text('fw-f-source', 'source', t.kind !== 'internet' ? 'one device, or a range like 192.168.1.0/28' : 'any'), 'source')}
                 ${fieldHtml('To address <span class="form-hint">(optional)</span>', 'fw-f-destination', text('fw-f-destination', 'destination', 'one device, or a range'), 'destination')}
             </div>
             <div class="net-access">
@@ -157,6 +157,8 @@ window.FirewallRulesModule = (function () {
         const rules = rulesOf(tab);
         const switches = t.kind === 'network'
             ? `Whether this network may reach the internet or the other networks is set on <a href="#" data-goto="networks">Local Networks</a>; the lines in grey below show what those switches mean.`
+            : t.kind === 'vpn'
+            ? `Whether this VPN may reach the internet or the other networks is set on <a href="#" data-goto="vpn">VPN</a>; the lines in grey below show what those switches mean.`
             : 'Nothing from the internet gets in unless a rule or a port forward lets it. Replies to connections you started are always allowed.';
         $('fw-body').innerHTML = `<section class="card fw-card">
             <div class="net-card-head"><h2>Traffic from ${escapeHtml(t.name)}</h2><span class="tag">${rules.length} ${rules.length === 1 ? 'rule' : 'rules'}</span></div>

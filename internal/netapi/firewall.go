@@ -17,7 +17,7 @@ import (
 type FirewallTab struct {
 	ID      string `json:"id"` // a network id, or "wan"
 	Name    string `json:"name"`
-	Kind    string `json:"kind"` // "network" or "internet"
+	Kind    string `json:"kind"` // "network", "vpn" or "internet"
 	Default bool   `json:"default"`
 }
 
@@ -87,10 +87,16 @@ func firewallTabs(c config.NetworkConfig) []FirewallTab {
 	for _, n := range c.Networks {
 		tabs = append(tabs, FirewallTab{ID: n.ID, Name: strings.TrimSpace(n.Name), Kind: "network"})
 	}
+	for _, z := range c.VPNZones() {
+		tabs = append(tabs, FirewallTab{ID: z.ID, Name: z.Name, Kind: "vpn"})
+	}
 	return append(tabs, FirewallTab{ID: config.FromWAN, Name: "Internet", Kind: "internet"})
 }
 
 func networkIsolated(c config.NetworkConfig, id string) bool {
+	if z, ok := c.FindVPNZone(id); ok {
+		return z.Isolated
+	}
 	if id == config.DefaultNetworkID {
 		return c.LanIsolated
 	}
@@ -106,12 +112,15 @@ func firewallPolicy(c config.NetworkConfig) map[string]FirewallPolicy {
 
 	var nets []FirewallTab
 	for _, t := range firewallTabs(c) {
-		if t.Kind == "network" {
+		if t.Kind == "network" || t.Kind == "vpn" {
 			nets = append(nets, t)
 		}
 	}
 	for _, t := range nets {
-		p := FirewallPolicy{Before: []PolicyLine{basics, {"DHCP requests to this router are always allowed", "allow"}}}
+		p := FirewallPolicy{Before: []PolicyLine{basics}}
+		if t.Kind == "network" {
+			p.Before = append(p.Before, PolicyLine{"DHCP requests to this router are always allowed", "allow"})
+		}
 		if t.Default {
 			p.Before = append(p.Before, PolicyLine{"This router's web interface and SSH are always reachable from this network (so no rule can lock you out)", "allow"})
 		}
@@ -122,34 +131,46 @@ func firewallPolicy(c config.NetworkConfig) map[string]FirewallPolicy {
 			p.After = append(p.After, PolicyLine{"Allow this router's DNS and ping", "allow"})
 		}
 		internet := t.Default
+		setOn := "Local Networks"
 		if n, ok := c.FindNetwork(t.ID); ok {
 			internet = n.Internet
 		}
+		if z, ok := c.FindVPNZone(t.ID); ok {
+			internet, setOn = z.Internet, "VPN"
+		}
 		if internet {
-			p.After = append(p.After, PolicyLine{"Allow to the internet (set on Local Networks)", "allow"})
+			p.After = append(p.After, PolicyLine{"Allow to the internet (set on " + setOn + ")", "allow"})
 		} else {
-			p.After = append(p.After, PolicyLine{"No access to the internet (set on Local Networks)", "off"})
+			p.After = append(p.After, PolicyLine{"No access to the internet (set on " + setOn + ")", "off"})
+		}
+		// the others it can reach: those that are not isolated themselves. Local Networks and VPNs are named apart, so that a router
+		// without VPNs reads as it always did.
+		var reachable []string
+		others, vpns := 0, 0
+		for _, o := range nets {
+			if o.Kind == "vpn" {
+				vpns++
+			}
+			if o.ID == t.ID {
+				continue
+			}
+			others++
+			if !networkIsolated(c, o.ID) {
+				reachable = append(reachable, o.Name)
+			}
+		}
+		what, setOnAll := "Local Networks", "Local Networks"
+		if vpns > 0 || t.Kind == "vpn" {
+			what, setOnAll = "networks", "Local Networks and VPN"
 		}
 		if networkIsolated(c, t.ID) {
-			p.After = append(p.After, PolicyLine{"Isolated from the other Local Networks (set on Local Networks)", "off"})
+			p.After = append(p.After, PolicyLine{"Isolated from the other " + what + " (set on " + setOn + ")", "off"})
 		} else {
-			// one line for the others that can be reached: those that are not isolated themselves
-			var reachable []string
-			others := 0
-			for _, o := range nets {
-				if o.ID == t.ID {
-					continue
-				}
-				others++
-				if !networkIsolated(c, o.ID) {
-					reachable = append(reachable, o.Name)
-				}
-			}
 			switch {
 			case len(reachable) > 0:
-				p.After = append(p.After, PolicyLine{"Allow to the other Local Networks that are not isolated: " + strings.Join(reachable, ", ") + " (set on Local Networks)", "allow"})
+				p.After = append(p.After, PolicyLine{"Allow to the other " + what + " that are not isolated: " + strings.Join(reachable, ", ") + " (set on " + setOnAll + ")", "allow"})
 			case others > 0:
-				p.After = append(p.After, PolicyLine{"No other Local Network can be reached: they are all isolated (set on Local Networks)", "off"})
+				p.After = append(p.After, PolicyLine{"No other " + strings.TrimSuffix(what, "s") + " can be reached: they are all isolated (set on " + setOnAll + ")", "off"})
 			}
 		}
 		p.After = append(p.After, block)

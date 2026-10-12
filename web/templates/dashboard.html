@@ -63,7 +63,7 @@
             </summary>
             <div class="folder-content">
               <a href="#" class="nav-item" data-view="dns">DNS</a>
-              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">VPN</span>
+              <a href="#" class="nav-item" data-view="vpn">VPN</a>
               <a href="#" class="nav-item" data-view="ddns">Dynamic DNS</a>
             </div>
           </details>
@@ -756,6 +756,19 @@
         <div id="dns-body" class="card-stack"></div>
       </div>
 
+      <!-- View: VPN -->
+      <div id="view-vpn" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>VPN</h1>
+            <p class="subtitle">Tunnels to other sites, and remote access for laptops and phones. Changes are saved as a draft until you commit them. Each VPN is its own network in the <a href="#" data-goto="firewall-rules">firewall</a>, with its own rules.</p>
+          </div>
+        </header>
+
+        <div id="vpn-message" class="form-message hidden" role="alert"></div>
+        <div id="vpn-body" class="card-stack"></div>
+      </div>
+
       <!-- View: Dynamic DNS -->
       <div id="view-ddns" class="view-section hidden">
         <header class="dash-header">
@@ -876,6 +889,7 @@
   <script src="/static/scripts/dns.js"></script>
   <script src="/static/scripts/diagnostics.js"></script>
   <script src="/static/scripts/ddns.js"></script>
+  <script src="/static/scripts/vpn.js"></script>
   <script src="/static/scripts/admins.js"></script>
   <script src="/static/scripts/leases.js"></script>
   <script src="/static/scripts/syslogs.js"></script>

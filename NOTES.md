@@ -476,7 +476,35 @@ follows https redirects), so a commit that changes only this has an empty plan.
 - **Tests:** fake services over real TLS (`internal/ddns/ddns_test.go`), API tests (`netapi/ddns_test.go`), config tests; mutation
   checks on all three. A harness lesson: the checking script must decode the test output leniently, or a mutant that writes bad text
   can crash it and leave a file broken.
-- Not checked against a real service. The Services menu now has DNS and Dynamic DNS; VPN is the one planned entry left there.
+- Not checked against a real service.
+
+## 7m. VPN (WireGuard built 2026-10-11)
+
+Design, rules and API are in **`docs/vpn.md`**. Services, VPN has two tabs: **Site to site** and **Client VPN** (remote access to the
+router: router is the server, a file per device). OpenVPN (with a built-in CA) is stage B. `vpn` in `network.json`: `sites` (up to 8:
+name, engine, keys, port, tunnel address, endpoint, keep-alive, remote networks, `internet`/`isolated`) and `wg_remote` (server key,
+port, network `10.8.0.0/24`, endpoint, `full_tunnel`, routes, `dns`, switches, up to 100 `clients`: name, **public** key, address).
+
+- **Zones.** A VPN that is switched on is a firewall zone like a Local Network (`vpn-ra`, `vpn-<id>`): `config.NetworkConfig.VPNZones()`
+  feeds `FirewallTab` (kind `vpn`), the rule `from`/`to` checks and the translator's nft pairs (`nftVPNRules`: the UDP ports on the
+  WAN, DNS and ping to the router, internet only when switched on, member pairs open unless isolated, MSS clamp 1380).
+  `nftablesNetworkRules` was rewritten so Local Networks and VPNs are members of one set of pairs.
+- **Files.** wg-quick files in `/etc/wireguard/wgra.conf` and `wgs<N>.conf` (0600, managed directory), and one sync script
+  (`/usr/local/sbin/peakroute-wg-sync`, sha256 fingerprints in `/run/peakroute-wg`, touches only `wgra`/`wgs<number>`) run by the
+  `wireguard` service and by the daemon at start. The pre-check loads every file into a scratch interface (`wg setconf`); `wg-quick
+  strip` alone does **not** validate keys.
+- **Keys** (`internal/wg`): Curve25519 in Go; a device's private key is made on the router, shown once in the file and not kept
+  (only its public key). A pre-shared key is typed or made in the page and is write-only like every secret. Reading status:
+  `wg.Reader` runs `wg show all dump` (cached 2 s), the API shows Connected (handshake under 3 min), Idle or Waiting.
+- **Remote devices reaching a remote site** need the other router to list the remote access network among its networks
+  (cryptokey routing); documented in `docs/vpn.md`.
+- **Tests:** unit tests for the model, translator and API; **a real end-to-end lab** (`translator/vpn_e2e_test.go`: two routers and a
+  client in network namespaces with the real `wg`, `wg-quick` and the generated nft rules: site tunnel, remote access, policy,
+  isolation, removal) and a real check of the pre-check command. The tools are extracted from the Debian packages for the test
+  (skipped when they are missing). Mutation checks on config, translator and API. Lab lessons: `unshare -rmn` plus `nsenter` into a
+  second namespace made with `unshare -n sleep`, move links with `ip link ... netns PID`, `wg-quick` runs as the (user namespace)
+  root, and `in` is a shell keyword.
+- Not done: OpenVPN, QR code, IPv6, real hardware.
 
 ## 7e. Static routes (built 2026-10-08)
 
@@ -832,7 +860,7 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 | Traffic | per-port throughput history | yes (`traffic`) |
 | Network: Internet, **Local Networks**, Ports, Wireless, Routes | WAN uplink; each local network with its address range *and* DHCP; physical ports; static routes | Internet (`internet`), Local Networks (`networks`), Ports (`network-physical`), Wireless (`wireless`) and Routes (`routes`) |
 | Firewall: Rules, Port forwarding, Connections, Logs | | all four built (`firewall-rules`, `firewall-forwards`, `firewall-connections`, `firewall-log`); design in `docs/firewall.md` |
-| Services: DNS, VPN, Dynamic DNS | | planned |
+| Services: DNS, VPN, Dynamic DNS | | all three built (`dns`, `vpn`, `ddns`) |
 | System: Settings, Administrators, Certificates, Backup and restore, Updates, System logs, Diagnostics | | Settings (`settings`), System logs (`logs`; the Logs page renamed 2026-10-11, firewall traffic moved to Firewall, Logs), Diagnostics (`diagnostics`: the DNS lookup so far; ping and traceroute would follow) |
 
 - **Planned pages are listed but greyed out and not clickable** (a `<span class="nav-item nav-soon">`, no

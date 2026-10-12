@@ -33,6 +33,7 @@ import (
 	"peakroute/internal/system"
 	"peakroute/internal/translator"
 	"peakroute/internal/wanhealth"
+	"peakroute/internal/wg"
 	"peakroute/internal/wireless"
 )
 
@@ -369,6 +370,26 @@ func main() {
 	mux.HandleFunc("/api/v1/ddns", requireAuth(netAPI.HandleDDNS))
 	mux.HandleFunc("/api/v1/ddns/{id}", requireAuth(netAPI.HandleDDNSEntry))
 	mux.HandleFunc("/api/v1/ddns/{id}/update", requireAuth(netAPI.HandleDDNSUpdate))
+	// VPN: site tunnels and remote access with WireGuard. The tunnels are in /etc/wireguard and survive a restart of the router only
+	// because the daemon brings them up again here.
+	wgReader := &wg.Reader{}
+	netAPI.WireGuard = wgReader.Interfaces
+	mux.HandleFunc("/api/v1/vpn", requireAuth(netAPI.HandleVPN))
+	mux.HandleFunc("/api/v1/vpn/sites", requireAuth(netAPI.HandleVPNSites))
+	mux.HandleFunc("/api/v1/vpn/sites/{id}", requireAuth(netAPI.HandleVPNSite))
+	mux.HandleFunc("/api/v1/vpn/remote", requireAuth(netAPI.HandleVPNRemote))
+	mux.HandleFunc("/api/v1/vpn/remote/clients", requireAuth(netAPI.HandleVPNClients))
+	mux.HandleFunc("/api/v1/vpn/remote/clients/{id}", requireAuth(netAPI.HandleVPNClient))
+	mux.HandleFunc("/api/v1/vpn/remote/clients/{id}/file", requireAuth(netAPI.HandleVPNClientTemplate))
+	if !devMode {
+		if _, err := os.Stat(translator.PathWGSync); err == nil {
+			go func() {
+				if out, err := runner.Run(context.Background(), "sh", translator.PathWGSync); err != nil {
+					log.Printf("[-] Bringing the VPN tunnels up failed: %v %s", err, out)
+				}
+			}()
+		}
+	}
 	netAPI.SyslogStatuses = syslogForwarder.Statuses
 	netAPI.SyslogTest = func(ctx context.Context) []syslogfwd.TestResult {
 		return syslogForwarder.SendTest(ctx, "PeakRoute test message")
