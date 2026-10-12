@@ -36,7 +36,9 @@ every new connection, so nothing restarts. A page that is already open keeps the
 - **Make a new one** makes the certificate now (the same authority). With a custom certificate in use the button reads *Use the
   built-in certificate instead*, asks you to click again, and then replaces it.
 
-### Trusting the router
+### Trusting the router (the authority certificate)
+
+On the page this is a section of the Web interface card, labelled *Authority certificate*, below the *Certificate in use* (the web interface's SSL certificate itself).
 
 A browser knows public authorities, not this router's, so it warns about the built-in certificate. **Download the authority's
 certificate** (a public file; the key never leaves the router) and install it once on each computer and phone you use: the page

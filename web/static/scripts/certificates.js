@@ -60,7 +60,8 @@ window.CertificatesModule = (function () {
             <div class="net-card-head"><h2>Web interface</h2>${custom ? '<span class="tag">Custom</span>' : '<span class="tag tag-ok">Built-in</span>'}${w.days_left < 30 ? '<span class="tag tag-draft">Runs out soon</span>' : ''}</div>
             <p class="form-hint">${custom
                 ? 'A certificate you uploaded is in use. It is never replaced or renewed by the router: put in a new one before it runs out.'
-                : 'Made by this router\'s own web authority, for its names and addresses, and renewed by itself a month before it runs out. A browser warns until it trusts the authority (below).'}</p>
+                : 'Made by this router\'s own web authority, for its names and addresses, and renewed by itself a month before it runs out. A browser warns until it trusts the authority (see the authority certificate below).'}</p>
+            <h3 class="form-section">Certificate in use (the web interface's SSL certificate)</h3>
             <dl class="vpn-dl">
                 <dt>Good for</dt><dd>${(w.names || []).map(code).join(', ') || 'nothing'}</dd>
                 <dt>Made by</dt><dd>${escapeHtml(w.issuer)}${web.self_signed ? ' <span class="form-hint">(it vouches for itself)</span>' : ''}</dd>
@@ -71,6 +72,7 @@ window.CertificatesModule = (function () {
             <div class="form-actions">
                 <button type="button" class="cfg-btn cfg-btn--ghost" id="certs-regen"${busy ? ' disabled' : ''}>${custom ? (confirmReplace ? 'Click again to replace it' : 'Use the built-in certificate instead') : 'Make a new one'}</button>
             </div>
+            ${authoritySectionHtml()}
             <h3 class="form-section">More names for the built-in certificate</h3>
             <p class="form-hint">The router's own names and the addresses of its networks are in it already. Add a name or address you also use to reach the router, such as the name from <a href="#" data-goto="ddns">Dynamic DNS</a>, so that a browser does not complain there. Separate with commas.</p>
             <div class="form-grid"><div class="form-field form-field--wide"><label for="certs-names">Names and addresses</label>
@@ -88,10 +90,9 @@ window.CertificatesModule = (function () {
         </section>`;
     }
 
-    function authorityCardHtml() {
+    function authoritySectionHtml() {
         const a = web.authority;
-        return `<section class="card">
-            <div class="net-card-head"><h2>Trusting this router</h2></div>
+        return `<h3 class="form-section">Authority certificate (to make your devices trust this router)</h3>
             <p class="form-hint">The router's built-in certificate is made by its own web authority. Browsers do not know it, so they warn. Install the authority's certificate once on each computer or phone you use, and the warnings stop. It is a public file: it lets a device recognise this router; the key that makes certificates never leaves the router. It is separate from the VPN's authority, so nothing made for a VPN device is trusted for the web interface. Only install it on devices of your own.</p>
             ${a ? `<dl class="vpn-dl">
                 <dt>Authority</dt><dd>${escapeHtml(a.subject)}</dd>
@@ -110,7 +111,7 @@ window.CertificatesModule = (function () {
                 </dl>
                 <p class="form-hint">Compare the fingerprint above with the one the device shows before you trust it.</p>
             </details>
-        </section>`;
+    `;
     }
 
     // ---------------------------------------------------------------- the VPN
@@ -144,7 +145,7 @@ window.CertificatesModule = (function () {
 
     function render() {
         if (!web) return;
-        $('certs-body').innerHTML = webCardHtml() + authorityCardHtml() + vpnCardHtml();
+        $('certs-body').innerHTML = webCardHtml() + vpnCardHtml();
     }
 
     // ---------------------------------------------------------------- loading and saving
