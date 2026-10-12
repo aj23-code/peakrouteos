@@ -130,6 +130,11 @@ func TestOnlyWhatIsSwitchedOnIsWrittenAndNothingWithoutVPN(t *testing.T) {
 		}
 	}
 	// the remote access server without DNS: no DNS file content; a site alone: its file and the script
+	// the DNS file is only for a server that is switched on
+	offDNS := sampleVPN(func(v *config.VPNConfig) { r := raServer(); r.Disabled = true; v.WGRemote = r })
+	if a, ok := hasArtifact(mustRender(t, offDNS), PathDnsmasqVPN); !ok || !a.Remove {
+		t.Errorf("a server that is off has a DNS file: %+v", a)
+	}
 	noDNS := sampleVPN(func(v *config.VPNConfig) { r := raServer(); r.DNS = false; v.WGRemote = r })
 	if a, ok := hasArtifact(mustRender(t, noDNS), PathDnsmasqVPN); !ok || !a.Remove {
 		t.Errorf("%+v", a)
@@ -266,6 +271,9 @@ func TestVPNValuesAreRefusedAtRenderTimeIfValidationIsBypassed(t *testing.T) {
 		"a port of 0":              func(v *config.VPNConfig) { s := siteA(); s.ListenPort = 0; v.Sites = []config.VPNSite{s} },
 		"a keepalive too long":     func(v *config.VPNConfig) { s := siteA(); s.Keepalive = 9999; v.Sites = []config.VPNSite{s} },
 		"a site id with a space":   func(v *config.VPNConfig) { s := siteA(); s.ID = "s 1"; v.Sites = []config.VPNSite{s} },
+		"a port that is too big":   func(v *config.VPNConfig) { s := siteA(); s.ListenPort = 70000; v.Sites = []config.VPNSite{s} },
+		"a remote port of 0":       func(v *config.VPNConfig) { r := raServer(); r.ListenPort = 0; v.WGRemote = r },
+		"a remote port too big":    func(v *config.VPNConfig) { r := raServer(); r.ListenPort = 70000; v.WGRemote = r },
 		"a remote access key":      func(v *config.VPNConfig) { r := raServer(); r.PrivateKey = "x"; v.WGRemote = r },
 		"a remote access network":  func(v *config.VPNConfig) { r := raServer(); r.Network = "10.8.0.0/24\nx"; v.WGRemote = r },
 		"a remote access route":    func(v *config.VPNConfig) { r := raServer(); r.Routes = []string{"nope"}; v.WGRemote = r },
@@ -365,5 +373,23 @@ func TestTheKeysInTheFixturesAreKeys(t *testing.T) {
 		if !wg.ValidKey(k) {
 			t.Errorf("%s is not a key", k)
 		}
+	}
+}
+
+func TestOptionalPartsOfASiteFileAreLeftOutWhenNotSet(t *testing.T) {
+	s := siteA()
+	s.Keepalive, s.Endpoint = 0, ""
+	conf := renderWGSite(s)
+	if strings.Contains(conf, "PersistentKeepalive") || strings.Contains(conf, "Endpoint") || strings.Contains(conf, "PresharedKey") {
+		t.Fatalf("the optional lines are there:\n%s", conf)
+	}
+	s.PresharedKey, s.Keepalive = kPSK, 30
+	conf = renderWGSite(s)
+	if !strings.Contains(conf, "PresharedKey = "+kPSK+"\n") || !strings.Contains(conf, "PersistentKeepalive = 30\n") {
+		t.Fatalf("%s", conf)
+	}
+	// the preshared key comes in the [Peer] section, after the peer's key
+	if i, j := strings.Index(conf, "[Peer]"), strings.Index(conf, "PresharedKey"); i < 0 || j < i {
+		t.Fatalf("%s", conf)
 	}
 }

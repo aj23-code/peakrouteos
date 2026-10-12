@@ -477,3 +477,122 @@ func TestVPNReviewLinesNeverShowAKey(t *testing.T) {
 		t.Fatalf("no change, but %+v", got)
 	}
 }
+
+func TestWhatClientsAreToldToSend(t *testing.T) {
+	c := vpnNet(t, func(v *VPNConfig) {
+		v.WGRemote = remote(t)
+		v.Sites = []VPNSite{site(t, "s1", "Branch", 51820, "10.99.1.1/30", "10.20.0.0/24", "10.21.0.0/16")}
+	})
+	c.Networks = []Network{{ID: "net2", Name: "Guest", IP: "10.30.0.1", Netmask: "255.255.255.0"}}
+	// the router's networks, what is behind the tunnels that are on, and the remote access network, each once
+	got := strings.Join(c.ClientRoutes(), " ")
+	if got != "192.168.1.0/24 10.30.0.0/24 10.20.0.0/24 10.21.0.0/16 10.8.0.0/24" {
+		t.Fatalf("%s", got)
+	}
+	// a tunnel that is off adds nothing
+	c.VPN.Sites[0].Disabled = true
+	if got := strings.Join(c.ClientRoutes(), " "); got != "192.168.1.0/24 10.30.0.0/24 10.8.0.0/24" {
+		t.Fatalf("%s", got)
+	}
+	// chosen networks replace the list; a full tunnel replaces everything
+	c.VPN.WGRemote.Routes = []string{"192.168.1.0/24"}
+	if got := strings.Join(c.ClientRoutes(), " "); got != "192.168.1.0/24" {
+		t.Fatalf("%s", got)
+	}
+	c.VPN.WGRemote.FullTunnel = true
+	if got := strings.Join(c.ClientRoutes(), " "); got != "0.0.0.0/0" {
+		t.Fatalf("%s", got)
+	}
+	// no server: nothing
+	c.VPN.WGRemote = nil
+	if c.ClientRoutes() != nil {
+		t.Fatal("routes without a server")
+	}
+	// the list given back is a copy
+	c.VPN.WGRemote = remote(t)
+	c.VPN.WGRemote.Routes = []string{"192.168.1.0/24"}
+	c.ClientRoutes()[0] = "x"
+	if c.VPN.WGRemote.Routes[0] != "192.168.1.0/24" {
+		t.Fatal("the routes were changed through the copy")
+	}
+}
+
+func TestTheAddressClientsConnectTo(t *testing.T) {
+	for _, c := range []struct {
+		endpoint string
+		port     int
+		want     string
+	}{
+		{"", 51821, ""},
+		{"vpn.example.com", 51821, "vpn.example.com:51821"},
+		{"vpn.example.com", 4000, "vpn.example.com:4000"},
+		{"vpn.example.com:443", 51821, "vpn.example.com:443"},
+		{"203.0.113.7", 51821, "203.0.113.7:51821"},
+	} {
+		r := WGRemote{Endpoint: c.endpoint, ListenPort: c.port}
+		if got := r.ClientEndpoint(); got != c.want {
+			t.Errorf("%q with port %d: %q, want %q", c.endpoint, c.port, got, c.want)
+		}
+	}
+}
+
+func TestTheNextFreeAddressAndPort(t *testing.T) {
+	r := WGRemote{Network: "10.8.0.0/24"}
+	if a, ok := r.NextClientAddress(); !ok || a != "10.8.0.2/32" {
+		t.Fatalf("%q %v", a, ok)
+	}
+	r.Clients = []VPNClient{{Address: "10.8.0.2/32"}, {Address: "10.8.0.4/32"}}
+	if a, _ := r.NextClientAddress(); a != "10.8.0.3/32" {
+		t.Fatalf("a gap is used first: %q", a)
+	}
+	r.Clients = append(r.Clients, VPNClient{Address: "10.8.0.3/32"})
+	if a, _ := r.NextClientAddress(); a != "10.8.0.5/32" {
+		t.Fatalf("%q", a)
+	}
+	// a small network fills up: .1 is the router, .2 and .3 are devices, .4 is the broadcast address
+	small := WGRemote{Network: "10.8.0.0/29", Clients: []VPNClient{{Address: "10.8.0.2/32"}, {Address: "10.8.0.3/32"}, {Address: "10.8.0.4/32"}, {Address: "10.8.0.5/32"}, {Address: "10.8.0.6/32"}}}
+	if a, ok := small.NextClientAddress(); ok {
+		t.Fatalf("an address past the end: %q", a)
+	}
+	if _, ok := (WGRemote{Network: "nope"}).NextClientAddress(); ok {
+		t.Fatal("an address in a network that is not one")
+	}
+
+	v := VPNConfig{}
+	if p := v.NextSitePort(); p != 51820 {
+		t.Fatalf("%d", p)
+	}
+	v.Sites = []VPNSite{{ListenPort: 51820}}
+	if p := v.NextSitePort(); p != 51822 {
+		t.Fatalf("51821 is the remote access server's: %d", p)
+	}
+	v.WGRemote = &WGRemote{ListenPort: 51822}
+	if p := v.NextSitePort(); p != 51823 {
+		t.Fatalf("%d", p)
+	}
+	v.Sites = append(v.Sites, VPNSite{ListenPort: 51823})
+	if p := v.NextSitePort(); p != 51824 {
+		t.Fatalf("%d", p)
+	}
+}
+
+func TestTheOtherSidesAddressInATunnel(t *testing.T) {
+	for in, want := range map[string]string{
+		"10.99.1.1/30":   "10.99.1.2/30",
+		"10.99.1.2/30":   "10.99.1.1/30",
+		"10.99.1.0/30":   "10.99.1.1/30",
+		"10.99.1.0/31":   "10.99.1.1/31",
+		"10.99.1.1/31":   "10.99.1.0/31",
+		"10.99.1.1/24":   "10.99.1.2/24",
+		"10.99.1.254/24": "10.99.1.253/24",
+	} {
+		if got, ok := OtherSideAddress(in); !ok || got != want {
+			t.Errorf("%s: %q %v, want %q", in, got, ok, want)
+		}
+	}
+	for _, in := range []string{"", "nope", "fd00::1/64", "10.99.1.1/32"} {
+		if got, ok := OtherSideAddress(in); ok {
+			t.Errorf("%q gave %q", in, got)
+		}
+	}
+}
