@@ -26,6 +26,7 @@ import (
 	"peakroute/internal/cert"
 	"peakroute/internal/config"
 	"peakroute/internal/ddns"
+	"peakroute/internal/fsutil"
 	"peakroute/internal/fwlog"
 	"peakroute/internal/netapi"
 	"peakroute/internal/network"
@@ -118,6 +119,23 @@ func main() {
 		return translator.AdoptExisting(cfg, translator.RootFS(systemRoot), cfgMgr.SysConfig().OperationMode)
 	}); err != nil {
 		log.Printf("Warning: could not adopt existing network settings: %v", err)
+	}
+
+	// A crash between writing a file and putting it in place leaves a ".name.123.tmp" next to it: clear the old ones out of the
+	// directories the daemon writes to (its own, the certificates', and those of the files the configuration makes).
+	sweepDirs := map[string]bool{configDir: true, filepath.Dir(cert.CertPath): true}
+	if d, err := translator.Render(cfgMgr.NetworkConfig(), cfgMgr.SysConfig().OperationMode); err == nil {
+		for _, a := range d.Artifacts {
+			sweepDirs[filepath.Join(systemRoot, filepath.Dir(a.Path))] = true
+		}
+		for _, m := range d.ManagedDirs {
+			sweepDirs[filepath.Join(systemRoot, m.Path)] = true
+		}
+	}
+	for dir := range sweepDirs {
+		if n := fsutil.SweepStale(dir, time.Minute); n > 0 {
+			log.Printf("[+] Removed %d temporary file(s) a crash left in %s", n, dir)
+		}
 	}
 
 	// The commit/confirm/revert workflow for network changes. On the appliance it writes the real

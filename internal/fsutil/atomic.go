@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 )
 
 // WriteFileAtomic replaces path with data so that a reader (or a power cut) sees either the
@@ -85,4 +87,29 @@ func syncDir(dir string) error {
 		return fmt.Errorf("sync directory %s: %w", dir, err)
 	}
 	return nil
+}
+
+// SweepStale removes the temporary files that StageFile leaves behind when the process dies between writing one and renaming it
+// (a name like ".network.json.123456.tmp") from dir, but only those older than minAge, so that a write in progress is never touched.
+// It looks in dir only, not below, and returns how many it removed.
+func SweepStale(dir string, minAge time.Duration) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		name := e.Name()
+		if !e.Type().IsRegular() || !strings.HasPrefix(name, ".") || !strings.HasSuffix(name, ".tmp") || strings.Count(name, ".") < 3 {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || time.Since(info.ModTime()) < minAge {
+			continue
+		}
+		if os.Remove(filepath.Join(dir, name)) == nil {
+			n++
+		}
+	}
+	return n
 }

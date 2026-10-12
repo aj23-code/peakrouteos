@@ -1,0 +1,20 @@
+name: checks
+on:
+  push:
+  pull_request:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # the tools some tests run for real (the tests skip themselves without them)
+      - name: Install the tools the end-to-end tests use
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wireguard-tools openvpn nftables iproute2 iputils-ping dnsmasq-base
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - name: gofmt, vet and tests
+        run: ./check.sh

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,7 +47,7 @@ type SystemStats struct {
 	KernelVersion  string                    `json:"kernel_version"`
 	UptimeSeconds  uint64                    `json:"uptime_seconds"`
 	CPUUsagePct    float64                   `json:"cpu_usage_pct"`
-	CPUTempC       float64                   `json:"cpu_temp_celsius"`
+	CPUTempC       *float64                  `json:"cpu_temp_celsius"` // null when the machine has no sensor we can trust
 	LoadAvg        [3]float64                `json:"load_avg"`
 	MemoryTotalMB  uint64                    `json:"memory_total_mb"`
 	MemoryUsedMB   uint64                    `json:"memory_used_mb"`
@@ -242,7 +241,9 @@ func GetSystemStats(src ConfigSource) (SystemStats, error) {
 	stats.CPUUsagePct = cpuPct
 
 	stats.LoadAvg = getLoadAverage()
-	stats.CPUTempC = getCPUTemperature()
+	if t, ok := cpuTemperature("/sys"); ok {
+		stats.CPUTempC = &t
+	}
 	stats.Disk = getDiskUsage("/")
 	stats.StateTable = getStateTableSize()
 	stats.DNSServers = getDNSServers()
@@ -303,14 +304,17 @@ func getKernelVersion() string {
 	return fmt.Sprintf("%s %s", sysName, rel)
 }
 
-func parseMemInfo(stats *SystemStats) error {
-	file, err := os.Open("/proc/meminfo")
+func parseMemInfo(stats *SystemStats) error { return parseMemInfoFile("/proc/meminfo", stats) }
+
+func parseMemInfoFile(path string, stats *SystemStats) error {
+	file, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
-	var memTotal, memFree, buffers, cached, sReclaimable uint64
+	var memTotal, memFree, buffers, cached, sReclaimable, memAvail uint64
+	haveAvail := false
 	var swapTotal, swapFree uint64
 
 	scanner := bufio.NewScanner(file)
@@ -321,25 +325,34 @@ func parseMemInfo(stats *SystemStats) error {
 		}
 		val, _ := strconv.ParseUint(fields[1], 10, 64)
 		switch fields[0] {
-			case "MemTotal:":
-				memTotal = val
-			case "MemFree:":
-				memFree = val
-			case "Buffers:":
-				buffers = val
-			case "Cached:":
-				cached = val
-			case "SReclaimable:":
-				sReclaimable = val
-			case "SwapTotal:":
-				swapTotal = val
-			case "SwapFree:":
-				swapFree = val
+		case "MemTotal:":
+			memTotal = val
+		case "MemFree:":
+			memFree = val
+		case "MemAvailable:":
+			memAvail, haveAvail = val, true
+		case "Buffers:":
+			buffers = val
+		case "Cached:":
+			cached = val
+		case "SReclaimable:":
+			sReclaimable = val
+		case "SwapTotal:":
+			swapTotal = val
+		case "SwapFree:":
+			swapFree = val
 		}
 	}
 
 	if memTotal > 0 {
+		// the kernel's own estimate of what a program could still get; the sum of what is easy to give back is for kernels that lack it
 		memAvailable := memFree + buffers + cached + sReclaimable
+		if haveAvail {
+			memAvailable = memAvail
+		}
+		if memAvailable > memTotal {
+			memAvailable = memTotal
+		}
 		memUsed := memTotal - memAvailable
 
 		stats.MemoryTotalMB = memTotal / 1024
@@ -393,20 +406,6 @@ func getLoadAverage() [3]float64 {
 		load[i], _ = strconv.ParseFloat(parts[i], 64)
 	}
 	return load
-}
-
-func getCPUTemperature() float64 {
-	zones, err := filepath.Glob("/sys/class/thermal/thermal_zone*/temp")
-	if err == nil && len(zones) > 0 {
-		raw, err := os.ReadFile(zones[0])
-		if err == nil {
-			mC, err := strconv.ParseFloat(strings.TrimSpace(string(raw)), 64)
-			if err == nil {
-				return mC / 1000.0
-			}
-		}
-	}
-	return 0.0
 }
 
 func getStateTableSize() StateTableInfo {

@@ -104,6 +104,10 @@ if (archMatch) {
                 const tempPct = Math.min(100, Math.max(0, data.cpu_temp_celsius));
                 cpuTempBarEl.style.width = `${tempPct}%`;
             }
+        } else {
+            // the machine has no sensor we can trust: say so rather than show a wrong number
+            if (cpuTempEl) cpuTempEl.innerText = 'n/a';
+            if (cpuTempBarEl) cpuTempBarEl.style.width = '0%';
         }
 
         // 4. Load Averages (1m, 5m, 15m)

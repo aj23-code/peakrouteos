@@ -551,6 +551,17 @@ that closes the pipe, or the reader never sees the end. Tests: the runner with a
 words, bounded output), the real `ping` on 127.0.0.1, the connection test against real listeners, the API with a fake runner; checked in
 the browser against real `ping` and `tracepath`.
 
+## 7p. Bug batch (2026-10-11)
+
+- **CPU temperature** (`system/cputemp.go`): chosen by what a sensor says it is (thermal zone types, then hwmon chips such as `coretemp`
+  with its "Package" label, `k10temp`), then the hottest zone that is not a known non-CPU (acpitz placeholder, nvme, wifi, battery...),
+  else none: `cpu_temp_celsius` is `null` and the overview shows n/a. Memory uses `MemAvailable`.
+- **Stale temp files** (`fsutil.SweepStale`): `.name.123.tmp` files older than a minute are removed at start from the daemon's, the
+  certificates' and every directory the configuration writes to.
+- **CSP**: `script-src 'self'` (the last inline handler became `data-goto`); `style-src` still allows inline styles.
+- **Checks**: `./check.sh` (gofmt, vet, tests) and `.github/workflows/ci.yml` (installs wireguard-tools, openvpn, nftables so that the end-to-end tests run;
+  they skip themselves without the tools or user namespaces). No git remote yet.
+
 ## 7e. Static routes (built 2026-10-08)
 
 **Model.** `NetworkConfig.Routes` is a list of `{name, destination, gateway, metric, disabled}` (JSON keys

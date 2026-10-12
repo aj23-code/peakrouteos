@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func readString(t *testing.T, path string) string {
@@ -201,5 +202,52 @@ func TestFailedRenameCleansUpTheTempFile(t *testing.T) {
 	}
 	if extra := leftovers(t, dir, "config.json"); len(extra) != 0 {
 		t.Errorf("temp files left behind after a failed rename: %v", extra)
+	}
+}
+
+func TestSweepingOnlyRemovesOldLeftoversOfAtomicWrites(t *testing.T) {
+	dir := t.TempDir()
+	old := time.Now().Add(-time.Hour)
+	mk := func(name string, age time.Time) {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		os.Chtimes(p, age, age)
+	}
+	// what a crash leaves, old and new; and what must never be touched
+	mk(".network.json.123456.tmp", old)
+	mk(".tls.crt.99.tmp", old)
+	mk(".fresh.json.1.tmp", time.Now()) // a write in progress
+	mk("network.json", old)
+	mk("notes.tmp", old)                             // not an atomic write's name
+	mk(".hidden", old)                               // a dotfile that is no leftover
+	mk(".a.tmp", old)                                // too few parts to be one
+	mk(".keep.tmp.conf", old)                        // does not end in .tmp
+	os.Mkdir(filepath.Join(dir, ".dir.1.tmp"), 0755) // not a file
+	if n := SweepStale(dir, time.Minute); n != 2 {
+		t.Fatalf("%d removed", n)
+	}
+	for _, gone := range []string{".network.json.123456.tmp", ".tls.crt.99.tmp"} {
+		if _, err := os.Stat(filepath.Join(dir, gone)); err == nil {
+			t.Errorf("%s stayed", gone)
+		}
+	}
+	for _, kept := range []string{".fresh.json.1.tmp", "network.json", "notes.tmp", ".hidden", ".a.tmp", ".keep.tmp.conf", ".dir.1.tmp"} {
+		if _, err := os.Stat(filepath.Join(dir, kept)); err != nil {
+			t.Errorf("%s was removed", kept)
+		}
+	}
+	// a directory that is not there is no problem; the leftovers of a real StageFile are found
+	if SweepStale(filepath.Join(dir, "nothing"), time.Minute) != 0 {
+		t.Fatal("something in a directory that is not there")
+	}
+	staged, err := StageFile(filepath.Join(dir, "x.conf"), []byte("data"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Chtimes(staged, old, old)
+	if SweepStale(dir, time.Minute) != 1 {
+		t.Fatalf("a file StageFile made was not found: %s", staged)
 	}
 }

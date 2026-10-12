@@ -3,13 +3,13 @@ package network
 import (
 	"fmt"
 	"net"
-	"strings"
 	"os"
 	"path/filepath"
-
+	"strings"
 
 	"peakroute/internal/config"
 )
+
 // GetPhysicalInterfaces queries host NICs and returns all non-virtual physical interfaces
 func GetPhysicalInterfaces() ([]config.SystemInterface, error) {
 	ifaces, err := net.Interfaces()
@@ -30,28 +30,27 @@ func GetPhysicalInterfaces() ([]config.SystemInterface, error) {
 			strings.HasPrefix(name, "wg") ||
 			strings.HasPrefix(name, "virbr") ||
 			strings.Contains(name, ".") { // Skip VLAN sub-interfaces like br0.10
-				continue
-			}
+			continue
+		}
 
-			mac := iface.HardwareAddr.String()
+		mac := iface.HardwareAddr.String()
 
-			// Fetch sysfs details (state, speed, mtu, driver)
-			state, speed, mtu, driver := EnrichInterfaceDetails(name)
+		// Fetch sysfs details (state, speed, mtu, driver)
+		state, speed, mtu, driver := EnrichInterfaceDetails(name)
 
-			physical = append(physical, config.SystemInterface{
-				Name:     name,
-				MAC:      mac,
-				State:    state,
-				Speed:    speed,
-				MTU:      mtu,
-				Driver:   driver,
-				Wireless: IsWireless("/sys/class/net", name),
-			})
+		physical = append(physical, config.SystemInterface{
+			Name:     name,
+			MAC:      mac,
+			State:    state,
+			Speed:    speed,
+			MTU:      mtu,
+			Driver:   driver,
+			Wireless: IsWireless("/sys/class/net", name),
+		})
 	}
 
 	return physical, nil
 }
-
 
 func EnrichInterfaceDetails(ifaceName string) (state, speed string, mtu int, driver string) {
 	basePath := filepath.Join("/sys/class/net", ifaceName)
@@ -95,10 +94,6 @@ func EnrichInterfaceDetails(ifaceName string) (state, speed string, mtu int, dri
 
 	return state, speed, mtu, driver
 }
-
-
-
-
 
 // SyncPhysicalInterfaces updates the staged JSON state with discovered hardware interfaces and commits
 func SyncPhysicalInterfaces(mgr *config.Manager) error {
