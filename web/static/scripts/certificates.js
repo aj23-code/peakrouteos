@@ -78,10 +78,8 @@ window.CertificatesModule = (function () {
             ${sug.length ? `<p class="form-hint">Suggested: ${sug.map(s => `<button type="button" class="cfg-btn cfg-btn--ghost certs-sug" data-name="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join(' ')}</p>` : ''}
             <div class="form-actions"><button type="button" class="cfg-btn cfg-btn--primary" id="certs-names-save"${busy ? ' disabled' : ''}>Save${custom ? '' : ' and make a new certificate'}</button></div>
             ${custom ? '<p class="form-hint">These names are used when the built-in certificate is in use again.</p>' : ''}
-        </section>
-        <section class="card">
-            <div class="net-card-head"><h2>Use your own certificate</h2></div>
-            <p class="form-hint">Upload a certificate and its private key (PEM files), for example one from a public authority for a name that points at this router. If the certificate file holds a chain, the router's certificate must come first. It is checked (it must be valid and the key must belong to it) before anything is replaced, and it is served at once.</p>
+            <h3 class="form-section">Use your own certificate</h3>
+            <p class="form-hint">Upload a certificate and its private key (PEM files), for example one from a public authority for a name that points at this router. If the certificate file holds a chain, the router's certificate must come first. It is checked (it must be valid and the key must belong to it) before anything is replaced, and it is served at once.${custom ? ' The one in use now is replaced.' : ' The built-in certificate is replaced until you switch back.'}</p>
             <div class="form-grid">
                 <div class="form-field"><label for="certs-file-cert">Certificate (.crt, .pem)</label><input type="file" id="certs-file-cert" accept=".crt,.pem,.cer,text/plain"${busy ? ' disabled' : ''}></div>
                 <div class="form-field"><label for="certs-file-key">Private key (.key, .pem)</label><input type="file" id="certs-file-key" accept=".key,.pem,text/plain"${busy ? ' disabled' : ''}></div>
