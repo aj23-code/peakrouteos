@@ -140,3 +140,17 @@ func TestReadingOnlyTakesWhatItNeeds(t *testing.T) {
 		}
 	}
 }
+
+func TestOnlyTheFirstRemoteCountsAndDefaultsApply(t *testing.T) {
+	m := mat(t)
+	base, _ := Write(params(m))
+	two := strings.Replace(base, "remote vpn.example.com 1194\n", "remote first.example.com 1195\nremote second.example.com 1196\n", 1)
+	two = strings.Replace(two, "proto udp\n", "", 1)
+	got, err := Read(two)
+	if err != nil || got.Host != "first.example.com" || got.Port != 1195 || got.Proto != "udp" {
+		t.Fatalf("%v %+v", err, got)
+	}
+	if _, err := Read(strings.Replace(base, "remote vpn.example.com 1194\n", "remote\n", 1)); err == nil {
+		t.Error("a remote line without an address was read")
+	}
+}

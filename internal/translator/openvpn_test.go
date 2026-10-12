@@ -415,3 +415,10 @@ func TestChangingOpenVPNJustAppliesTheTunnels(t *testing.T) {
 		t.Errorf("%s", order)
 	}
 }
+
+func TestAServerWithoutAnAddressForDevicesStillRenders(t *testing.T) {
+	f := ovCfg(t, func(v *config.VPNConfig) { v.OVRemote.Endpoint = "" })
+	if !strings.Contains(text(t, f.cfg, "/etc/openvpn/server/pr-ra.conf"), "dev ovra") {
+		t.Fatal("not rendered")
+	}
+}

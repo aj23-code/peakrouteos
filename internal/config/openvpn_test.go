@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -363,5 +364,158 @@ func TestOpenVPNReviewLinesNeverShowASecret(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("no %q in:\n%s", want, got)
 		}
+	}
+}
+
+func TestTheWordsForOpenVPN(t *testing.T) {
+	f := ovFixture(t)
+	r := *f.c.VPN.OVRemote
+	r.FullTunnel, r.Internet, r.DNS, r.Disabled, r.Isolated, r.Proto, r.ListenPort = true, true, true, true, true, "tcp", 443
+	got := OVRemoteText(r)
+	for _, want := range []string{"OpenVPN, TCP 443, network 10.9.0.0/24", "clients connect to vpn.example.com", "all the clients' traffic through the router", "DNS from this router", "internet allowed", "isolated from the Local Networks", "switched off"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("no %q in %q", want, got)
+		}
+	}
+	r = *f.c.VPN.OVRemote
+	r.Endpoint, r.Routes = "", []string{"10.1.0.0/16"}
+	got = OVRemoteText(r)
+	if strings.Contains(got, "clients connect to") || strings.Contains(got, "DNS") || strings.Contains(got, "switched off") || strings.Contains(got, "all the clients") ||
+		!strings.Contains(got, "clients send 10.1.0.0/16 through it") || !strings.Contains(got, "no internet") || !strings.Contains(got, "can reach the Local Networks") {
+		t.Errorf("%q", got)
+	}
+	r.Routes = nil
+	if got := OVRemoteText(r); !strings.Contains(got, "clients send the router's networks through it") {
+		t.Errorf("%q", got)
+	}
+	cl := OVClient{ID: "c1", Name: "P", Address: "10.9.0.2/32"}
+	if got := OVClientText(cl); got != "address 10.9.0.2" {
+		t.Errorf("%q", got)
+	}
+	cl.NotAfter, cl.Disabled = time.Date(2031, 10, 12, 1, 0, 0, 0, time.UTC).Unix(), true
+	if got := OVClientText(cl); got != "address 10.9.0.2, certificate valid until 2031-10-12, switched off" {
+		t.Errorf("%q", got)
+	}
+	s := f.c.VPN.Sites[0]
+	s.Disabled, s.Internet, s.Isolated = true, true, true
+	got = SiteText(s)
+	if !strings.Contains(got, "internet allowed") || !strings.Contains(got, "isolated from the Local Networks") || !strings.HasSuffix(got, "switched off") {
+		t.Errorf("%q", got)
+	}
+	s.OV.Remote = ""
+	if got := SiteText(s); strings.Contains(got, "it connects to") {
+		t.Errorf("%q", got)
+	}
+	if got := SiteText(f.c.VPN.Sites[1]); !strings.Contains(got, "OpenVPN to depot.example.com:443 (TCP)") {
+		t.Errorf("%q", got)
+	}
+}
+
+func TestMoreOpenVPNLimitsAndShapes(t *testing.T) {
+	f := ovFixture(t)
+	now := time.Now()
+	// limits: one over each is refused (the ones at the limit are the other tests' business)
+	c := f.c.clone()
+	for i := 0; i <= MaxClientRoutes; i++ {
+		c.VPN.OVRemote.Routes = append(c.VPN.OVRemote.Routes, "10."+itoa(100+i)+".0.0/24")
+	}
+	if !errorFieldsOf(t, c)["vpn.ov_remote.routes"] {
+		t.Error("too many routes")
+	}
+	c = f.c.clone()
+	for i := 0; i <= MaxVPNClients; i++ {
+		c.VPN.OVRemote.Clients = append(c.VPN.OVRemote.Clients, OVClient{ID: "c" + itoa(10+i), Name: "Device " + itoa(i), Serial: "a" + itoa(i), Address: "10.9." + itoa(i/250) + "." + itoa(i%250+10) + "/32"})
+	}
+	if !errorFieldsOf(t, c)["vpn.ov_remote.clients"] {
+		t.Error("too many devices")
+	}
+	c = f.c.clone()
+	for i := 0; i <= maxRevoked; i++ {
+		c.VPN.CA.Revoked = append(c.VPN.CA.Revoked, VPNRevoked{Serial: itoaHex(i + 1000)})
+	}
+	if !errorFieldsOf(t, c)["vpn.ca.revoked"] {
+		t.Error("too many revoked")
+	}
+	// a device address with a wider prefix
+	c = f.c.clone()
+	c.VPN.OVRemote.Clients[0].Address = "10.9.0.2/24"
+	if !errorFieldsOf(t, c)["vpn.ov_remote.clients[0].address"] {
+		t.Error("a /24 as a device address")
+	}
+	// the authority being used is decided by the servers and tunnels that wait (a client tunnel alone needs none; a removed device's revoked certificate is fine)
+	c = f.c.clone()
+	c.VPN.OVRemote = nil
+	c.VPN.Sites = c.VPN.Sites[1:]
+	c.VPN.CA.ServerCert, c.VPN.CA.ServerKey = "", ""
+	if err := c.Validate(); err != nil {
+		t.Errorf("an authority with nothing to serve needs no server certificate: %v", err)
+	}
+	c.VPN.Sites = f.c.clone().VPN.Sites[:1]
+	if !errorFieldsOf(t, c)["vpn.ca.server_cert"] {
+		t.Error("a waiting tunnel needs the server certificate")
+	}
+	// a certificate that is not one in the authority's place
+	c = f.c.clone()
+	c.VPN.CA.Cert = "nope"
+	if !errorFieldsOf(t, c)["vpn.ca.cert"] {
+		t.Error("garbage as the authority")
+	}
+	_ = now
+	// an empty OpenVPN-less VPN has nothing to say about it
+	if got := diffOpenVPN(VPNConfig{}, VPNConfig{}); len(got) != 0 {
+		t.Errorf("%v", got)
+	}
+}
+
+func itoaHex(n int) string { return strings.ToLower(strconv.FormatInt(int64(n), 16)) }
+
+func TestTheReviewOfOpenVPNChanges(t *testing.T) {
+	f := ovFixture(t)
+	line := func(from, to NetworkConfig, label string) string {
+		for _, c := range DiffNetwork(from, to) {
+			if strings.Contains(c.Label, label) {
+				return c.Old + " => " + c.New
+			}
+		}
+		return ""
+	}
+	with := func(edit func(*VPNConfig)) NetworkConfig { c := f.c.clone(); edit(c.VPN); return c }
+	// the server removed, and changed
+	if got := line(f.c, with(func(v *VPNConfig) { v.OVRemote = nil; v.Sites = nil }), "OpenVPN remote access"); !strings.HasSuffix(got, "=> (removed)") {
+		t.Errorf("%q", got)
+	}
+	if got := line(f.c, with(func(v *VPNConfig) { v.OVRemote.DNS = true }), "OpenVPN remote access"); !strings.Contains(got, "=>") || !strings.Contains(got, "DNS from this router") {
+		t.Errorf("%q", got)
+	}
+	if got := line(f.c, with(func(v *VPNConfig) { v.OVRemote.Proto = "udp" }), "OpenVPN remote access"); got != "" {
+		t.Errorf("a line for nothing: %q", got)
+	}
+	// a device renamed, given a new certificate, switched off, moved
+	if got := line(f.c, with(func(v *VPNConfig) { v.OVRemote.Clients[0].Name = "Renamed" }), "OpenVPN device Renamed"); !strings.HasPrefix(got, `"Anna phone": address 10.9.0.2`) {
+		t.Errorf("%q", got)
+	}
+	if got := line(f.c, with(func(v *VPNConfig) { v.OVRemote.Clients[0].Serial = "abc" }), "OpenVPN device Anna phone"); !strings.Contains(got, "(other certificate)") {
+		t.Errorf("%q", got)
+	}
+	if got := line(f.c, with(func(v *VPNConfig) { v.OVRemote.Clients[1].Disabled = true }), "OpenVPN device Work laptop"); !strings.Contains(got, "switched off") {
+		t.Errorf("%q", got)
+	}
+	if got := line(f.c, f.c, "OpenVPN device"); got != "" {
+		t.Errorf("a line for nothing: %q", got)
+	}
+	// the authority gone, its server key replaced, a certificate revoked
+	if got := line(f.c, with(func(v *VPNConfig) { v.CA = nil; v.OVRemote = nil; v.Sites = nil }), "certificate authority"); !strings.HasSuffix(got, "=> (removed)") {
+		t.Errorf("%q", got)
+	}
+	g := with(func(v *VPNConfig) {
+		_, k, _ := pki.Issue(v.CA.Cert, v.CA.Key, "x", true, time.Now())
+		v.CA.ServerKey = k
+	})
+	if got := line(f.c, g, "Server certificate"); got != "set => changed" {
+		t.Errorf("%q", got)
+	}
+	// the end date of the authority is in its line when it is made
+	if got := line(validNet(), f.c, "certificate authority"); !strings.Contains(got, "made, valid until ") {
+		t.Errorf("%q", got)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"peakroute/internal/config"
 	"peakroute/internal/ovpn"
 	"peakroute/internal/pki"
 )
@@ -590,3 +591,122 @@ func TestOpenVPNZonesAreTabsOfTheFirewall(t *testing.T) {
 }
 
 func jsonText(s string) string { return string(mustJSON(s)) }
+
+func TestOpenVPNSettingsCanBeChangedOneByOne(t *testing.T) {
+	e := standard(t)
+	e.ovRemote(http.MethodPut, `{"endpoint":"vpn.example.com"}`)
+	// every field of the server is taken, and left alone when it is not named
+	rec := e.ovRemote(http.MethodPut, `{"dns":true,"isolated":true,"enabled":false,"internet":true,"routes":["192.168.1.0/24"," "],"network":"10.77.0.0/24","endpoint":"B.Example.com:443"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	r := e.draft().VPNSettings().OVRemote
+	if !r.DNS || !r.Isolated || !r.Disabled || !r.Internet || len(r.Routes) != 1 || r.Network != "10.77.0.0/24" || r.Endpoint != "b.example.com:443" {
+		t.Fatalf("%+v", r)
+	}
+	e.ovRemote(http.MethodPut, `{"dns":false,"isolated":false,"enabled":true}`)
+	r = e.draft().VPNSettings().OVRemote
+	if r.DNS || r.Isolated || r.Disabled || !r.Internet || r.Network != "10.77.0.0/24" {
+		t.Fatalf("%+v", r)
+	}
+	// a device: switched off and on again, named; a missing endpoint stops a new file but not a rename
+	e.addOVClient(`{"name":"Phone","enabled":false}`)
+	if c := e.draft().VPNSettings().OVRemote.Clients[0]; !c.Disabled {
+		t.Fatalf("%+v", c)
+	}
+	e.ovClient(http.MethodPut, "c1", `{"enabled":true}`)
+	if c := e.draft().VPNSettings().OVRemote.Clients[0]; c.Disabled || c.Name != "Phone" {
+		t.Fatalf("%+v", c)
+	}
+	e.ovRemote(http.MethodPut, `{"endpoint":""}`)
+	serial := e.draft().VPNSettings().OVRemote.Clients[0].Serial
+	if rec := e.ovClient(http.MethodPut, "c1", `{"new_file":true}`); rec.Code != http.StatusBadRequest || !errorFields(t, rec)["endpoint"] {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if e.draft().VPNSettings().OVRemote.Clients[0].Serial != serial || len(e.draft().VPNSettings().CA.Revoked) != 0 {
+		t.Fatal("a refused new file changed the certificate")
+	}
+	if rec := e.ovClient(http.MethodPut, "c1", `{"name":"Renamed"}`); rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestOpenVPNSiteTunnelSettingsCanBeChangedOneByOne(t *testing.T) {
+	e := standard(t)
+	e.addSite(`{"engine":"openvpn","role":"server","name":"Branch","remote":"r.example.com:1195","remote_networks":["10.60.0.0/24"]}`)
+	rec := e.site(http.MethodPut, "s1", `{"listen_port":1300,"address":"10.98.5.1/29","isolated":true,"enabled":false,"proto":"TCP"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	s := e.draft().VPNSettings().Sites[0]
+	if s.ListenPort != 1300 || s.Address != "10.98.5.1/29" || !s.Isolated || !s.Disabled || s.OV.Proto != "tcp" || s.OV.Remote != "r.example.com:1195" {
+		t.Fatalf("%+v", s)
+	}
+	e.site(http.MethodPut, "s1", `{"isolated":false,"enabled":true}`)
+	if s := e.draft().VPNSettings().Sites[0]; s.Isolated || s.Disabled || s.ListenPort != 1300 {
+		t.Fatalf("%+v", s)
+	}
+	// a file can only go to a tunnel that connects
+	rec = e.site(http.MethodPut, "s1", `{"file":`+jsonText(aFileFromAnotherRouter(t, 1195, "udp"))+`}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	// a client tunnel keeps its address unless the request or the file names one
+	file := aFileFromAnotherRouter(t, 1195, "udp")
+	e.addSite(`{"engine":"openvpn","role":"client","name":"Main","file":` + jsonText(file) + `}`)
+	e.site(http.MethodPut, "s2", `{"address":"10.77.0.3/29"}`)
+	if s := e.draft().VPNSettings().Sites[1]; s.Address != "10.77.0.3/29" {
+		t.Fatalf("%+v", s)
+	}
+	e.site(http.MethodPut, "s2", `{"file":`+jsonText(aFileFromAnotherRouter(t, 1196, "udp"))+`,"address":"10.77.0.4/29"}`)
+	if s := e.draft().VPNSettings().Sites[1]; s.Address != "10.77.0.4/29" {
+		t.Fatalf("the request's address lost to the file's: %+v", s)
+	}
+	e.site(http.MethodPut, "s2", `{"file":`+jsonText(aFileFromAnotherRouter(t, 1196, "udp"))+`}`)
+	if s := e.draft().VPNSettings().Sites[1]; s.Address != "10.77.0.2/29" {
+		t.Fatalf("the file's address was not taken: %+v", s)
+	}
+	// other tunnels are not touched
+	if s := e.draft().VPNSettings().Sites[0]; s.ListenPort != 1300 {
+		t.Fatalf("%+v", s)
+	}
+	// an unknown role, other engines' fields, a wrong method
+	if rec := e.addSite(`{"engine":"openvpn","role":"server","name":"X","peer_public_key":"` + genPub(t) + `"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("%d", rec.Code)
+	}
+	if rec := e.site(http.MethodPut, "s9", `{}`); rec.Code != http.StatusNotFound {
+		t.Fatalf("%d", rec.Code)
+	}
+}
+
+func TestRevokingTwiceListsACertificateOnce(t *testing.T) {
+	v := &config.VPNConfig{}
+	if err := ensureCA(v); err != nil {
+		t.Fatal(err)
+	}
+	if err := revoke(v, "", "nobody"); err != nil || len(v.CA.Revoked) != 0 {
+		t.Fatalf("%v %+v", err, v.CA.Revoked)
+	}
+	if err := revoke(&config.VPNConfig{}, "abc", "no authority"); err != nil {
+		t.Fatal(err)
+	}
+	if err := revoke(v, "abc", "x"); err != nil {
+		t.Fatal(err)
+	}
+	n := v.CA.CRLNumber
+	if err := revoke(v, "abc", "x again"); err != nil || len(v.CA.Revoked) != 1 || v.CA.CRLNumber != n {
+		t.Fatalf("%v %+v %d %d", err, v.CA.Revoked, v.CA.CRLNumber, n)
+	}
+	if list, _ := pki.CRLSerials(v.CA.CRL); len(list) != 1 || list[0] != "abc" {
+		t.Fatalf("%v", list)
+	}
+	// the authority is made once, with its server certificate, and kept
+	cert := v.CA.Cert
+	if err := ensureCA(v); err != nil || v.CA.Cert != cert {
+		t.Fatalf("%v", err)
+	}
+	v.CA.ServerCert, v.CA.ServerKey = "", ""
+	if err := ensureCA(v); err != nil || v.CA.Cert != cert || v.CA.ServerCert == "" {
+		t.Fatalf("%v", err)
+	}
+}

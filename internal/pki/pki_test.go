@@ -211,3 +211,17 @@ func TestWhatIsWrittenIntoAFileIsOnlyABlock(t *testing.T) {
 		t.Error("garbage is a key")
 	}
 }
+
+func TestAControlChannelKeyHasLinesOfExactlyThirtyTwo(t *testing.T) {
+	k, _ := NewTLSCryptKey()
+	lines := strings.Split(k, "\n")
+	for i, l := range lines {
+		if len(l) == 32 {
+			lines[i] = l + "ab" // still hex, but not a line of the right length
+			break
+		}
+	}
+	if ValidTLSCryptKey(strings.Join(lines, "\n")) {
+		t.Fatal("a line of 34 was accepted")
+	}
+}
