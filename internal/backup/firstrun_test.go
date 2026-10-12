@@ -128,3 +128,31 @@ func TestAFirstRunRestoreAlwaysBringsTheAdministrators(t *testing.T) {
 		t.Fatalf("%d administrators, configured %v", len(b.mgr.Users()), b.mgr.IsConfigured())
 	}
 }
+
+func TestTheConsoleLoginIsTheOneOfTheMachine(t *testing.T) {
+	a := newRouter(t, "alpha", []string{"eth0", "eth1"}, nil)
+	a.mgr.UpdateAuth(func(c *config.AuthConfig) error { c.ConsoleUser = "admin"; return nil })
+	data := backupOf(t, a, false)
+
+	// a router that has none takes the backup's (the setup then makes the Linux account)
+	b := blank(t, "fresh", []string{"eth0", "eth1"})
+	rep, _ := b.svc.Inspect(data, pw)
+	if _, err := b.svc.RestoreFirstRun(rep.Token, Options{Settings: true}); err != nil {
+		t.Fatal(err)
+	}
+	if b.mgr.ConsoleUser() != "admin" {
+		t.Fatalf("%q", b.mgr.ConsoleUser())
+	}
+
+	// a router that has one keeps it: its Linux account is the one that exists
+	c := newRouter(t, "gamma", []string{"eth0", "eth1"}, nil)
+	c.mgr.UpdateAuth(func(cfg *config.AuthConfig) error { cfg.ConsoleUser = "mine"; return nil })
+	c.use()
+	rep, _ = c.svc.Inspect(data, pw)
+	if _, err := c.svc.Restore(rep.Token, Options{Admins: true}); err != nil {
+		t.Fatal(err)
+	}
+	if c.mgr.ConsoleUser() != "mine" {
+		t.Fatalf("%q", c.mgr.ConsoleUser())
+	}
+}

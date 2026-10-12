@@ -593,7 +593,7 @@ them and one whose ports are missing and not chosen, makes no pre-restore copy, 
 the router is set up. Every answer ends up in `network.json.staged`, `auth.json` and the `configured` flag (a test reads them back with a new
 `Manager`). The page is `first_run.html` with `first_run.js` (all state in one object, one `render()` per page, `data-f` bound inputs; the
 wizard has its own small helpers because the dashboard scripts are not loaded). After finishing, `sessionStorage['pr_open_review']` makes
-`config_banner.js` open the review dialog on the first dashboard. Tests: `internal/setup` (every answer saved, other connection modes, netmask
+`config_banner.js` open the review dialog on the first dashboard. The administrator is also the console login: `internal/console` (`System`: `useradd --create-home --groups sudo`, then `chpasswd -e` with the bcrypt hash on stdin; refuses names the system uses as account or group and accounts outside uid 1000-59999; `Dev` only logs), `AuthConfig.ConsoleUser`, kept in step by `AdminAPI.setPassword` (console first, so a failure changes neither), protected in `changeAccount`, rebuilt after a first-run restore (`consoleAfterRestore`); a configured router that restores keeps its own `ConsoleUser`. Tests: `internal/setup` (every answer saved, other connection modes, netmask
 forms, per-step checks, the connected port protected, failed attempts leave nothing, one winner among eight at once, closed after setup,
 unknown fields refused, restore choices that cut the browser off) and `internal/backup/firstrun_test.go` (restore onto a blank router with
 ports chosen; saved on disk; token single use). Checked in the browser against an empty data directory, with a stand-in list of ports (the

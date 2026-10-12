@@ -145,9 +145,9 @@
 
     function admin() {
         return `<form id="wiz-form" class="wiz-body" novalidate><h2>Who runs this router?</h2>
-            <p class="form-hint">This account can change everything. More can be added later.</p>
+            <p class="form-hint">This account can change everything, in the web interface and on the router's own console (a screen and keyboard, or a serial cable). More accounts can be added later.</p>
             ${banner()}<div class="form-grid">
-            ${field('Username', 'username', text('username', { auto: 'username' }), '3 to 32 letters, numbers, dots, dashes or underscores.', true)}
+            ${field('Username', 'username', text('username', { auto: 'username' }), '3 to 32 lower-case letters, numbers, dashes or underscores, starting with a letter.', true)}
             ${field('Password', 'password', text('password', { type: 'password', auto: 'new-password' }), `At least ${info.min_password} characters.`)}
             ${field('The same again', 'confirm', text('confirm', { type: 'password', auto: 'new-password' }))}
             </div>${actions('lan')}</form>`;
@@ -232,6 +232,7 @@
     function done() {
         return `<div class="wiz-body"><h2>The backup is restored</h2>
             <p class="form-hint">Sign in with an administrator account from the backup. The settings are waiting as a draft: after signing in, review them and apply.</p>
+            ${R.warning ? `<div class="wiz-note">${esc(R.warning)}</div>` : ''}
             <div class="wiz-actions"><span></span><a class="cfg-btn cfg-btn--primary" href="/login">Sign in</a></div></div>`;
     }
 
@@ -434,6 +435,7 @@
         if (res.status === 409 && /already set up/.test(res.data.error || '')) { location.href = '/login'; return; }
         if (!res.ok) { general = res.data.error || 'The backup could not be restored.'; render(); return; }
         flow = 'restore';
+        R.warning = res.data.warning || '';
         go('done');
     }
 

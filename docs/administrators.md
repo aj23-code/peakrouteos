@@ -12,7 +12,7 @@ network). This file is meant to become the accounts chapter of the user document
 | **Administrator** (`admin`) | everything: every page, every change, and the accounts on this page |
 | **Read-only** (`readonly`) | look at every page; change nothing, except its own password |
 
-- The first account is made by the setup wizard and is an administrator.
+- The first account is made by the setup wizard and is an administrator. It is also the login of the router's console (`docs/setup.md`): its password is kept in step, and it cannot be removed or made read-only.
 - A role in the file that is neither of these (a typo, a hand edit) counts as **read-only**: a damaged file must never give more
   than it says.
 - What an account may do is read from the configuration **at every request**: demoting an account takes effect on its very next

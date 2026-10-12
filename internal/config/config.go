@@ -46,6 +46,9 @@ type User struct {
 type AuthConfig struct {
 	SessionTimeoutMinutes int    `json:"session_timeout_minutes,omitempty"`
 	Users                 []User `json:"users,omitempty"`
+	// ConsoleUser is the account that is also the login of the machine's console (a Linux account of the same name, with the same
+	// password): the one made by the first-run wizard. Empty: none.
+	ConsoleUser string `json:"console_user,omitempty"`
 }
 
 type SystemInterface struct {
@@ -288,6 +291,13 @@ func (m *Manager) Users() []User {
 	return m.auth.clone().Users
 }
 
+// ConsoleUser is the account that is also the console login ("" if there is none).
+func (m *Manager) ConsoleUser() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.auth.ConsoleUser
+}
+
 // SysConfig returns the system settings (hostname, operation mode, build info).
 func (m *Manager) SysConfig() SysConfig {
 	m.mu.RLock()
@@ -458,6 +468,7 @@ func (m *Manager) SetupAdmin(user User) error {
 
 	next := m.auth.clone()
 	next.Users = []User{user}
+	next.ConsoleUser = user.Username
 	if err := SaveAuthConfig(m.path(authFile), &next); err != nil {
 		return fmt.Errorf("failed to save auth config: %w", err)
 	}

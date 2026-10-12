@@ -48,6 +48,23 @@ flag is last), and the draft of the earlier try is replaced.
 A restore does the same with the backup's own files; it does not sign you in (the accounts are the ones in the backup), and the draft
 waits for the first sign-in.
 
+## The console login
+
+The administrator is also the login of the router's own console (a screen and keyboard, or a serial cable): the daemon makes a Linux
+account of the same name (`useradd`, home directory, bash, the `sudo` group) and gives it the **password hash the web interface keeps**
+(bcrypt, `chpasswd -e` on standard input, which the system's `crypt` understands), so the two can never differ and the password is never
+on a command line. Because it is a Linux name too, the wizard asks for 3 to 32 lower-case letters, numbers, `-` or `_`, starting with a
+letter, and refuses a name the system already uses (an account or a group). The account is recorded as `console_user` in `auth.json`.
+
+- Changing that account's password in the web interface changes the console's first; if that fails, neither changes.
+- It cannot be removed or made read-only (it would leave a console login that the web interface knows nothing about). Moving the
+  console login to another administrator is still to do.
+- Accounts of the system (user ids outside 1000 to 59999) are never changed or removed by this.
+- A restore makes the console account of the backup (or, for an older backup, the first administrator with a usable name); if that
+  cannot be done the web interface still works and the page says so. On a router that is already set up, restoring keeps the console
+  login of this machine.
+- On a developer's machine (`-dev`) nothing of the host's accounts is touched; it only logs what it would do.
+
 ## Safety
 
 - **One setup only.** The account and the flag are made under one lock (`Manager.SetupAdmin`): of any number of simultaneous
@@ -75,4 +92,7 @@ waits for the first sign-in.
 
 - Wi-Fi in the wizard (a name and password for a first access point).
 - Choosing the update channel and an automatic update window (when Updates exist).
-- The console wizard of the image (the first-boot script) should print the address of this page.
+- The image (no installer, no console wizard: it is flashed and the first thing seen is this page): the `sudo` package, root's password
+  locked and no autologin, so that this account is the only way in. Verify on a real image that a bcrypt hash in `/etc/shadow` logs in on
+  the console.
+- Moving the console login to another administrator.

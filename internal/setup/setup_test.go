@@ -3,6 +3,7 @@ package setup
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"peakroute/internal/auth"
 	"peakroute/internal/backup"
 	"peakroute/internal/config"
+	"peakroute/internal/console"
 )
 
 type env struct {
@@ -418,4 +420,134 @@ func TestRestoreRefusesAChoiceThatCutsTheBrowserOff(t *testing.T) {
 		t.Fatalf("%d %v", r.Status, r.Body)
 	}
 	e.nothingSaved()
+}
+
+// ---- the console login
+
+type fakeConsole struct {
+	sets    []string // "name:hash"
+	removed []string
+	taken   map[string]bool
+	failSet error
+}
+
+func (f *fakeConsole) Check(name string) error {
+	if err := console.ValidName(name); err != nil {
+		return err
+	}
+	if f.taken[name] {
+		return errors.New("The system already has an account with that name: choose another.")
+	}
+	return nil
+}
+func (f *fakeConsole) Set(name, hash string) error {
+	if f.failSet != nil {
+		return f.failSet
+	}
+	f.sets = append(f.sets, name+":"+hash)
+	return nil
+}
+func (f *fakeConsole) Remove(name string) error { f.removed = append(f.removed, name); return nil }
+
+func TestTheAdministratorIsTheConsoleLoginToo(t *testing.T) {
+	e := newEnv(t)
+	fc := &fakeConsole{}
+	e.svc.Console = fc
+	if r := e.apply(good()); r.Status != 200 {
+		t.Fatalf("%d %v", r.Status, r.Body)
+	}
+	users := e.mgr.Users()
+	if len(fc.sets) != 1 || fc.sets[0] != "alec:"+users[0].PasswordHash {
+		t.Fatalf("%v", fc.sets)
+	}
+	// and it is recorded, so that it is kept in step and cannot be removed
+	m, _ := config.NewManager(e.dir)
+	if m.ConsoleUser() != "alec" {
+		t.Fatalf("%q", m.ConsoleUser())
+	}
+}
+
+func TestAConsoleNameLinuxRefusesIsRefusedAtTheAdministratorPage(t *testing.T) {
+	e := newEnv(t)
+	e.svc.Console = &fakeConsole{taken: map[string]bool{"daemon": true}}
+	for _, name := range []string{"Alec", "a.b", "daemon", "ab"} {
+		f := good()
+		f.Username = name
+		if r := e.check("admin", f); r.Status != 400 || r.Errors["username"] == "" {
+			t.Errorf("%q: %d %v", name, r.Status, r.Errors)
+		}
+		if r := e.apply(f); r.Status != 400 {
+			t.Errorf("%q: %d", name, r.Status)
+		}
+	}
+	e.nothingSaved()
+	// without a console the same rule of letters still holds: the account may be made one later
+	e2 := newEnv(t)
+	f := good()
+	f.Username = "Alec"
+	if r := e2.check("admin", f); r.Errors["username"] == "" {
+		t.Fatal("accepted")
+	}
+}
+
+func TestIfTheConsoleAccountCannotBeMadeNothingIsSetUp(t *testing.T) {
+	e := newEnv(t)
+	e.svc.Console = &fakeConsole{failSet: errors.New("no useradd")}
+	if r := e.apply(good()); r.Status != 500 {
+		t.Fatalf("%d %v", r.Status, r.Body)
+	}
+	e.nothingSaved()
+	// the person can try again once it works
+	e.svc.Console = &fakeConsole{}
+	if r := e.apply(good()); r.Status != 200 {
+		t.Fatalf("%d %v", r.Status, r.Body)
+	}
+}
+
+func TestAfterARestoreTheConsoleLoginIsMade(t *testing.T) {
+	e := newEnv(t)
+	fc := &fakeConsole{}
+	e.svc.Console = fc
+	hash, _ := config.HashPassword("whatever pass 1")
+	// a backup that knows its console account
+	e.mgr.UpdateAuth(func(c *config.AuthConfig) error {
+		c.Users = []config.User{{Username: "ops", PasswordHash: hash, Role: "admin"}, {Username: "Viewer", PasswordHash: hash, Role: "readonly"}}
+		c.ConsoleUser = "ops"
+		return nil
+	})
+	if w := e.svc.consoleAfterRestore(); w != "" || len(fc.sets) != 1 || fc.sets[0] != "ops:"+hash {
+		t.Fatalf("%q %v", w, fc.sets)
+	}
+	// a backup from before there was one: the first administrator with a name that Linux accepts
+	e = newEnv(t)
+	fc = &fakeConsole{}
+	e.svc.Console = fc
+	e.mgr.UpdateAuth(func(c *config.AuthConfig) error {
+		c.Users = []config.User{{Username: "Bad.Name", PasswordHash: hash, Role: "admin"}, {Username: "good", PasswordHash: hash, Role: "admin"}}
+		return nil
+	})
+	if w := e.svc.consoleAfterRestore(); w != "" || len(fc.sets) != 1 || fc.sets[0] != "good:"+hash || e.mgr.ConsoleUser() != "good" {
+		t.Fatalf("%q %v %q", w, fc.sets, e.mgr.ConsoleUser())
+	}
+	// none with a usable name: the person is told, the web interface works
+	e = newEnv(t)
+	e.svc.Console = &fakeConsole{}
+	e.mgr.UpdateAuth(func(c *config.AuthConfig) error {
+		c.Users = []config.User{{Username: "Bad.Name", PasswordHash: hash, Role: "admin"}}
+		return nil
+	})
+	if w := e.svc.consoleAfterRestore(); w == "" || e.mgr.ConsoleUser() != "" {
+		t.Fatalf("%q", w)
+	}
+	// a failing console is a warning, not a failed restore
+	e = newEnv(t)
+	e.svc.Console = &fakeConsole{failSet: errors.New("x")}
+	e.mgr.UpdateAuth(func(c *config.AuthConfig) error {
+		c.Users = []config.User{{Username: "ops", PasswordHash: hash, Role: "admin"}}
+		c.ConsoleUser = "ops"
+		return nil
+	})
+	if w := e.svc.consoleAfterRestore(); w == "" {
+		t.Fatal("no warning")
+	}
 }

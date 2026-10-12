@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"sort"
@@ -38,6 +39,9 @@ type AdminAPI struct {
 	// Power restarts or switches off the machine: action is "reboot" or "poweroff". It returns at once; the action follows
 	// a moment later, so that the answer reaches the browser first.
 	Power func(action string) error
+	// Console gives the console login its new password hash when the account that is also the console login changes its password
+	// (nil: there is no console login to keep in step).
+	Console interface{ Set(name, hash string) error }
 }
 
 func (a *AdminAPI) logf(format string, args ...any) {
@@ -168,6 +172,7 @@ func validPassword(password, confirm string) (field, msg string) {
 var (
 	errNoSuchUser = errors.New("There is no such account.")
 	errLastAdmin  = errors.New("There must always be at least one administrator.")
+	errConsole    = errors.New("This account is also the login of the router's console, so it cannot be removed or made read-only.")
 	errDuplicate  = errors.New("There is already an account with that name.")
 	errTooMany    = errors.New("There are as many accounts as the router supports.")
 )
@@ -273,6 +278,9 @@ func changeAccount(c *config.AuthConfig, name string, remove bool, role string) 
 		return errNoSuchUser
 	}
 	wasAdmin := NormalizeRole(c.Users[i].Role) == RoleAdmin
+	if name == c.ConsoleUser && (remove || role != RoleAdmin) {
+		return errConsole
+	}
 	if remove {
 		if wasAdmin && countAdmins(c.Users) == 1 {
 			return errLastAdmin
@@ -326,7 +334,7 @@ func (a *AdminAPI) HandleAdmin(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, errNoSuchUser):
 		refuse(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, errLastAdmin):
+	case errors.Is(err, errLastAdmin), errors.Is(err, errConsole):
 		refuse(w, http.StatusConflict, err.Error())
 	case err != nil:
 		refuse(w, http.StatusInternalServerError, "The change could not be saved.")
@@ -346,6 +354,12 @@ func (a *AdminAPI) setPassword(name, password string) error {
 	hash, err := config.HashPassword(password)
 	if err != nil {
 		return err
+	}
+	// the console login first: if it cannot be changed nothing is, and the two never differ
+	if a.Console != nil && name == a.Cfg.ConsoleUser() {
+		if err := a.Console.Set(name, hash); err != nil {
+			return fmt.Errorf("console login: %w", err)
+		}
 	}
 	return a.Cfg.UpdateAuth(func(c *config.AuthConfig) error {
 		for i := range c.Users {

@@ -811,6 +811,11 @@ func (s *Service) writeCerts(b *Bundle) error {
 func (s *Service) writeAdmins(b *Bundle, a config.AuthConfig) error {
 	if err := s.Manager.UpdateAuth(func(c *config.AuthConfig) error {
 		c.Users = append([]config.User(nil), a.Users...)
+		// the console login is a Linux account of this machine: the one that is here stays (a router that has none, a new one,
+		// takes the backup's, and the setup makes the account)
+		if c.ConsoleUser == "" {
+			c.ConsoleUser = a.ConsoleUser
+		}
 		if a.SessionTimeoutMinutes != 0 {
 			c.SessionTimeoutMinutes = a.SessionTimeoutMinutes
 		} else {

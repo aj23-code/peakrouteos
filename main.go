@@ -26,6 +26,7 @@ import (
 	"peakroute/internal/backup"
 	"peakroute/internal/cert"
 	"peakroute/internal/config"
+	"peakroute/internal/console"
 	"peakroute/internal/ddns"
 	"peakroute/internal/fsutil"
 	"peakroute/internal/fwlog"
@@ -346,6 +347,11 @@ func main() {
 
 	// Editing the network: port roles and per-network settings. Saving stages a draft; edits are
 	// refused while a change is being applied or waits for confirmation.
+	// The administrator of the first-run wizard is also the login of the machine's console (a developer's machine only logs it)
+	var consoleAccounts console.Accounts = console.System{}
+	if devMode {
+		consoleAccounts = console.Dev{}
+	}
 	netAPI := &netapi.API{Manager: cfgMgr, Ports: network.GetPhysicalInterfaces, Editable: configSvc.Idle,
 		Live: func(active config.NetworkConfig) *netapi.Live {
 			dev := active.WanDevice()
@@ -515,7 +521,7 @@ func main() {
 		return out
 	}
 	// Administrators: who may sign in, with what role, their passwords and the session timeout. Changes count at once.
-	adminAPI := &auth.AdminAPI{Cfg: cfgMgr, Sessions: sessionMgr, Attempts: auth.NewRateLimiter(5, 2*time.Minute)}
+	adminAPI := &auth.AdminAPI{Cfg: cfgMgr, Sessions: sessionMgr, Attempts: auth.NewRateLimiter(5, 2*time.Minute), Console: consoleAccounts}
 	mux.HandleFunc("/api/v1/admins", requireAuth(adminAPI.HandleAdmins))
 	mux.HandleFunc("/api/v1/admins/{username}", requireAuth(adminAPI.HandleAdmin))
 	mux.HandleFunc("/api/v1/admins/{username}/password", requireAuth(adminAPI.HandleAdminPassword))
@@ -564,7 +570,7 @@ func main() {
 
 	// First-run wizard: open only while the router is not set up (docs/setup.md)
 	setupSvc := &setup.Service{Manager: cfgMgr, Ports: network.GetPhysicalInterfaces, Here: setup.HerePorts, DefaultRoute: setup.DefaultRouteDevice,
-		Restore: backupSvc, NewSession: sessionMgr.CreateSession, Hostname: func() string { h, _ := os.Hostname(); return h }}
+		Restore: backupSvc, Console: consoleAccounts, NewSession: sessionMgr.CreateSession, Hostname: func() string { h, _ := os.Hostname(); return h }}
 	mux.HandleFunc("/api/v1/setup/info", setupSvc.Guard(setupSvc.HandleInfo))
 	mux.HandleFunc("/api/v1/setup/check", setupSvc.Guard(setupSvc.HandleCheck))
 	mux.HandleFunc("/api/v1/setup/apply", setupSvc.Guard(setupSvc.HandleApply))

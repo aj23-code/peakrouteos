@@ -22,6 +22,7 @@ import (
 	"peakroute/internal/auth"
 	"peakroute/internal/backup"
 	"peakroute/internal/config"
+	"peakroute/internal/console"
 )
 
 // Service is the wizard.
@@ -35,6 +36,8 @@ type Service struct {
 	// Restore opens and restores backups. NewSession signs the new administrator in.
 	Restore    *backup.Service
 	NewSession func(username string, w http.ResponseWriter) string
+	// Console makes the administrator the login of the machine's console too (nil: only the web interface).
+	Console console.Accounts
 	// Hostname is the machine's own name, suggested for the router.
 	Hostname func() string
 
@@ -397,10 +400,22 @@ func dedupe(in []config.FieldError) []config.FieldError {
 	return out
 }
 
-func adminErrors(f Form) []config.FieldError {
+func (s *Service) adminErrors(f Form) []config.FieldError {
 	var errs []config.FieldError
-	if err := auth.ValidateUsername(strings.TrimSpace(f.Username)); err != nil {
+	name := strings.TrimSpace(f.Username)
+	if err := auth.ValidateUsername(name); err != nil {
 		errs = append(errs, config.FieldError{Field: "username", Message: err.Error()})
+	} else {
+		// the account is also the login of the console: a name Linux accepts and does not use already
+		var err error
+		if s.Console != nil {
+			err = s.Console.Check(name)
+		} else {
+			err = console.ValidName(name)
+		}
+		if err != nil {
+			errs = append(errs, config.FieldError{Field: "username", Message: err.Error()})
+		}
 	}
 	if err := auth.ValidateNewPassword(f.Password, f.Confirm); err != nil {
 		field := "password"
@@ -451,7 +466,7 @@ func (s *Service) HandleCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	_, errs := s.build(req.Form, r)
 	if stepIndex(req.Through) >= stepIndex("admin") {
-		errs = append(errs, adminErrors(req.Form)...)
+		errs = append(errs, s.adminErrors(req.Form)...)
 	}
 	if errs = forStep(errs, req.Through); len(errs) > 0 {
 		refuse(w, errs)
@@ -483,7 +498,7 @@ func (s *Service) HandleApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg, errs := s.build(f, r)
-	errs = append(errs, adminErrors(f)...)
+	errs = append(errs, s.adminErrors(f)...)
 	if len(errs) > 0 {
 		refuse(w, errs)
 		return
@@ -498,9 +513,22 @@ func (s *Service) HandleApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	username := strings.TrimSpace(f.Username)
+	if s.Console != nil {
+		if err := s.Console.Set(username, hash); err != nil {
+			_ = s.Manager.DiscardNetwork()
+			log.Printf("[-] Setup: console account: %v", err)
+			write(w, http.StatusInternalServerError, errBody{Error: "The login of the console could not be made, so nothing was set up."})
+			return
+		}
+	}
 	err = s.Manager.SetupAdmin(config.User{Username: username, PasswordHash: hash, Role: auth.RoleAdmin})
 	if err != nil {
 		_ = s.Manager.DiscardNetwork()
+		if s.Console != nil {
+			if rerr := s.Console.Remove(username); rerr != nil {
+				log.Printf("[-] Setup: removing the console account again: %v", rerr)
+			}
+		}
 		if errors.Is(err, config.ErrAlreadyConfigured) {
 			write(w, http.StatusConflict, errBody{Error: "This router is already set up."})
 			return
@@ -560,7 +588,8 @@ func (s *Service) HandleRestoreApply(w http.ResponseWriter, r *http.Request) {
 		write(w, status, errBody{Error: strings.ToUpper(msg[:1]) + msg[1:] + "."})
 		return
 	}
-	write(w, http.StatusOK, map[string]any{"redirect": "/login", "result": res})
+	warning := s.consoleAfterRestore()
+	write(w, http.StatusOK, map[string]any{"redirect": "/login", "result": res, "warning": warning})
 }
 
 // hereProblem says why a choice of ports would cut the browser off: the port it is connected through must not be the internet
@@ -581,6 +610,38 @@ func (s *Service) hereProblem(r *http.Request, wan string, lan []string) string 
 		}
 		if !in && len(lan) > 0 {
 			return "Include the port you are connected through (" + h + ") in the local network, or you will lose the connection."
+		}
+	}
+	return ""
+}
+
+// consoleAfterRestore makes the console login of a restored router: the backup's console account, or (a backup made before there was
+// one) the first administrator with a name Linux accepts. It answers with something to tell the person, or "".
+func (s *Service) consoleAfterRestore() string {
+	if s.Console == nil {
+		return ""
+	}
+	users := s.Manager.Users()
+	name := s.Manager.ConsoleUser()
+	if name == "" {
+		for _, u := range users {
+			if u.Role == auth.RoleAdmin && console.ValidName(u.Username) == nil {
+				name = u.Username
+				break
+			}
+		}
+		if name == "" {
+			return "None of the restored administrators has a name that the console accepts, so the console has no login. Make an administrator with a lower-case name and it can be made the console login."
+		}
+		_ = s.Manager.UpdateAuth(func(c *config.AuthConfig) error { c.ConsoleUser = name; return nil })
+	}
+	for _, u := range users {
+		if u.Username == name {
+			if err := s.Console.Set(name, u.PasswordHash); err != nil {
+				log.Printf("[-] Restore: console account %q: %v", name, err)
+				return "The login of the console could not be made (" + err.Error() + "). The web interface works."
+			}
+			return ""
 		}
 	}
 	return ""
