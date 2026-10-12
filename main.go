@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log"
 	"mime"
+	"net"
 	"net/http"
 	"net/netip"
 	"os"
@@ -27,6 +28,7 @@ import (
 	"peakroute/internal/fwlog"
 	"peakroute/internal/netapi"
 	"peakroute/internal/network"
+	"peakroute/internal/ovpn"
 	"peakroute/internal/pipeline"
 	"peakroute/internal/presence"
 	"peakroute/internal/syslogfwd"
@@ -381,13 +383,24 @@ func main() {
 	mux.HandleFunc("/api/v1/vpn/remote/clients", requireAuth(netAPI.HandleVPNClients))
 	mux.HandleFunc("/api/v1/vpn/remote/clients/{id}", requireAuth(netAPI.HandleVPNClient))
 	mux.HandleFunc("/api/v1/vpn/remote/clients/{id}/file", requireAuth(netAPI.HandleVPNClientTemplate))
+	ovReader := &ovpn.Reader{}
+	netAPI.OVConnections = ovReader.Connections
+	netAPI.LinkUp = func(iface string) bool {
+		i, err := net.InterfaceByName(iface)
+		return err == nil && i.Flags&net.FlagUp != 0
+	}
+	mux.HandleFunc("/api/v1/vpn/ov-remote", requireAuth(netAPI.HandleVPNOVRemote))
+	mux.HandleFunc("/api/v1/vpn/ov-remote/clients", requireAuth(netAPI.HandleVPNOVClients))
+	mux.HandleFunc("/api/v1/vpn/ov-remote/clients/{id}", requireAuth(netAPI.HandleVPNOVClient))
 	if !devMode {
-		if _, err := os.Stat(translator.PathWGSync); err == nil {
-			go func() {
-				if out, err := runner.Run(context.Background(), "sh", translator.PathWGSync); err != nil {
-					log.Printf("[-] Bringing the VPN tunnels up failed: %v %s", err, out)
-				}
-			}()
+		for _, script := range []string{translator.PathWGSync, translator.PathOVSync} {
+			if _, err := os.Stat(script); err == nil {
+				go func(script string) {
+					if out, err := runner.Run(context.Background(), "sh", script); err != nil {
+						log.Printf("[-] Bringing the VPN tunnels up failed (%s): %v %s", script, err, out)
+					}
+				}(script)
+			}
 		}
 	}
 	netAPI.SyslogStatuses = syslogForwarder.Statuses

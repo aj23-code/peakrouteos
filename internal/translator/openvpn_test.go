@@ -106,7 +106,7 @@ func TestTheRemoteAccessServerFile(t *testing.T) {
 	got := lines(conf)
 	for _, want := range []string{"mode server", "tls-server", "port 1194", "proto udp", "dev ovra", "dev-type tun", "topology subnet", "server 10.9.0.0 255.255.255.0",
 		"client-config-dir /etc/openvpn/ccd", "ccd-exclusive", "verify-x509-name ra- name-prefix", "remote-cert-tls client", "verify-client-cert require", "dh none",
-		"data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305", "tls-version-min 1.2", "explicit-exit-notify 1", "user nobody", "group nogroup",
+		"data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305", "tls-version-min 1.2", "explicit-exit-notify 1", "status /run/openvpn-server/status-pr-ra.log 10", "status-version 2", "user nobody", "group nogroup",
 		`push "route 192.168.1.0 255.255.255.0"`, `push "route 10.20.0.0 255.255.255.0"`, `push "route 10.30.0.0 255.255.255.0"`, `push "dhcp-option DNS 10.9.0.1"`,
 		"<ca>", "</ca>", "<cert>", "</cert>", "<key>", "</key>", "<crl-verify>", "</crl-verify>", "<tls-crypt>", "</tls-crypt>"} {
 		if !got[want] {

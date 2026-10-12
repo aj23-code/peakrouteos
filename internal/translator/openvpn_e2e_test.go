@@ -84,7 +84,7 @@ install_set() {
 		for f in "$D/$1/$kind"/*.conf; do
 			[ -e "$f" ] || continue
 			# there is no user "nobody" with a group to drop to inside the lab's user namespace; the files are otherwise as written
-			sed "s|/etc/openvpn|$D/etc/openvpn|g; /^user nobody\$/d; /^group nogroup\$/d" "$f" > "$D/etc/openvpn/$kind/$(basename "$f")"
+			sed "s|/etc/openvpn|$D/etc/openvpn|g; s|/run/openvpn-server|$D/run|g; /^user nobody\$/d; /^group nogroup\$/d" "$f" > "$D/etc/openvpn/$kind/$(basename "$f")"
 		done
 	done
 	for f in "$D/$1/ccd"/*; do [ -e "$f" ] && cp "$f" "$D/etc/openvpn/ccd/"; done
@@ -115,6 +115,10 @@ ns b ip -4 addr show ovs1 2>/dev/null | grep -q "10.98.1.2" && say site-address 
 start_in c c-dev --config "$D/c1.ovpn"
 waitping c - 10.9.0.1 25 && say device-up ok || { say device-up fail; tail -20 "$D/log/c-dev.log"; tail -20 "$D/log/server-pr-ra.log"; }
 ns c ip -4 addr show tun0 2>/dev/null | grep -q "10.9.0.2" && say device-address ok || say device-address fail
+# the status file the page reads shows the device (it is written every ten seconds)
+i=0; while ! grep -q "^CLIENT_LIST,ra-c1,.*,10.9.0.2," "$D/run/status-pr-ra.log" 2>/dev/null && [ $i -lt 25 ]; do sleep 0.5; i=$((i+1)); done
+grep -q "^CLIENT_LIST,ra-c1,.*,10.9.0.2," "$D/run/status-pr-ra.log" 2>/dev/null && say status-file ok || say status-file fail
+grep -q "^CLIENT_LIST,s1-peer," "$D/run/status-pr-s1.log" 2>/dev/null && say status-file-site ok || say status-file-site fail
 ns c ping -c2 -W3 192.168.1.50 >/dev/null 2>&1 && say device-to-host ok || say device-to-host fail
 ns c ping -c2 -W3 10.50.0.1 >/dev/null 2>&1 && say device-to-site ok || say device-to-site fail
 ns h ping -c2 -W3 10.9.0.2 >/dev/null 2>&1 && say host-to-device ok || say host-to-device fail
@@ -347,7 +351,7 @@ func TestRealOpenVPNTunnelsWorkThroughTheGeneratedFiles(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"wires", "vpn-ruleset", "sync", "up-ovra", "up-ovs1", "site-up", "site-to-router", "site-to-host", "host-to-site", "site-address",
-		"device-up", "device-address", "device-to-host", "device-to-site", "host-to-device", "tunnel-to-web", "sync-keeps-tunnels", "device-stays",
+		"device-up", "device-address", "status-file", "status-file-site", "device-to-host", "device-to-site", "host-to-device", "tunnel-to-web", "sync-keeps-tunnels", "device-stays",
 		"server-restarted", "removed-device-refused", "site-survives", "revoked-refused", "revoked-said-so", "good-device-still-ok", "wrong-kind-refused",
 		"iso-ruleset", "isolated-site-to-host", "isolated-site-to-router-ping", "tunnel-removed", "remote-removed"} {
 		if res[name] != "ok" {

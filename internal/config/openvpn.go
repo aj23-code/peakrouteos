@@ -126,6 +126,10 @@ func (r OVRemote) FindClient(id string) (OVClient, bool) {
 	return OVClient{}, false
 }
 
+// OVRemoteUnit and OVSiteUnit are the names of the OpenVPN servers (and of their files and service instances).
+func OVRemoteUnit() string            { return "pr-ra" }
+func OVSiteUnit(siteID string) string { return "pr-" + siteID }
+
 // OVRemoteInterface is the interface of the OpenVPN remote access server.
 func OVRemoteInterface() string { return ovRemoteIface }
 

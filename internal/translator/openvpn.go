@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"peakroute/internal/config"
+	"peakroute/internal/ovpn"
 	"peakroute/internal/pki"
 )
 
@@ -113,7 +114,7 @@ func ccdHash(files map[string]string) string {
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
-func ovServerCommon(b *strings.Builder, proto string, port int, iface, serverNet string, ccdSum string) {
+func ovServerCommon(b *strings.Builder, name, proto string, port int, iface, serverNet string, ccdSum string) {
 	b.WriteString("mode server\ntls-server\n")
 	fmt.Fprintf(b, "port %d\nproto %s\n", port, proto)
 	fmt.Fprintf(b, "dev %s\ndev-type tun\ntopology subnet\n", iface)
@@ -125,6 +126,8 @@ func ovServerCommon(b *strings.Builder, proto string, port int, iface, serverNet
 		b.WriteString("explicit-exit-notify 1\n")
 	}
 	fmt.Fprintf(b, "# device files %s\n", ccdSum)
+	// who is connected, for the page (the package's service passes the same file name)
+	fmt.Fprintf(b, "status %s/status-%s.log 10\nstatus-version 2\n", ovpn.StatusDir, name)
 	b.WriteString("verb 3\n")
 }
 
@@ -147,7 +150,7 @@ func renderOVRemote(cfg config.NetworkConfig, r config.OVRemote, auth ovAuthorit
 	}
 	var b strings.Builder
 	b.WriteString("# Managed by PeakRoute OS. Do not edit: this file is rewritten on every commit.\n# Remote access server\n")
-	ovServerCommon(&b, r.Proto, r.ListenPort, config.OVRemoteInterface(), fmt.Sprintf("server %s %s\n", netAddr, mask), ccdHash(ccd))
+	ovServerCommon(&b, ovRemoteName(), r.Proto, r.ListenPort, config.OVRemoteInterface(), fmt.Sprintf("server %s %s\n", netAddr, mask), ccdHash(ccd))
 	b.WriteString("verify-x509-name " + config.OVClientCN("") + " name-prefix\n")
 	for _, n := range cfg.OVClientRoutes() {
 		if n == "0.0.0.0/0" {
@@ -189,7 +192,7 @@ func renderOVSiteServer(s config.VPNSite, auth ovAuthority) (conf string, ccd ma
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Managed by PeakRoute OS. Do not edit: this file is rewritten on every commit.\n# Site tunnel %s: %s\n", s.ID, commentSafe(strings.TrimSpace(s.Name)))
-	ovServerCommon(&b, o.Proto, s.ListenPort, s.Interface(), fmt.Sprintf("server %s %s\n", netAddr, mask), ccdHash(ccd))
+	ovServerCommon(&b, ovSiteName(s.ID), o.Proto, s.ListenPort, s.Interface(), fmt.Sprintf("server %s %s\n", netAddr, mask), ccdHash(ccd))
 	fmt.Fprintf(&b, "verify-x509-name %s name\n", cn)
 	b.WriteString(routeLines("route", s.RemoteNetworks))
 	inline(&b, "ca", auth.CA)

@@ -46,6 +46,12 @@ type VPNSiteView struct {
 	Text           string         `json:"text"`
 	Pending        bool           `json:"pending"`
 	Status         *VPNPeerStatus `json:"status"`
+
+	// OpenVPN
+	Role        string `json:"role,omitempty"`         // "server" or "client"
+	Proto       string `json:"proto,omitempty"`        // "udp" or "tcp"
+	Remote      string `json:"remote,omitempty"`       // where the tunnel is made (see config.OVSite)
+	CertExpires int64  `json:"cert_expires,omitempty"` // Unix milliseconds: when the certificate a client tunnel uses runs out
 }
 
 // VPNClientView is a remote access client.
@@ -82,10 +88,12 @@ type VPNRemoteView struct {
 
 // VPNResponse is the VPN page's data.
 type VPNResponse struct {
-	Sites      []VPNSiteView  `json:"sites"`
-	Remote     *VPNRemoteView `json:"remote"` // null: no remote access server yet
-	WANAddress string         `json:"wan_address"`
-	Suggest    VPNSuggest     `json:"suggest"`
+	Sites      []VPNSiteView    `json:"sites"`
+	Remote     *VPNRemoteView   `json:"remote"`    // null: no WireGuard remote access server yet
+	OVRemote   *VPNOVRemoteView `json:"ov_remote"` // null: no OpenVPN remote access server yet
+	CA         *VPNCAView       `json:"ca"`        // null: no certificate authority yet (it is made with the first OpenVPN server)
+	WANAddress string           `json:"wan_address"`
+	Suggest    VPNSuggest       `json:"suggest"`
 	// LocalNetworks are this router's own networks: what the other router of a tunnel must be told to send here.
 	LocalNetworks []VPNLocal `json:"local_networks"`
 	Editable      bool       `json:"editable"`
@@ -103,6 +111,11 @@ type VPNSuggest struct {
 	SiteAddress   string `json:"site_address"`
 	RemotePort    int    `json:"remote_port"`
 	RemoteNetwork string `json:"remote_network"`
+
+	OVSitePort      int    `json:"ov_site_port"`
+	OVSiteAddress   string `json:"ov_site_address"`
+	OVRemotePort    int    `json:"ov_remote_port"`
+	OVRemoteNetwork string `json:"ov_remote_network"`
 }
 
 const vpnHandshakeFresh = 3 * time.Minute
@@ -143,6 +156,10 @@ func (a *API) siteView(s config.VPNSite, active config.NetworkConfig) VPNSiteVie
 	v := VPNSiteView{ID: s.ID, Name: strings.TrimSpace(s.Name), Engine: s.Engine, Enabled: !s.Disabled, ListenPort: s.ListenPort, Address: s.Address, OtherAddress: other,
 		Endpoint: s.Endpoint, Keepalive: s.Keepalive, RemoteNetworks: append([]string{}, s.RemoteNetworks...), Internet: s.Internet, Isolated: s.Isolated,
 		PublicKey: publicOf(s.PrivateKey), PeerPublicKey: s.PeerPublicKey, PresharedSet: s.PresharedKey != "", Text: config.SiteText(s), Pending: pending}
+	if s.Engine == config.EngineOpenVPN {
+		a.ovSiteExtras(&v, s, pending)
+		return v
+	}
 	if !pending && !s.Disabled {
 		if i, ok := a.wgInterface(config.SiteInterface(s.ID)); ok {
 			if len(i.Peers) > 0 {
@@ -209,6 +226,7 @@ func (a *API) vpnView() VPNResponse {
 		v := a.remoteView(*d.WGRemote, draft, active)
 		resp.Remote = &v
 	}
+	a.ovViews(&resp, d, draft, active)
 	resp.LocalNetworks = []VPNLocal{}
 	for _, t := range firewallTabs(draft) {
 		if t.Kind != "network" {
@@ -218,22 +236,10 @@ func (a *API) vpnView() VPNResponse {
 			resp.LocalNetworks = append(resp.LocalNetworks, VPNLocal{Name: t.Name, Prefix: p.String()})
 		}
 	}
-	resp.Suggest = VPNSuggest{SitePort: d.NextSitePort(), RemotePort: config.DefaultWGRAPort, RemoteNetwork: "10.8.0.0/24"}
-	for n := 1; n < 250; n++ {
-		addr := fmt.Sprintf("10.99.%d.1/30", n)
-		taken := false
-		for _, s := range d.Sites {
-			if p, err := netip.ParsePrefix(s.Address); err == nil {
-				if q, _ := netip.ParsePrefix(addr); p.Masked().Overlaps(q.Masked()) {
-					taken = true
-				}
-			}
-		}
-		if !taken {
-			resp.SuggestSiteAddress(addr)
-			break
-		}
-	}
+	resp.Suggest = VPNSuggest{SitePort: d.NextSitePort(), RemotePort: config.DefaultWGRAPort, RemoteNetwork: "10.8.0.0/24",
+		OVSitePort: d.NextOVSitePort(), OVRemotePort: config.DefaultOVRAPort, OVRemoteNetwork: "10.9.0.0/24"}
+	resp.Suggest.SiteAddress = freeTunnelAddress(d, "10.99.%d.1/30")
+	resp.Suggest.OVSiteAddress = freeTunnelAddress(d, "10.98.%d.1/29")
 	if a.Live != nil {
 		if live := a.Live(active); live != nil && live.Address != "" {
 			resp.WANAddress, _, _ = strings.Cut(live.Address, "/")
@@ -242,8 +248,23 @@ func (a *API) vpnView() VPNResponse {
 	return resp
 }
 
-// SuggestSiteAddress sets the address the page offers for a new tunnel.
-func (r *VPNResponse) SuggestSiteAddress(addr string) { r.Suggest.SiteAddress = addr }
+// freeTunnelAddress is the first address of the form that no tunnel network overlaps.
+func freeTunnelAddress(d config.VPNConfig, format string) string {
+	for n := 1; n < 250; n++ {
+		addr := fmt.Sprintf(format, n)
+		q, _ := netip.ParsePrefix(addr)
+		taken := false
+		for _, s := range d.Sites {
+			if p, err := netip.ParsePrefix(s.Address); err == nil && p.Masked().Overlaps(q.Masked()) {
+				taken = true
+			}
+		}
+		if !taken {
+			return addr
+		}
+	}
+	return ""
+}
 
 // HandleVPN: GET /api/v1/vpn returns the VPN settings (the draft) with how each tunnel and client is going.
 func (a *API) HandleVPN(w http.ResponseWriter, r *http.Request) {
@@ -253,7 +274,7 @@ func (a *API) HandleVPN(w http.ResponseWriter, r *http.Request) {
 }
 
 func tidyVPN(c *config.NetworkConfig) {
-	if v := c.VPN; v != nil && len(v.Sites) == 0 && v.WGRemote == nil {
+	if v := c.VPN; v != nil && len(v.Sites) == 0 && v.WGRemote == nil && v.OVRemote == nil && v.CA == nil {
 		c.VPN = nil
 	}
 }
@@ -308,6 +329,32 @@ type vpnSiteRequest struct {
 	Isolated       *bool     `json:"isolated"`
 	Enabled        *bool     `json:"enabled"`
 	NewKey         bool      `json:"new_key"` // make a new private key for this tunnel
+
+	// OpenVPN tunnels
+	Engine  *string `json:"engine"`   // "wireguard" (the default) or "openvpn"
+	Role    *string `json:"role"`     // openvpn: "server" (this router makes the file for the other) or "client" (it imports one)
+	Proto   *string `json:"proto"`    // openvpn: udp or tcp
+	Remote  *string `json:"remote"`   // openvpn: where the tunnel is made (see docs/vpn.md)
+	File    *string `json:"file"`     // openvpn client: the file from the other router
+	NewFile bool    `json:"new_file"` // openvpn server: a new certificate for the other router (answers with the file)
+}
+
+// ovOnly says whether a request names settings that only OpenVPN tunnels have.
+func (r vpnSiteRequest) ovOnly() bool {
+	return r.Role != nil || r.Proto != nil || r.Remote != nil || r.File != nil || r.NewFile
+}
+
+// wgOnly says whether a request names settings that only WireGuard tunnels have.
+func (r vpnSiteRequest) wgOnly() bool {
+	return r.PeerPublicKey != nil || r.PresharedKey != nil || r.Endpoint != nil || r.Keepalive != nil || r.NewKey
+}
+
+func refuseWGSettings(w http.ResponseWriter) {
+	writeJSON(w, http.StatusBadRequest, errorBody{Error: "Those settings are for WireGuard tunnels, not for an OpenVPN tunnel."})
+}
+
+func refuseOVSettings(w http.ResponseWriter) {
+	writeJSON(w, http.StatusBadRequest, errorBody{Error: "Those settings are for OpenVPN tunnels, not for a WireGuard tunnel."})
 }
 
 func applySiteRequest(s *config.VPNSite, req vpnSiteRequest) error {
@@ -374,6 +421,21 @@ func (a *API) HandleVPNSites(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
+	if req.Engine != nil {
+		switch trim(req.Engine) {
+		case config.EngineOpenVPN:
+			a.addOVSite(w, req)
+			return
+		case config.EngineWireGuard, "":
+		default:
+			writeJSON(w, http.StatusBadRequest, errorBody{Error: "The engine must be wireguard or openvpn.", Errors: []config.FieldError{{Field: "engine", Message: "must be wireguard or openvpn"}}})
+			return
+		}
+	}
+	if req.ovOnly() {
+		refuseOVSettings(w)
+		return
+	}
 	priv, err := wg.GeneratePrivateKey()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "A key could not be made."})
@@ -418,11 +480,16 @@ func (a *API) HandleVPNSite(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.PathValue("id")
 	draft, _ := a.Manager.StagedNetworkConfig()
-	if _, ok := draft.VPNSettings().FindSite(id); !ok {
+	site, found := draft.VPNSettings().FindSite(id)
+	if !found {
 		writeJSON(w, http.StatusNotFound, errorBody{Error: "there is no such tunnel"})
 		return
 	}
 	if !a.requireEditable(w) {
+		return
+	}
+	if site.Engine == config.EngineOpenVPN {
+		a.changeOVSite(w, r, id, site)
 		return
 	}
 	if r.Method == http.MethodDelete {
@@ -442,6 +509,10 @@ func (a *API) HandleVPNSite(w http.ResponseWriter, r *http.Request) {
 	}
 	var req vpnSiteRequest
 	if !decode(w, r, &req) {
+		return
+	}
+	if req.ovOnly() || (req.Engine != nil && trim(req.Engine) != config.EngineWireGuard) {
+		refuseOVSettings(w)
 		return
 	}
 	var applyErr error

@@ -19,6 +19,7 @@ import (
 	"peakroute/internal/config"
 	"peakroute/internal/ddns"
 	"peakroute/internal/network"
+	"peakroute/internal/ovpn"
 	"peakroute/internal/syslogfwd"
 	"peakroute/internal/wg"
 	"peakroute/internal/wireless"
@@ -57,6 +58,10 @@ type API struct {
 	DDNSUpdate   func(ctx context.Context, id string) (ddns.Status, bool)
 	// WireGuard reads the WireGuard interfaces that are running (their peers and handshakes). Nil means it is not reported.
 	WireGuard func() []wg.Interface
+	// OVConnections lists what is connected to the OpenVPN server of a name (pr-ra, pr-s1...): false when it is not running. LinkUp says
+	// whether an interface is up (how a client tunnel is going). Nil means OpenVPN is not reported.
+	OVConnections func(name string) ([]ovpn.Connection, bool)
+	LinkUp        func(iface string) bool
 	// FirewallLog is the store of the packets that firewall rules with logging matched. Nil means it is not reported.
 	FirewallLog FirewallLogStore
 	// Connections reads the kernel's table of connections passing through the router: the connections, how many are
