@@ -50,6 +50,9 @@ type VPNSite struct {
 	// what the tunnel's traffic may reach, like a Local Network's switches
 	Internet bool `json:"internet,omitempty"` // may use this router's internet connection
 	Isolated bool `json:"isolated,omitempty"` // cannot talk to the Local Networks, and they cannot talk to it
+
+	// OpenVPN (engine "openvpn"): the engine-specific settings; the WireGuard ones above are then empty
+	OV *OVSite `json:"openvpn,omitempty"`
 }
 
 // VPNClient is a laptop or a phone that may connect to the remote access server.
@@ -81,6 +84,8 @@ type WGRemote struct {
 type VPNConfig struct {
 	Sites    []VPNSite `json:"sites,omitempty"`
 	WGRemote *WGRemote `json:"wg_remote,omitempty"`
+	OVRemote *OVRemote `json:"ov_remote,omitempty"` // OpenVPN remote access
+	CA       *VPNCA    `json:"ca,omitempty"`        // the certificate authority of the OpenVPN side
 }
 
 func (v VPNConfig) clone() VPNConfig {
@@ -88,6 +93,10 @@ func (v VPNConfig) clone() VPNConfig {
 		sites := make([]VPNSite, len(v.Sites))
 		for i, s := range v.Sites {
 			s.RemoteNetworks = append([]string(nil), s.RemoteNetworks...)
+			if s.OV != nil {
+				o := *s.OV
+				s.OV = &o
+			}
 			sites[i] = s
 		}
 		v.Sites = sites
@@ -99,6 +108,14 @@ func (v VPNConfig) clone() VPNConfig {
 		r.Routes = append([]string(nil), r.Routes...)
 		r.Clients = append([]VPNClient(nil), r.Clients...)
 		v.WGRemote = &r
+	}
+	if v.OVRemote != nil {
+		r := v.OVRemote.clone()
+		v.OVRemote = &r
+	}
+	if v.CA != nil {
+		ca := v.CA.clone()
+		v.CA = &ca
 	}
 	return v
 }
@@ -168,11 +185,18 @@ func (c NetworkConfig) VPNZones() []Zone {
 		}
 		zones = append(zones, z)
 	}
+	if r := v.OVRemote; r != nil && !r.Disabled {
+		z := Zone{ID: VPNOpenRemoteZone, Name: "Remote access (OpenVPN)", Iface: ovRemoteIface, Internet: r.Internet, Isolated: r.Isolated}
+		if p, err := netip.ParsePrefix(r.Network); err == nil {
+			z.Prefixes = []netip.Prefix{p.Masked()}
+		}
+		zones = append(zones, z)
+	}
 	for _, s := range v.Sites {
 		if s.Disabled {
 			continue
 		}
-		z := Zone{ID: SiteZone(s.ID), Name: strings.TrimSpace(s.Name), Iface: SiteInterface(s.ID), Internet: s.Internet, Isolated: s.Isolated}
+		z := Zone{ID: SiteZone(s.ID), Name: strings.TrimSpace(s.Name), Iface: s.Interface(), Internet: s.Internet, Isolated: s.Isolated}
 		for _, n := range s.RemoteNetworks {
 			if p, err := netip.ParsePrefix(n); err == nil {
 				z.Prefixes = append(z.Prefixes, p.Masked())
@@ -300,7 +324,7 @@ func (c NetworkConfig) validateVPN(add func(field, format string, args ...any)) 
 			return
 		}
 		if other, dup := ports[port]; dup {
-			add(field, "UDP port %d is already used by %s", port, other)
+			add(field, "port %d is already used by %s", port, other)
 		}
 		ports[port] = who
 	}
@@ -389,6 +413,11 @@ func (c NetworkConfig) validateVPN(add func(field, format string, args ...any)) 
 		}
 	}
 
+	// the OpenVPN remote access server
+	if r := v.OVRemote; r != nil {
+		c.validateOVRemote(add, *r, overlap, func(what string, p netip.Prefix) { claims = append(claims, claimed{what, p}) }, portField)
+	}
+
 	// the site tunnels
 	if len(v.Sites) > MaxVPNSites {
 		add("vpn.sites", "at most %d site tunnels", MaxVPNSites)
@@ -409,39 +438,52 @@ func (c NetworkConfig) validateVPN(add func(field, format string, args ...any)) 
 			add(f("name"), "use 1 to %d letters, digits, spaces or . _ ( ) + - characters", maxNetName)
 		case names[strings.ToLower(name)]:
 			add(f("name"), "is used by another tunnel")
-		case strings.EqualFold(name, "remote access") || strings.EqualFold(name, "lan"):
+		case strings.EqualFold(name, "remote access") || strings.EqualFold(name, "remote access (openvpn)") || strings.EqualFold(name, "lan"):
 			add(f("name"), "is used by something else")
 		}
 		names[strings.ToLower(name)] = true
-		if s.Engine != EngineWireGuard {
-			add(f("engine"), "must be wireguard")
-		}
-		if !wg.ValidKey(s.PrivateKey) {
-			add(f("private_key"), "is not a WireGuard key")
-		} else if pub, _ := wg.PublicKey(s.PrivateKey); pub == s.PeerPublicKey {
-			add(f("peer_public_key"), "is this router's own public key: the other router has its own")
-		}
-		switch {
-		case !wg.ValidKey(s.PeerPublicKey):
-			add(f("peer_public_key"), "is not a WireGuard key")
-		case keys[s.PeerPublicKey]:
-			add(f("peer_public_key"), "belongs to another tunnel")
-		}
-		keys[s.PeerPublicKey] = true
-		if s.PresharedKey != "" && !wg.ValidKey(s.PresharedKey) {
-			add(f("preshared_key"), "is not a WireGuard key")
-		}
-		portField(f("listen_port"), s.ListenPort, "the tunnel "+name)
-		if s.Endpoint != "" {
-			if _, port, ok := splitHostPort(s.Endpoint); !ok || port == 0 {
-				add(f("endpoint"), "must be the other router's name or address and its port, such as site-b.example.com:51820")
+		switch s.Engine {
+		case EngineWireGuard:
+			if !wg.ValidKey(s.PrivateKey) {
+				add(f("private_key"), "is not a WireGuard key")
+			} else if pub, _ := wg.PublicKey(s.PrivateKey); pub == s.PeerPublicKey {
+				add(f("peer_public_key"), "is this router's own public key: the other router has its own")
 			}
+			switch {
+			case !wg.ValidKey(s.PeerPublicKey):
+				add(f("peer_public_key"), "is not a WireGuard key")
+			case keys[s.PeerPublicKey]:
+				add(f("peer_public_key"), "belongs to another tunnel")
+			}
+			keys[s.PeerPublicKey] = true
+			if s.PresharedKey != "" && !wg.ValidKey(s.PresharedKey) {
+				add(f("preshared_key"), "is not a WireGuard key")
+			}
+			portField(f("listen_port"), s.ListenPort, "the tunnel "+name)
+			if s.Endpoint != "" {
+				if _, port, ok := splitHostPort(s.Endpoint); !ok || port == 0 {
+					add(f("endpoint"), "must be the other router's name or address and its port, such as site-b.example.com:51820")
+				}
+			}
+			if s.Keepalive < 0 || s.Keepalive > 600 {
+				add(f("keepalive"), "must be from 0 (off) to 600 seconds")
+			}
+		case EngineOpenVPN:
+			c.validateOVSite(add, f, s, portField, "the tunnel "+name)
+		default:
+			add(f("engine"), "must be wireguard or openvpn")
 		}
-		if s.Keepalive < 0 || s.Keepalive > 600 {
-			add(f("keepalive"), "must be from 0 (off) to 600 seconds")
+		// an OpenVPN client is told its address by the server, so it need not have one; an OpenVPN tunnel's network has room for two
+		// from /24 to /30 (the server takes the first address, the client the next)
+		maxBits := 31
+		if s.Engine == EngineOpenVPN {
+			maxBits = 30
 		}
-		if ap, err := netip.ParsePrefix(s.Address); err != nil || !ap.Addr().Is4() || ap.Bits() < 24 || ap.Bits() > 31 || (ap.Bits() < 31 && (ap.Masked().Addr() == ap.Addr() || ap.Addr() == broadcastAddr(ap))) {
-			add(f("address"), "must be this router's address inside the tunnel's own small network, such as 10.99.1.1/30 (from /24 to /31; the other router uses the next address)")
+		clientWithoutAddress := s.Engine == EngineOpenVPN && s.OV != nil && s.OV.Role == OVRoleClient && s.Address == ""
+		if clientWithoutAddress {
+			// nothing to check, nothing to keep clear of
+		} else if ap, err := netip.ParsePrefix(s.Address); err != nil || !ap.Addr().Is4() || ap.Bits() < 24 || ap.Bits() > maxBits || (ap.Bits() < 31 && (ap.Masked().Addr() == ap.Addr() || ap.Addr() == broadcastAddr(ap))) {
+			add(f("address"), "must be this router's address inside the tunnel's own small network, such as 10.99.1.1/30 (from /24 to /%d; the other router uses the next address)", maxBits)
 		} else {
 			overlap(f("address"), "the tunnel's network", ap.Masked())
 			claims = append(claims, claimed{"the tunnel " + name, ap.Masked()})
@@ -462,12 +504,18 @@ func (c NetworkConfig) validateVPN(add func(field, format string, args ...any)) 
 			claims = append(claims, claimed{"a network behind the tunnel " + name, p})
 		}
 	}
+
+	// the certificate authority and what it made
+	c.validateOVCA(add, v)
 }
 
 // ---- words ----------------------------------------------------------------------------------------------------
 
 // SiteText describes a site tunnel in a line, without any key.
 func SiteText(s VPNSite) string {
+	if s.Engine == EngineOpenVPN {
+		return ovSiteText(s)
+	}
 	t := "WireGuard"
 	if s.Endpoint != "" {
 		t += " to " + s.Endpoint
@@ -533,10 +581,16 @@ func diffVPN(active, candidate NetworkConfig) []Change {
 	a, b := active.VPNSettings(), candidate.VPNSettings()
 	var changes []Change
 
-	sameSite := func(x, y VPNSite) bool {
-		x.PrivateKey, y.PrivateKey, x.PresharedKey, y.PresharedKey = "", "", "", ""
-		return reflect.DeepEqual(x, y)
+	strip := func(s VPNSite) VPNSite {
+		s.PrivateKey, s.PresharedKey = "", ""
+		if s.OV != nil {
+			o := *s.OV
+			o.TLSCrypt, o.Key, o.Cert, o.CACert, o.PeerSerial = "", "", "", "", ""
+			s.OV = &o
+		}
+		return s
 	}
+	sameSite := func(x, y VPNSite) bool { return reflect.DeepEqual(strip(x), strip(y)) }
 	newSites := map[string]bool{}
 	for _, s := range b.Sites {
 		newSites[s.ID] = true
@@ -555,6 +609,11 @@ func diffVPN(active, candidate NetworkConfig) []Change {
 		if had {
 			changes = append(changes, secretChange("vpn_site_keys", "Key of the VPN tunnel "+strings.TrimSpace(s.Name), old.PrivateKey, s.PrivateKey)...)
 			changes = append(changes, secretChange("vpn_site_keys", "Preshared key of the VPN tunnel "+strings.TrimSpace(s.Name), old.PresharedKey, s.PresharedKey)...)
+			if old.OV != nil && s.OV != nil {
+				changes = append(changes, secretChange("vpn_site_keys", "Control channel key of the VPN tunnel "+strings.TrimSpace(s.Name), old.OV.TLSCrypt, s.OV.TLSCrypt)...)
+				changes = append(changes, secretChange("vpn_site_keys", "Certificate of the VPN tunnel "+strings.TrimSpace(s.Name), old.OV.Key, s.OV.Key)...)
+				changes = append(changes, secretChange("vpn_site_keys", "Certificate made for the other router of the VPN tunnel "+strings.TrimSpace(s.Name), old.OV.PeerSerial, s.OV.PeerSerial)...)
+			}
 		}
 	}
 	for _, s := range a.Sites {
@@ -621,7 +680,7 @@ func diffVPN(active, candidate NetworkConfig) []Change {
 			changes = append(changes, Change{Field: "vpn_clients", Label: "VPN client " + strings.TrimSpace(cl.Name), Old: ClientText(cl), New: "(removed)"})
 		}
 	}
-	return changes
+	return append(changes, diffOpenVPN(a, b)...)
 }
 
 // ---- what a client is told ------------------------------------------------------------------------------------
@@ -634,18 +693,34 @@ func (c NetworkConfig) ClientRoutes() []string {
 	if r == nil {
 		return nil
 	}
-	if r.FullTunnel {
+	out := c.clientRoutes(r.FullTunnel, r.Routes)
+	if !r.FullTunnel && len(r.Routes) == 0 {
+		out = appendOnce(out, r.Network)
+	}
+	return out
+}
+
+func appendOnce(list []string, s string) []string {
+	for _, x := range list {
+		if x == s {
+			return list
+		}
+	}
+	return append(list, s)
+}
+
+// clientRoutes is what a remote access server tells its clients to send through it (see ClientRoutes).
+func (c NetworkConfig) clientRoutes(full bool, chosen []string) []string {
+	if full {
 		return []string{"0.0.0.0/0"}
 	}
-	if len(r.Routes) > 0 {
-		return append([]string(nil), r.Routes...)
+	if len(chosen) > 0 {
+		return append([]string(nil), chosen...)
 	}
 	var out []string
-	seen := map[string]bool{}
 	add := func(s string) {
-		if s != "" && !seen[s] {
-			seen[s] = true
-			out = append(out, s)
+		if s != "" {
+			out = appendOnce(out, s)
 		}
 	}
 	if p, ok := c.NetworkPrefix(DefaultNetworkID); ok {
@@ -657,14 +732,13 @@ func (c NetworkConfig) ClientRoutes() []string {
 		}
 	}
 	for _, z := range c.VPNZones() {
-		if z.ID == VPNRemoteZone {
+		if z.ID == VPNRemoteZone || z.ID == VPNOpenRemoteZone {
 			continue
 		}
 		for _, p := range z.Prefixes {
 			add(p.String())
 		}
 	}
-	add(r.Network)
 	return out
 }
 
@@ -705,18 +779,27 @@ func (r WGRemote) NextClientAddress() (string, bool) {
 
 // NextSitePort is the first listen port from 51820 that no tunnel uses.
 func (v VPNConfig) NextSitePort() int {
-	used := map[int]bool{}
-	if v.WGRemote != nil {
-		used[v.WGRemote.ListenPort] = true
-	}
-	for _, s := range v.Sites {
-		used[s.ListenPort] = true
-	}
+	used := v.usedPorts()
 	for p := DefaultWGSitePort; ; p++ {
 		if !used[p] && p != DefaultWGRAPort {
 			return p
 		}
 	}
+}
+
+// usedPorts are the listen ports of the tunnels (all engines).
+func (v VPNConfig) usedPorts() map[int]bool {
+	used := map[int]bool{}
+	if v.WGRemote != nil {
+		used[v.WGRemote.ListenPort] = true
+	}
+	if v.OVRemote != nil {
+		used[v.OVRemote.ListenPort] = true
+	}
+	for _, s := range v.Sites {
+		used[s.ListenPort] = true
+	}
+	return used
 }
 
 // OtherSideAddress is the address the other router uses inside a site tunnel's small network: the next one after this router's, or
