@@ -129,6 +129,15 @@ ns c ping -c2 -W3 10.8.0.1 >/dev/null 2>&1 && say isolated-client-to-router-ping
 ns b ping -c2 -W3 -I 10.50.0.1 192.168.1.1 >/dev/null 2>&1 && say isolated-site-to-router-ping ok || say isolated-site-to-router-ping fail
 # only DNS and ping reach the router from a tunnel: its web interface does not
 ns c sh -c 'exec 3<>/dev/tcp/10.8.0.1/443' >/dev/null 2>&1 && say tunnel-to-web fail || say tunnel-to-web ok
+# what is not ours is left alone: a file that is no tunnel of ours is not brought up, and an interface the script never made is not
+# taken down (the script only knows wgra and wgs<number>)
+printf 'nonsense\n' > "$D/wg/wgfoo.conf"
+ip link add wgfoo type dummy; echo 0 > "$D/state/wgfoo.sha"; rm -f "$D/wg/wgfoo.conf.keep"
+sh "$D/sync-local.sh" 2>"$D/sync-foreign.err" && say foreign-file-ignored ok || { say foreign-file-ignored fail; cat "$D/sync-foreign.err"; }
+rm -f "$D/wg/wgfoo.conf"
+sh "$D/sync-local.sh" 2>/dev/null
+ip link show wgfoo >/dev/null 2>&1 && say foreign-interface-stays ok || say foreign-interface-stays fail
+ip link del wgfoo 2>/dev/null; rm -f "$D/state/wgfoo.sha"
 # a tunnel taken out: its file goes, the script takes it down
 rm -f "$D/wg/wgs1.conf"
 sh "$D/sync-local.sh" 2>/dev/null
@@ -215,7 +224,7 @@ func TestRealTunnelsWorkThroughTheGeneratedFiles(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"wires", "plain-ruleset", "sync", "b-up", "control-no-rule", "vpn-ruleset", "site-to-tunnel-address", "site-to-router", "site-to-host", "router-to-site", "host-to-site",
-		"c-up", "client-to-router", "client-to-host", "client-to-site", "host-to-client", "site-handshake", "ra-handshake", "sync-keeps-tunnels", "iso-ruleset",
+		"c-up", "client-to-router", "client-to-host", "client-to-site", "host-to-client", "site-handshake", "ra-handshake", "sync-keeps-tunnels", "foreign-file-ignored", "foreign-interface-stays", "iso-ruleset",
 		"isolated-site-to-host", "isolated-client-to-host", "isolated-client-to-router-ping", "isolated-site-to-router-ping", "tunnel-to-web", "tunnel-removed", "other-tunnel-stays"} {
 		if res[name] != "ok" {
 			t.Errorf("%s: %q", name, res[name])
@@ -236,8 +245,10 @@ func TestTheCheckBeforeTheCommitReadsTheTunnelFilesLikeWgQuick(t *testing.T) {
 	dir := t.TempDir()
 	script := strings.ReplaceAll(check.args[1], PathWireGuardDir, dir)
 	run := func() (string, error) {
-		// wg-quick wants to be root, and the check makes an interface (inside a user and network namespace we may)
-		c := exec.Command("unshare", "-rn", "sh", "-c", script)
+		// wg-quick wants to be root, and the check makes an interface (inside a user and network namespace we may). Whatever the
+		// check finds, the scratch interface must be gone afterwards.
+		wrapped := "sh -c '" + strings.ReplaceAll(script, "'", `'\''`) + "'; rc=$?; if ip link show wgchk >/dev/null 2>&1; then echo LEFT-BEHIND; fi; exit $rc"
+		c := exec.Command("unshare", "-rn", "sh", "-c", wrapped)
 		c.Env = []string{"PATH=" + wgbin + ":/usr/bin:/bin"}
 		out, err := c.CombinedOutput()
 		return string(out), err
@@ -257,8 +268,8 @@ func TestTheCheckBeforeTheCommitReadsTheTunnelFilesLikeWgQuick(t *testing.T) {
 	}
 	// a file wg-quick cannot read stops the commit
 	os.WriteFile(filepath.Join(dir, "wgs1.conf"), []byte("[Interface]\nPrivateKey = not a key\nBogus = 1\n"), 0600)
-	if out, err := run(); err == nil {
-		t.Fatalf("a broken file was accepted: %s", out)
+	if out, err := run(); err == nil || strings.Contains(out, "LEFT-BEHIND") {
+		t.Fatalf("a broken file was accepted, or the scratch interface stayed: %v %s", err, out)
 	}
 	// a file that is not a tunnel's (no wg prefix) is not looked at
 	os.WriteFile(filepath.Join(dir, "wgs1.conf"), []byte(text(t, cfg, "/etc/wireguard/wgs1.conf")), 0600)

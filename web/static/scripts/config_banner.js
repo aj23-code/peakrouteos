@@ -19,7 +19,8 @@ window.ConfigBanner = (function () {
         nftables: 'Reload the firewall rules',
         timezone: 'Set the time zone',
         ntp: 'Set up the time servers',
-        wireguard: 'Set up the VPN tunnels',
+        wireguard: 'Set up the WireGuard tunnels',
+        openvpn: 'Set up the OpenVPN tunnels',
         dnsmasq: 'Restart the DHCP and DNS server',
     };
     const FILE_KIND_TEXT = { create: 'Create', update: 'Update', remove: 'Remove' };

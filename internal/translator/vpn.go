@@ -104,6 +104,9 @@ func ensureSafeVPN(cfg config.NetworkConfig) error {
 		}
 	}
 	for _, s := range v.Sites {
+		if s.Engine == config.EngineOpenVPN {
+			continue // ensureSafeOVPN
+		}
 		if err := ensureSafe(s.ID); err != nil {
 			return err
 		}
@@ -233,7 +236,7 @@ func vpnArtifacts(cfg config.NetworkConfig) []Artifact {
 		out = append(out, Artifact{Path: wgConfPath(config.RemoteInterface()), Content: []byte(renderWGRemote(*r)), Mode: 0600, Service: SvcWireGuard})
 	}
 	for _, s := range v.Sites {
-		if !s.Disabled {
+		if !s.Disabled && s.Engine != config.EngineOpenVPN {
 			out = append(out, Artifact{Path: wgConfPath(config.SiteInterface(s.ID)), Content: []byte(renderWGSite(s)), Mode: 0600, Service: SvcWireGuard})
 		}
 	}
@@ -243,28 +246,66 @@ func vpnArtifacts(cfg config.NetworkConfig) []Artifact {
 	return out
 }
 
-// renderDnsmasqVPN lets the DNS server answer on the remote access interface, when the clients are told to use it.
+// renderDnsmasqVPN lets the DNS server answer on the remote access interfaces, when the clients are told to use it.
 func renderDnsmasqVPN(cfg config.NetworkConfig) (string, bool) {
-	if r := cfg.VPNSettings().WGRemote; r != nil && !r.Disabled && r.DNS {
-		return "# Managed by PeakRoute OS. Do not edit: this file is rewritten on every commit.\ninterface=" + config.RemoteInterface() + "\n", true
+	v := cfg.VPNSettings()
+	var ifaces []string
+	if r := v.WGRemote; r != nil && !r.Disabled && r.DNS {
+		ifaces = append(ifaces, config.RemoteInterface())
 	}
-	return "", false
+	if r := v.OVRemote; r != nil && !r.Disabled && r.DNS {
+		ifaces = append(ifaces, config.OVRemoteInterface())
+	}
+	if len(ifaces) == 0 {
+		return "", false
+	}
+	out := "# Managed by PeakRoute OS. Do not edit: this file is rewritten on every commit.\n"
+	for _, i := range ifaces {
+		out += "interface=" + i + "\n"
+	}
+	return out, true
 }
 
-// listenPorts are the UDP ports the tunnels listen on, in order.
-func vpnListenPorts(cfg config.NetworkConfig) []int {
+// vpnListenPorts are the ports the tunnels listen on, by protocol, in order (a tunnel that only calls the other router listens on none).
+func vpnListenPorts(cfg config.NetworkConfig) (udp, tcp []int) {
 	v := cfg.VPNSettings()
-	var ports []int
 	if r := v.WGRemote; r != nil && !r.Disabled {
-		ports = append(ports, r.ListenPort)
+		udp = append(udp, r.ListenPort)
 	}
-	for _, s := range v.Sites {
-		if !s.Disabled {
-			ports = append(ports, s.ListenPort)
+	if r := v.OVRemote; r != nil && !r.Disabled {
+		if r.Proto == "tcp" {
+			tcp = append(tcp, r.ListenPort)
+		} else {
+			udp = append(udp, r.ListenPort)
 		}
 	}
-	sort.Ints(ports)
-	return ports
+	for _, s := range v.Sites {
+		if s.Disabled {
+			continue
+		}
+		switch {
+		case s.Engine != config.EngineOpenVPN:
+			udp = append(udp, s.ListenPort)
+		case s.OV != nil && s.OV.Role == config.OVRoleServer && s.OV.Proto == "tcp":
+			tcp = append(tcp, s.ListenPort)
+		case s.OV != nil && s.OV.Role == config.OVRoleServer:
+			udp = append(udp, s.ListenPort)
+		}
+	}
+	sort.Ints(udp)
+	sort.Ints(tcp)
+	return udp, tcp
+}
+
+func portSet(ports []int) string {
+	parts := make([]string, len(ports))
+	for i, p := range ports {
+		parts[i] = strconv.Itoa(p)
+	}
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return "{ " + strings.Join(parts, ", ") + " }"
 }
 
 // nftVPNRules are the lines the VPN adds to the input and the forward chain, after what the Local Networks add:
@@ -281,17 +322,14 @@ func nftVPNRules(cfg config.NetworkConfig, lan string) (input, forward string, m
 		return "", "", nil
 	}
 	var in, fw strings.Builder
-	ports := vpnListenPorts(cfg)
-	parts := make([]string, len(ports))
-	for i, p := range ports {
-		parts[i] = strconv.Itoa(p)
+	udp, tcp := vpnListenPorts(cfg)
+	in.WriteString("        # VPN: the tunnels' ports\n")
+	if len(udp) > 0 {
+		fmt.Fprintf(&in, "        iifname \"%s\" udp dport %s accept\n", cfg.WanDevice(), portSet(udp))
 	}
-	set := parts[0]
-	if len(parts) > 1 {
-		set = "{ " + strings.Join(parts, ", ") + " }"
+	if len(tcp) > 0 {
+		fmt.Fprintf(&in, "        iifname \"%s\" tcp dport %s accept\n", cfg.WanDevice(), portSet(tcp))
 	}
-	in.WriteString("        # VPN: the tunnels' UDP ports\n")
-	fmt.Fprintf(&in, "        iifname \"%s\" udp dport %s accept\n", cfg.WanDevice(), set)
 	var ifaces []string
 	for _, z := range zones {
 		ifaces = append(ifaces, z.Iface)

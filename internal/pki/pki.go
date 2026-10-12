@@ -325,3 +325,41 @@ func ValidTLSCryptKey(text string) bool {
 	}
 	return true
 }
+
+// Normalize re-encodes one PEM block of one of the given types, dropping everything that is not the encoded data (text before or
+// after, headers): what is written into a configuration file can then never be anything else than a block.
+func Normalize(text string, types ...string) (string, error) {
+	b, rest := pem.Decode([]byte(strings.TrimSpace(text)))
+	if b == nil || strings.TrimSpace(string(rest)) != "" {
+		return "", errors.New("not exactly one PEM block")
+	}
+	for _, t := range types {
+		if b.Type == t {
+			return string(pem.EncodeToMemory(&pem.Block{Type: b.Type, Bytes: b.Bytes})), nil
+		}
+	}
+	return "", fmt.Errorf("a %s was not expected here", b.Type)
+}
+
+// NormalizeTLSCrypt writes a control channel key in its plain form (the comment lines dropped).
+func NormalizeTLSCrypt(text string) (string, error) {
+	if !ValidTLSCryptKey(text) {
+		return "", errors.New("not a control channel key")
+	}
+	var b strings.Builder
+	b.WriteString("-----BEGIN OpenVPN Static key V1-----\n")
+	in := false
+	for _, l := range strings.Split(strings.TrimSpace(text), "\n") {
+		l = strings.TrimSpace(l)
+		switch {
+		case l == "-----BEGIN OpenVPN Static key V1-----":
+			in = true
+		case l == "-----END OpenVPN Static key V1-----":
+			in = false
+		case in:
+			b.WriteString(l + "\n")
+		}
+	}
+	b.WriteString("-----END OpenVPN Static key V1-----\n")
+	return b.String(), nil
+}

@@ -221,6 +221,17 @@ func TestVPNSettingsThatAreRefused(t *testing.T) {
 		{"a client with the router's address", withClient(func(c *VPNClient) { c.Address = "10.8.0.1/32" }), "vpn.wg_remote.clients[0].address"},
 		{"a client with the network address", withClient(func(c *VPNClient) { c.Address = "10.8.0.0/32" }), "vpn.wg_remote.clients[0].address"},
 		{"a client with the broadcast address", withClient(func(c *VPNClient) { c.Address = "10.8.0.255/32" }), "vpn.wg_remote.clients[0].address"},
+		{"a client address with a wider prefix", withClient(func(c *VPNClient) { c.Address = "10.8.0.2/24" }), "vpn.wg_remote.clients[0].address"},
+		{"too many clients", withRemote(func(r *WGRemote) {
+			for i := 0; i <= MaxVPNClients; i++ {
+				r.Clients = append(r.Clients, VPNClient{ID: "c" + itoa(i+1), Name: "Device " + itoa(i+1), PublicKey: pub(t), Address: "10.8." + itoa(i/250) + "." + itoa(i%250+2) + "/32"})
+			}
+		}), "vpn.wg_remote.clients"},
+		{"two sites with one id", vpnNet(t, func(v *VPNConfig) {
+			v.Sites = []VPNSite{site(t, "s1", "Branch", 51820, "10.99.1.1/30", "10.20.0.0/24"), site(t, "s1", "Depot", 51830, "10.99.2.1/30", "10.30.0.0/24")}
+		}), "vpn.sites[1].id"},
+		{"a site network wider than /8", withSite(func(s *VPNSite) { s.RemoteNetworks = []string{"128.0.0.0/1"} }), "vpn.sites[0].remote_networks"},
+		{"a site network that is everything", withSite(func(s *VPNSite) { s.RemoteNetworks = []string{"0.0.0.0/0"} }), "vpn.sites[0].remote_networks"},
 		{"two clients with one address", withRemote(func(r *WGRemote) {
 			r.Clients = []VPNClient{{ID: "c1", Name: "A", PublicKey: pub(t), Address: "10.8.0.2/32"}, {ID: "c2", Name: "B", PublicKey: pub(t), Address: "10.8.0.2/32"}}
 		}), "vpn.wg_remote.clients[1].address"},

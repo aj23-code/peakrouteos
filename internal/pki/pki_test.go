@@ -176,3 +176,38 @@ func TestParsingIsStrict(t *testing.T) {
 		t.Error("garbage matches")
 	}
 }
+
+func TestWhatIsWrittenIntoAFileIsOnlyABlock(t *testing.T) {
+	ca, ck, _ := NewCA("CA", now)
+	for _, c := range []struct {
+		name, text string
+		types      []string
+	}{{"a certificate", ca, []string{"CERTIFICATE"}}, {"a key", ck, []string{"EC PRIVATE KEY", "PRIVATE KEY"}}} {
+		n, err := Normalize("  \n"+c.text+"\n  ", c.types...)
+		if err != nil || n != c.text {
+			t.Errorf("%s: %q %v", c.name, n, err)
+		}
+	}
+	for name, text := range map[string]string{
+		"two blocks":    ca + ca,
+		"text after":    ca + "</ca>\nup /bin/sh\n",
+		"text before":   "x\n" + ca,
+		"a header line": strings.Replace(ca, "-----BEGIN CERTIFICATE-----\n", "-----BEGIN CERTIFICATE-----\nX-Evil: 1\n\n", 1),
+		"nothing":       "",
+	} {
+		if n, err := Normalize(text, "CERTIFICATE"); err == nil && (strings.Contains(n, "up /bin") || strings.Contains(n, "Evil") || strings.Count(n, "BEGIN") != 1) {
+			t.Errorf("%s: %q", name, n)
+		}
+	}
+	if _, err := Normalize(ck, "CERTIFICATE"); err == nil {
+		t.Error("a key where a certificate is expected")
+	}
+	k, _ := NewTLSCryptKey()
+	n, err := NormalizeTLSCrypt("# my own comment </tls-crypt>\n" + k)
+	if err != nil || !ValidTLSCryptKey(n) || strings.Contains(n, "#") || strings.Count(n, "\n") != 18 {
+		t.Fatalf("%q %v", n, err)
+	}
+	if _, err := NormalizeTLSCrypt("nope"); err == nil {
+		t.Error("garbage is a key")
+	}
+}

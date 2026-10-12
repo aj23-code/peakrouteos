@@ -473,11 +473,11 @@ func (c NetworkConfig) validateVPN(add func(field, format string, args ...any)) 
 		default:
 			add(f("engine"), "must be wireguard or openvpn")
 		}
-		// an OpenVPN client is told its address by the server, so it need not have one; an OpenVPN tunnel's network has room for two
-		// from /24 to /30 (the server takes the first address, the client the next)
+		// an OpenVPN client is told its address by the server, so it need not have one; OpenVPN wants a tunnel network of at least /29
+		// (the server takes the first address, the client the next)
 		maxBits := 31
 		if s.Engine == EngineOpenVPN {
-			maxBits = 30
+			maxBits = 29
 		}
 		clientWithoutAddress := s.Engine == EngineOpenVPN && s.OV != nil && s.OV.Role == OVRoleClient && s.Address == ""
 		if clientWithoutAddress {

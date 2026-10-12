@@ -180,6 +180,7 @@ var serviceCommands = map[string]command{
 	SvcDnsmasq:    {"systemctl", []string{"restart", "dnsmasq"}},
 	SvcRoutes:     routesApplyCommand(PathRoutes),
 	SvcWireGuard:  {"sh", []string{PathWGSync}},
+	SvcOpenVPN:    {"sh", []string{PathOVSync}},
 	// With no configuration left the service's start condition is not met, so a restart leaves it stopped.
 	SvcWifi: {"systemctl", []string{"restart", "peakroute-wifi"}},
 }

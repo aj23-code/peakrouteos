@@ -73,12 +73,13 @@ type Plan struct {
 func (p Plan) Empty() bool { return len(p.Files) == 0 && len(p.Actions) == 0 }
 
 var (
-	serviceOrder = []string{SvcHostname, SvcTimezone, SvcSysctl, SvcNetworking, SvcRoutes, SvcWifi, SvcNftables, SvcDnsmasq, SvcWireGuard, SvcNTP}
+	serviceOrder = []string{SvcHostname, SvcTimezone, SvcSysctl, SvcNetworking, SvcRoutes, SvcWifi, SvcNftables, SvcDnsmasq, SvcWireGuard, SvcOpenVPN, SvcNTP}
 	serviceVerb  = map[string]string{
 		SvcHostname:   "apply",
 		SvcTimezone:   "apply",
 		SvcNTP:        "restart",
 		SvcWireGuard:  "apply",
+		SvcOpenVPN:    "apply",
 		SvcSysctl:     "apply",
 		SvcNetworking: "restart",
 		SvcRoutes:     "apply",
@@ -133,7 +134,7 @@ func PlanChanges(fsys FileReader, desired Desired) (Plan, error) {
 		}
 		for _, name := range names {
 			path := dir.Path + "/" + name
-			if !strings.HasSuffix(name, ".conf") || wanted[path] {
+			if wanted[path] || (!dir.Any && !strings.HasSuffix(name, ".conf")) || !strings.HasPrefix(name, dir.Prefix) {
 				continue
 			}
 			plan.Files = append(plan.Files, FileChange{Path: path, Kind: Remove, Service: dir.Service})

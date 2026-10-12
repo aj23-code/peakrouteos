@@ -487,7 +487,7 @@ func (c NetworkConfig) validateOVSite(add func(field, format string, args ...any
 				add(f("openvpn.remote"), "needs the port the other router connects to, such as site-b.example.com:1195")
 			}
 		}
-		if ap, err := netip.ParsePrefix(s.Address); err == nil && ap.Addr().Is4() && ap.Bits() >= 24 && ap.Bits() <= 30 {
+		if ap, err := netip.ParsePrefix(s.Address); err == nil && ap.Addr().Is4() && ap.Bits() >= 24 && ap.Bits() <= 29 {
 			// the first address of the tunnel's network is this router's: the other router gets the next one
 			if ap.Addr() != ap.Masked().Addr().Next() {
 				add(f("address"), "this router takes the first address of the tunnel's network: %s/%d", ap.Masked().Addr().Next(), ap.Bits())

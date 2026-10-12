@@ -73,10 +73,13 @@ type Desired struct {
 	Notes       []string // things the user should know about, shown with the plan
 }
 
-// ManagedDir is a directory the translator owns the *.conf files of.
+// ManagedDir is a directory the translator owns the *.conf files of (or, with Prefix, the ones that start with it; with Any, every
+// file).
 type ManagedDir struct {
 	Path    string
 	Service string // the service that must pick up a removal
+	Prefix  string
+	Any     bool
 }
 
 // LanTarget is the interface the default network lives on: the single LAN port that carries it, or
@@ -131,6 +134,9 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 		return Desired{}, err
 	}
 	if err := ensureSafeVPN(cfg); err != nil {
+		return Desired{}, err
+	}
+	if err := ensureSafeOVPN(cfg); err != nil {
 		return Desired{}, err
 	}
 	tokens = append(tokens, cfg.WanLink())
@@ -240,6 +246,15 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	}
 	d.Artifacts = append(d.Artifacts, vpnArtifacts(cfg)...)
 	d.ManagedDirs = append(d.ManagedDirs, ManagedDir{Path: PathWireGuardDir, Service: SvcWireGuard})
+	ov, err := ovArtifacts(cfg)
+	if err != nil {
+		return Desired{}, err
+	}
+	d.Artifacts = append(d.Artifacts, ov...)
+	d.ManagedDirs = append(d.ManagedDirs,
+		ManagedDir{Path: PathOVServerDir, Prefix: ovPrefix, Service: SvcOpenVPN},
+		ManagedDir{Path: PathOVClientDir, Prefix: ovPrefix, Service: SvcOpenVPN},
+		ManagedDir{Path: PathOVCCDDir, Any: true, Service: SvcOpenVPN}) // the device files have no suffix
 
 	// The time zone, and the time servers (a file only while they are not the defaults)
 	if cfg.Timezone != "" {

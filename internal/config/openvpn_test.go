@@ -51,9 +51,9 @@ func ovFixture(t *testing.T) ovFixtureData {
 				{ID: "c2", Name: "Work laptop", Serial: f.dev2, Address: "10.9.0.3/32"},
 			}}
 		v.Sites = []VPNSite{
-			{ID: "s1", Name: "Branch", Engine: EngineOpenVPN, ListenPort: 1195, Address: "10.98.1.1/30", RemoteNetworks: []string{"10.20.0.0/24"},
+			{ID: "s1", Name: "Branch", Engine: EngineOpenVPN, ListenPort: 1195, Address: "10.98.1.1/29", RemoteNetworks: []string{"10.20.0.0/24"},
 				OV: &OVSite{Role: OVRoleServer, Proto: "udp", Remote: "router.example.com:1195", TLSCrypt: tc2, PeerSerial: f.peerSerial}},
-			{ID: "s2", Name: "Depot", Engine: EngineOpenVPN, Address: "10.98.2.2/30", RemoteNetworks: []string{"10.30.0.0/24"},
+			{ID: "s2", Name: "Depot", Engine: EngineOpenVPN, Address: "10.98.2.2/29", RemoteNetworks: []string{"10.30.0.0/24"},
 				OV: &OVSite{Role: OVRoleClient, Proto: "tcp", Remote: "depot.example.com:443", TLSCrypt: tc3, CACert: oca, Cert: ccert, Key: ckey}},
 		}
 	})
@@ -166,9 +166,9 @@ func TestOpenVPNSettingsThatAreRefused(t *testing.T) {
 		{"a server with the router's port twice", mod(func(v *VPNConfig) { v.Sites[0].ListenPort = 1194 }), "vpn.sites[0].listen_port"},
 		{"a server without a certificate for the other router", mod(func(v *VPNConfig) { v.Sites[0].OV.PeerSerial = "" }), "vpn.sites[0].openvpn.peer_serial"},
 		{"a server with an imported certificate", mod(func(v *VPNConfig) { v.Sites[0].OV.Cert = clientCert }), "vpn.sites[0].openvpn.role"},
-		{"a server that does not take the first address", mod(func(v *VPNConfig) { v.Sites[0].Address = "10.98.1.2/30" }), "vpn.sites[0].address"},
+		{"a server that does not take the first address", mod(func(v *VPNConfig) { v.Sites[0].Address = "10.98.1.2/29" }), "vpn.sites[0].address"},
 		{"a server without an address", mod(func(v *VPNConfig) { v.Sites[0].Address = "" }), "vpn.sites[0].address"},
-		{"a /31 tunnel", mod(func(v *VPNConfig) { v.Sites[0].Address = "10.98.1.1/31" }), "vpn.sites[0].address"},
+		{"a /30 tunnel (OpenVPN needs /29 or wider)", mod(func(v *VPNConfig) { v.Sites[0].Address = "10.98.1.1/30" }), "vpn.sites[0].address"},
 		{"a client that listens", mod(func(v *VPNConfig) { v.Sites[1].ListenPort = 1196 }), "vpn.sites[1].listen_port"},
 		{"a client with a certificate to revoke", mod(func(v *VPNConfig) { v.Sites[1].OV.PeerSerial = "abc" }), "vpn.sites[1].openvpn.role"},
 		{"a client without a remote", mod(func(v *VPNConfig) { v.Sites[1].OV.Remote = "" }), "vpn.sites[1].openvpn.remote"},
@@ -182,7 +182,7 @@ func TestOpenVPNSettingsThatAreRefused(t *testing.T) {
 			v.Sites[1].OV.Cert, v.Sites[1].OV.Key = cert, key
 		}), "vpn.sites[1].openvpn.cert"},
 		{"the networks of the other router overlap ours", mod(func(v *VPNConfig) { v.Sites[1].RemoteNetworks = []string{"10.9.0.0/24"} }), "vpn.sites[1].remote_networks"},
-		{"a tunnel network that overlaps the remote access network", mod(func(v *VPNConfig) { v.Sites[0].Address = "10.9.0.1/30" }), "vpn.sites[0].address"},
+		{"a tunnel network that overlaps the remote access network", mod(func(v *VPNConfig) { v.Sites[0].Address = "10.9.0.1/29" }), "vpn.sites[0].address"},
 		{"a name that is the OpenVPN remote access's", mod(func(v *VPNConfig) { v.Sites[0].Name = "Remote access (OpenVPN)" }), "vpn.sites[0].name"},
 	}
 	for _, tc := range cases {
@@ -328,8 +328,8 @@ func TestOpenVPNReviewLinesNeverShowASecret(t *testing.T) {
 			t.Errorf("no line for %q in:\n%s", want, all)
 		}
 	}
-	if !strings.Contains(all, "OpenVPN, waits for the other router on UDP 1195 (it connects to router.example.com:1195), tunnel 10.98.1.1/30") ||
-		!strings.Contains(all, "OpenVPN to depot.example.com:443 (TCP), tunnel 10.98.2.2/30") {
+	if !strings.Contains(all, "OpenVPN, waits for the other router on UDP 1195 (it connects to router.example.com:1195), tunnel 10.98.1.1/29") ||
+		!strings.Contains(all, "OpenVPN to depot.example.com:443 (TCP), tunnel 10.98.2.2/29") {
 		t.Errorf("the tunnels are not described:\n%s", all)
 	}
 	// a new key or a new certificate is "changed", never shown

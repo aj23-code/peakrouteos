@@ -160,7 +160,7 @@ func TestTheFirewallKnowsTheTunnels(t *testing.T) {
 	})
 	nft := text(t, cfg, PathNftables)
 	for _, want := range []string{
-		"        # VPN: the tunnels' UDP ports\n        iifname \"eth0\" udp dport { 51820, 51821 } accept\n",
+		"        # VPN: the tunnels' ports\n        iifname \"eth0\" udp dport { 51820, 51821 } accept\n",
 		"        iifname \"wgra\" udp dport 53 accept\n        iifname \"wgra\" tcp dport 53 accept\n        iifname \"wgra\" icmp type echo-request accept\n",
 		"        iifname \"wgs1\" udp dport 53 accept\n",
 		"        oifname { \"wgra\", \"wgs1\" } tcp flags syn tcp option maxseg size > 1380 tcp option maxseg size set 1380\n",

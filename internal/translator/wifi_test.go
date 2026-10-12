@@ -335,7 +335,7 @@ func TestOnlyWhatIsSwitchedOnIsRendered(t *testing.T) {
 	// the directory is managed whether or not there is a Wi-Fi section, so that removing the section
 	// removes the files; on a box that has none the plan stays empty
 	for _, c := range []config.NetworkConfig{routerCfg(), cfg} {
-		if d := mustRender(t, c); len(d.ManagedDirs) != 2 || d.ManagedDirs[0].Path != PathHostapdDir || d.ManagedDirs[1].Path != PathWireGuardDir {
+		if d := mustRender(t, c); len(d.ManagedDirs) != 5 || d.ManagedDirs[0].Path != PathHostapdDir || d.ManagedDirs[1].Path != PathWireGuardDir || d.ManagedDirs[2].Path != PathOVServerDir || d.ManagedDirs[4].Path != PathOVCCDDir {
 			t.Errorf("%+v", d.ManagedDirs)
 		}
 	}
