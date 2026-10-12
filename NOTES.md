@@ -562,6 +562,24 @@ the browser against real `ping` and `tracepath`.
 - **Checks**: `./check.sh` (gofmt, vet, tests) and `.github/workflows/ci.yml` (installs wireguard-tools, openvpn, nftables so that the end-to-end tests run;
   they skip themselves without the tools or user namespaces). No git remote yet.
 
+## 7q. Backup and restore (built 2026-10-12)
+
+Design, format and rules are in **`docs/backup.md`**. System, Backup and restore (the last greyed-out entry but Updates). `internal/backup`:
+`format.go` (always-encrypted file: header in the clear and authenticated, scrypt N=2^16 and XChaCha20-Poly1305, passphrase 10 to 256,
+cost bounded when reading), `bundle.go` (gzipped tar with a manifest of sizes and SHA-256; strict `Decode`: whitelist of paths, no links
+or duplicates, size and hash per file, schema version `SchemaVersion` refused when newer; `Collect` reads the *committed* settings,
+administrators and certificates, history through `VACUUM INTO` of a read-only connection so a database in use is copied consistently),
+`restore.go` (`Service`: `Inspect` keeps an opened backup 10 minutes under a token; reports with the usual `DiffNetwork` lines; `Restore`
+validates everything first, keeps a plain copy of the router's own state in `backups/` (newest three, 0700, not downloadable), applies
+certificates, administrators and the settings last as the draft via `StageNetwork`, with the earlier steps undone from the copy if a later
+one fails; `keepOwnPorts` for restoring onto other hardware; history is staged in `restore-pending/` and swapped in by `ApplyPending` before
+the daemon opens its databases), `api.go` (one key derivation at a time). The web authority comes across and the web certificate is made
+again for the new router's names by `Certs.Ensure`. `SessionManager.RevokeAll` signs everyone out after the administrators change. Tests
+cover the file (every byte covered by the seal, hostile cost parameters), the bundle (forged archives), the whole flow between two routers
+(byte-identical administrators and authority, draft then commit gives the same `network.json`, history swapped in), partial restores,
+different ports and Wi-Fi adapters, refusal before any change, undo and the three-copy limit, custom certificates, and the API. Checked in
+the browser. A lesson: `\'` inside a single-quoted JS string in a heredoc ends the string; the page did not load until it was fixed.
+
 ## 7e. Static routes (built 2026-10-08)
 
 **Model.** `NetworkConfig.Routes` is a list of `{name, destination, gateway, metric, disabled}` (JSON keys
@@ -917,7 +935,7 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 | Network: Internet, **Local Networks**, Ports, Wireless, Routes | WAN uplink; each local network with its address range *and* DHCP; physical ports; static routes | Internet (`internet`), Local Networks (`networks`), Ports (`network-physical`), Wireless (`wireless`) and Routes (`routes`) |
 | Firewall: Rules, Port forwarding, Connections, Logs | | all four built (`firewall-rules`, `firewall-forwards`, `firewall-connections`, `firewall-log`); design in `docs/firewall.md` |
 | Services: DNS, VPN, Dynamic DNS | | all three built (`dns`, `vpn`, `ddns`) |
-| System: Settings, Administrators, Certificates (`certificates`), Backup and restore, Updates, System logs, Diagnostics | | Settings (`settings`), System logs (`logs`; the Logs page renamed 2026-10-11, firewall traffic moved to Firewall, Logs), Diagnostics (`diagnostics`: ping, traceroute, connection test, DNS lookup, syslog test) |
+| System: Settings, Administrators, Certificates (`certificates`), Backup and restore (`backup`), Updates, System logs, Diagnostics | | Settings (`settings`), System logs (`logs`; the Logs page renamed 2026-10-11, firewall traffic moved to Firewall, Logs), Diagnostics (`diagnostics`: ping, traceroute, connection test, DNS lookup, syslog test) |
 
 - **Planned pages are listed but greyed out and not clickable** (a `<span class="nav-item nav-soon">`, no
   `data-view`), because the whole product will be built before it is used. To hide them instead, add

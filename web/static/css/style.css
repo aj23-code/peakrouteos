@@ -1724,3 +1724,15 @@ a.cfg-btn { text-decoration: none; display: inline-block; }
 .diag-ask input[type="number"] { padding: 10px 12px; background-color: var(--bg-color); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); outline: none; font-size: 0.95rem; box-sizing: border-box; }
 .diag-ask input[type="number"]:focus { border-color: var(--accent-green); }
 .diag-ask input[type="text"] { width: auto; }
+
+/* ---------- Backup and restore ---------- */
+.bk-part { border: 1px solid var(--border-color); border-radius: 8px; padding: 0.8rem 1rem; margin-top: 0.8rem; }
+.bk-part > .toggle { margin: 0; }
+.bk-sub { margin-top: 0.7rem !important; margin-left: 1.5rem !important; }
+.bk-part .vpn-details { margin-top: 0.7rem; margin-left: 1.5rem; }
+.bk-part .form-message { margin: 0.7rem 0 0 1.5rem; }
+.bk-part .form-message ul, .bk-list { margin: 0.4rem 0 0; padding-left: 1.2rem; }
+.bk-list li { margin: 0.35rem 0; line-height: 1.5; }
+.cfg-old { color: var(--text-muted); text-decoration: line-through; }
+.cfg-new { color: var(--accent-green); }
+.toggle .form-hint strong, .toggle .form-hint em, .toggle .form-hint code, .toggle .form-hint span, .toggle .form-hint a { display: inline; }

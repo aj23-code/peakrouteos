@@ -606,3 +606,19 @@ func (m *Manager) Status() Status {
 	}
 	return st
 }
+
+// DescribePEM describes the certificate in PEM text (the first one, when there is a chain).
+func DescribePEM(b []byte) (Details, error) {
+	blk, _ := pem.Decode(b)
+	if blk == nil || blk.Type != "CERTIFICATE" {
+		return Details{}, errors.New("not a certificate")
+	}
+	c, err := x509.ParseCertificate(blk.Bytes)
+	if err != nil {
+		return Details{}, err
+	}
+	return describe(c), nil
+}
+
+// ReloadAndCheck re-reads the installed files and makes sure they are good (made again when they are not): after a restore.
+func (m *Manager) ReloadAndCheck() error { return m.Ensure() }

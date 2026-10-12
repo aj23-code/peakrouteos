@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"peakroute/internal/auth"
+	"peakroute/internal/backup"
 	"peakroute/internal/cert"
 	"peakroute/internal/config"
 	"peakroute/internal/ddns"
@@ -99,6 +100,12 @@ func main() {
 	initAppConfig()
 
 	var err error
+
+	// A restore that included the history left the databases in a directory of their own (they were in use): swap them in now,
+	// before anything opens them.
+	if done := backup.ApplyPending(configDir); len(done) > 0 {
+		log.Printf("[+] Restored from a backup: %s", strings.Join(done, ", "))
+	}
 
 	// The config manager is the single owner of auth, network and system settings: it loads
 	// them from configDir once and everything else reads them from memory
@@ -395,6 +402,31 @@ func main() {
 	go presenceTracker.Run(pollerCtx)
 	netAPI.Wireless = wifi.Detect
 	mux.HandleFunc("/api/v1/wifi", requireAuth(netAPI.HandleWifi))
+	// Backup and restore: one encrypted file with the settings, the administrators, the certificates and (if asked) the history;
+	// restoring shows what is in it first and puts the settings in the draft (docs/backup.md)
+	backupSvc := &backup.Service{Env: backup.Env{
+		ConfigDir: configDir, CertDir: filepath.Dir(cert.CertPath), Manager: cfgMgr, Certs: certMgr, Sessions: sessionMgr,
+		Ports: network.GetPhysicalInterfaces,
+		Radios: func() []string {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			var names []string
+			for _, a := range wifi.Detect(ctx).Adapters {
+				names = append(names, a.Name)
+			}
+			return names
+		},
+		Editable: configSvc.Idle,
+		Hostname: func() string { h, _ := os.Hostname(); return h },
+		Software: cfgMgr.SysConfig().PeakRouteBuild,
+	}}
+	mux.HandleFunc("/api/v1/backup", requireAuth(backupSvc.HandleInfo))
+	mux.HandleFunc("/api/v1/backup/create", requireAuth(backupSvc.HandleCreate))
+	mux.HandleFunc("/api/v1/backup/open", requireAuth(backupSvc.HandleOpen))
+	mux.HandleFunc("/api/v1/backup/preview", requireAuth(backupSvc.HandlePreview))
+	mux.HandleFunc("/api/v1/backup/restore", requireAuth(backupSvc.HandleRestore))
+	mux.HandleFunc("/api/v1/backup/copies/{id}", requireAuth(backupSvc.HandleCopy))
+	mux.HandleFunc("/api/v1/backup/copies/{id}/restore", requireAuth(backupSvc.HandleCopyRestore))
 	netAPI.FirewallCounters = func() (map[string]netapi.Counter, bool) {
 		raw, ok := network.ReadFirewallCounters()
 		if !ok {

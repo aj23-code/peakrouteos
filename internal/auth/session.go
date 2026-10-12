@@ -210,6 +210,15 @@ func (sm *SessionManager) RevokeUser(username string, keep *http.Request) int {
 	return n
 }
 
+// RevokeAll ends every session (after the administrators were replaced, no one is signed in any more). It returns how many it ended.
+func (sm *SessionManager) RevokeAll() int {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	n := len(sm.sessions)
+	sm.sessions = map[string]Session{}
+	return n
+}
+
 // ActiveSessions counts the sessions that have not timed out, by account.
 func (sm *SessionManager) ActiveSessions() map[string]int {
 	sm.mu.Lock()

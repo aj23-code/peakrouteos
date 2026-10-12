@@ -77,7 +77,7 @@
               <a href="#" class="nav-item" data-view="settings">Settings</a>
               <a href="#" class="nav-item" data-view="admins">Administrators</a>
               <a href="#" class="nav-item" data-view="certificates">Certificates</a>
-              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Backup and restore</span>
+              <a href="#" class="nav-item" data-view="backup">Backup and restore</a>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Updates</span>
               <a href="#" class="nav-item" data-view="logs">System logs</a>
               <a href="#" class="nav-item" data-view="diagnostics">Diagnostics</a>
@@ -756,6 +756,19 @@
         <div id="dns-body" class="card-stack"></div>
       </div>
 
+      <!-- View: Backup and restore -->
+      <div id="view-backup" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Backup and restore</h1>
+            <p class="subtitle">One encrypted file with everything needed to set this router up again, and a way to put it back. Restoring shows what is in the file first and puts the settings in the draft.</p>
+          </div>
+        </header>
+
+        <div id="backup-message" class="form-message hidden" role="alert"></div>
+        <div id="backup-body" class="card-stack"></div>
+      </div>
+
       <!-- View: Certificates -->
       <div id="view-certificates" class="view-section hidden">
         <header class="dash-header">
@@ -903,6 +916,7 @@
   <script src="/static/scripts/diagnostics.js"></script>
   <script src="/static/scripts/ddns.js"></script>
   <script src="/static/scripts/certificates.js"></script>
+  <script src="/static/scripts/backup.js"></script>
   <script src="/static/scripts/qr.js"></script>
   <script src="/static/scripts/vpn.js"></script>
   <script src="/static/scripts/admins.js"></script>
