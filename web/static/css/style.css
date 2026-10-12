@@ -1736,3 +1736,36 @@ a.cfg-btn { text-decoration: none; display: inline-block; }
 .cfg-old { color: var(--text-muted); text-decoration: line-through; }
 .cfg-new { color: var(--accent-green); }
 .toggle .form-hint strong, .toggle .form-hint em, .toggle .form-hint code, .toggle .form-hint span, .toggle .form-hint a { display: inline; }
+
+/* ==========================================================================
+ *  First-run wizard
+ *  ========================================================================== */
+.wiz-card { max-width: 640px; }
+.wiz-steps { list-style: none; display: flex; gap: 0.4rem; margin-bottom: 1.4rem; flex-wrap: wrap; }
+.wiz-steps li { flex: 1 1 0; min-width: 4.5rem; text-align: center; font-size: 0.78rem; color: var(--text-muted); padding-top: 0.5rem; border-top: 3px solid var(--border-color); }
+.wiz-steps li.done { border-top-color: var(--accent-green); color: var(--text-main); }
+.wiz-steps li.now { border-top-color: var(--accent-blue); color: var(--text-main); font-weight: 600; }
+.wiz-body h2 { font-size: 1.15rem; margin-bottom: 0.35rem; }
+.wiz-body > .form-hint { margin-bottom: 1rem; }
+.wiz-body .form-grid { margin-bottom: 1rem; }
+.wiz-body select { width: 100%; padding: 10px 12px; background-color: var(--bg-color); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 0.95rem; }
+.wiz-body input[type="file"] { color: var(--text-muted); font-size: 0.9rem; }
+.wiz-body input[type="text"], .wiz-body input[type="password"] { width: 100%; }
+.wiz-actions { display: flex; gap: 0.6rem; justify-content: space-between; margin-top: 1.2rem; }
+.wiz-actions .cfg-btn { min-width: 6.5rem; }
+.wiz-choices { display: grid; gap: 0.8rem; grid-template-columns: 1fr 1fr; margin: 1.2rem 0; }
+.wiz-choice { display: flex; flex-direction: column; gap: 0.35rem; text-align: left; padding: 1rem; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; color: var(--text-main); cursor: pointer; font-size: 0.9rem; }
+.wiz-choice:hover, .wiz-choice:focus-visible { border-color: var(--accent-green); outline: none; }
+.wiz-choice strong { font-size: 1rem; }
+.wiz-choice span { color: var(--text-muted); font-size: 0.85rem; }
+.wiz-ports { width: 100%; border-collapse: collapse; margin-bottom: 0.8rem; }
+.wiz-ports th, .wiz-ports td { padding: 0.45rem 0.4rem; text-align: left; border-bottom: 1px solid var(--border-color); font-size: 0.88rem; }
+.wiz-ports th { color: var(--text-muted); font-weight: 500; }
+.wiz-tag { display: inline-block; font-size: 0.75rem; padding: 0.1rem 0.45rem; border-radius: 999px; background: var(--accent-blue-bg); color: var(--accent-blue); margin-left: 0.3rem; }
+.wiz-tag--up { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); }
+.wiz-note { border-left: 3px solid var(--accent-amber); padding: 0.5rem 0.8rem; margin: 0.8rem 0; color: var(--text-main); font-size: 0.88rem; background: rgba(245, 158, 11, 0.08); border-radius: 0 6px 6px 0; }
+.wiz-list { margin: 0.4rem 0 0.8rem 1.1rem; font-size: 0.9rem; }
+.wiz-list li { margin-bottom: 0.2rem; }
+@media (max-width: 520px) { .wiz-choices { grid-template-columns: 1fr; } .login-card.wiz-card { padding: 20px; } }
+.wiz-details { margin: 0.2rem 0 0.8rem; font-size: 0.88rem; }
+.wiz-details summary { cursor: pointer; color: var(--accent-blue); margin-bottom: 0.4rem; }

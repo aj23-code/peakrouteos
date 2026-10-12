@@ -3,46 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PeakRoute OS — Initial Setup</title>
+    <title>PeakRoute OS — Set up this router</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="login-wrapper">
-        <div class="login-card">
+    <div class="login-wrapper wiz-wrapper">
+        <div class="login-card wiz-card">
             <div class="header">
                 <h1>PeakRoute OS</h1>
-                <p>Admin Account Onboarding</p>
+                <p id="wiz-sub">Set up this router</p>
             </div>
-
-            {{if .Error}}
-            <div class="error-msg">{{.Error}}</div>
-            {{end}}
-
-            <form action="/api/v1/setup/apply" method="POST" id="setup-form">
-                <div class="field-group">
-                    <label for="username">Admin Username</label>
-                    <input type="text" id="username" name="username" value="{{.Username}}" required
-                           minlength="3" maxlength="32" pattern="[a-zA-Z0-9][a-zA-Z0-9._\-]{2,31}"
-                           title="3-32 characters: letters, numbers, '.', '_' or '-', starting with a letter or number"
-                           placeholder="admin" autofocus />
-                </div>
-
-                <div class="field-group">
-                    <label for="password">Admin Password</label>
-                    <input type="password" id="password" name="password" required
-                           minlength="8" maxlength="72" autocomplete="new-password"
-                           placeholder="At least 8 characters" />
-                </div>
-
-                <div class="field-group">
-                    <label for="confirm_password">Confirm Password</label>
-                    <input type="password" id="confirm_password" name="confirm_password" required
-                           minlength="8" maxlength="72" autocomplete="new-password"
-                           placeholder="Re-enter password" />
-                </div>
-
-                <button type="submit" class="btn-submit">Complete Setup</button>
-            </form>
+            <ol class="wiz-steps hidden" id="wiz-steps" aria-label="Progress"></ol>
+            <div id="wiz-body"><p class="form-hint">Loading…</p></div>
+            <noscript><p class="error-msg">Setting up the router needs JavaScript.</p></noscript>
         </div>
     </div>
     <script src="/static/scripts/first_run.js"></script>

@@ -34,6 +34,7 @@ import (
 	"peakroute/internal/ovpn"
 	"peakroute/internal/pipeline"
 	"peakroute/internal/presence"
+	"peakroute/internal/setup"
 	"peakroute/internal/syslogfwd"
 	"peakroute/internal/system"
 	"peakroute/internal/translator"
@@ -561,6 +562,16 @@ func main() {
 	mux.HandleFunc("/api/v1/networks", requireAuth(netAPI.HandleNetworks))
 	mux.HandleFunc("/api/v1/networks/{id}", requireAuth(netAPI.HandleNetwork))
 
+	// First-run wizard: open only while the router is not set up (docs/setup.md)
+	setupSvc := &setup.Service{Manager: cfgMgr, Ports: network.GetPhysicalInterfaces, Here: setup.HerePorts, DefaultRoute: setup.DefaultRouteDevice,
+		Restore: backupSvc, NewSession: sessionMgr.CreateSession, Hostname: func() string { h, _ := os.Hostname(); return h }}
+	mux.HandleFunc("/api/v1/setup/info", setupSvc.Guard(setupSvc.HandleInfo))
+	mux.HandleFunc("/api/v1/setup/check", setupSvc.Guard(setupSvc.HandleCheck))
+	mux.HandleFunc("/api/v1/setup/apply", setupSvc.Guard(setupSvc.HandleApply))
+	mux.HandleFunc("/api/v1/setup/restore/open", setupSvc.Guard(backupSvc.HandleOpen))
+	mux.HandleFunc("/api/v1/setup/restore/preview", setupSvc.Guard(backupSvc.HandlePreviewChoice))
+	mux.HandleFunc("/api/v1/setup/restore/apply", setupSvc.Guard(setupSvc.HandleRestoreApply))
+
 	// Staged network changes: review, commit, confirm, revert, discard
 	mux.HandleFunc("/api/v1/config/status", requireAuth(configSvc.HandleStatus))
 	mux.HandleFunc("/api/v1/config/staged", requireAuth(configSvc.HandleStaged))
@@ -577,12 +588,7 @@ func main() {
 		// Unconfigured state
 		if !cfgMgr.IsConfigured() {
 			if r.URL.Path == "/first_run" || r.URL.Path == "/first-run" {
-				renderFirstRun(w, http.StatusOK, "admin", "")
-				return
-			}
-
-			if r.URL.Path == "/api/v1/setup/apply" && r.Method == http.MethodPost {
-				handleApply(w, r)
+				renderFirstRun(w)
 				return
 			}
 
@@ -729,66 +735,13 @@ func startBackgroundNetworkPoller(ctx context.Context) {
 	}
 }
 
-// renderFirstRun serves the setup page, optionally with an error and the username to keep filled in.
-func renderFirstRun(w http.ResponseWriter, status int, username, errMsg string) {
+// renderFirstRun serves the setup wizard (its answers go to /api/v1/setup/*).
+func renderFirstRun(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(status)
-
-	data := map[string]string{"Username": username, "Error": errMsg}
-	if err := tmpl.ExecuteTemplate(w, "first_run.html", data); err != nil {
+	w.Header().Set("Cache-Control", "no-store")
+	if err := tmpl.ExecuteTemplate(w, "first_run.html", nil); err != nil {
 		log.Printf("[-] Template execution error (first_run.html): %v", err)
 	}
-}
-
-func handleApply(w http.ResponseWriter, r *http.Request) {
-	auth.LimitPayloadSize(w, r, 1024*1024)
-
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Invalid form data", http.StatusBadRequest)
-		return
-	}
-
-	username := strings.TrimSpace(r.FormValue("username"))
-	plainPassword := r.FormValue("password")
-	confirmPassword := r.FormValue("confirm_password")
-
-	if username == "" {
-		username = "admin"
-	}
-
-	if err := auth.ValidateUsername(username); err != nil {
-		renderFirstRun(w, http.StatusBadRequest, username, err.Error())
-		return
-	}
-
-	if err := auth.ValidateNewPassword(plainPassword, confirmPassword); err != nil {
-		renderFirstRun(w, http.StatusBadRequest, username, err.Error())
-		return
-	}
-
-	hashedPassword, err := config.HashPassword(plainPassword)
-	if err != nil {
-		http.Error(w, "Failed to process password", http.StatusInternalServerError)
-		return
-	}
-
-	// SetupAdmin is atomic: if two setup requests race, only the first creates the account
-	err = cfgMgr.SetupAdmin(config.User{
-		Username:     username,
-		PasswordHash: hashedPassword,
-		Role:         "admin",
-	})
-	if errors.Is(err, config.ErrAlreadyConfigured) {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-	if err != nil {
-		log.Printf("[-] Setup failed: %v", err)
-		http.Error(w, "Failed to save authentication configuration", http.StatusInternalServerError)
-		return
-	}
-
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {

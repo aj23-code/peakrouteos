@@ -105,9 +105,14 @@ keeps the state it replaces as a copy in turn, so an undo can be undone. *Delete
 | `POST /api/v1/backup/restore` | `{token, settings, admins, certificates, history, keep_ports}` |
 | `POST /api/v1/backup/copies/{id}/restore`, `DELETE /api/v1/backup/copies/{id}` | put a copy back; remove it |
 
-## 7. Still to do
+## 7. On a router that is not set up
 
-- **Restore on the first-run page** of a new router (no administrator yet): it needs care, because it would be a way in without a password.
+The first-run wizard (`docs/setup.md`) has *Restore from a backup*: the same file and report, the administrators are always restored (a
+backup without them is refused), the settings become the draft, no copy is kept (there is nothing to go back to), the router is marked as
+set up, and the ports are assigned by hand when the backup's are not there.
+
+## 8. Still to do
+
 - **Automatic copies** after every commit, so that a "go back to last week" is possible.
 - **Scheduled backups** to a USB stick or an SFTP server.
 - Migration hooks for a schema that changes (none is needed yet).

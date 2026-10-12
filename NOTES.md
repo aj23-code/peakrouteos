@@ -68,8 +68,9 @@ records what the system does, why it is built that way, and what was learned on 
   saves to disk, and only then updates memory, so a failed save never leaves memory ahead of disk.
   Change notifications carry private copies. The notification channels are lossy (buffer of 10),
   so nothing may rely on them alone.
-- **First-run setup** is `Manager.SetupAdmin`: creates the admin and the `configured` flag atomically
-  under the lock (flag written last and durably). Only one of several concurrent requests wins.
+- **First-run setup** is the wizard of `internal/setup` (7r). The account and the `configured` flag are made by
+  `Manager.SetupAdmin` atomically under the lock (flag written last and durably); only one of several concurrent
+  requests wins. `Manager.MarkConfigured` is the flag alone, for a first-run restore.
 - **Build metadata** (`peakroute_build`, `arch`, `kernel`) is written to `sys.json` only when it changed.
 - **Staged config:** `StageNetwork` edits a copy of the active (or already staged) config. If the
   result equals the active config the stage file is removed, so the pending state always agrees
@@ -105,7 +106,7 @@ records what the system does, why it is built that way, and what was learned on 
 - **Output escaping:** values rendered with `innerHTML` go through the shared `escapeHtml` in `app.js`.
   (DHCP hostnames come from LAN clients; dnsmasq normally filters them, but the UI does not rely on it.)
 - **First-run setup page:** username 3-32 characters, password 8-72 bytes with confirmation, enforced
-  on the server.
+  on the server (the administrator page of the wizard).
 - **TLS:** the certificate is made by the router's own web authority for its names and addresses (docs/certificates.md), or uploaded; served without a restart.
 
 ## 6. Statistics and traffic history
@@ -580,6 +581,24 @@ cover the file (every byte covered by the seal, hostile cost parameters), the bu
 different ports and Wi-Fi adapters, refusal before any change, undo and the three-copy limit, custom certificates, and the API. Checked in
 the browser. A lesson: `\'` inside a single-quoted JS string in a heredoc ends the string; the page did not load until it was fixed.
 
+## 7r. First-run wizard (built 2026-10-12)
+
+Behaviour and rules are in **`docs/setup.md`**. Replaces the one-form first-run page. `internal/setup` (`Service`): `HandleInfo` (wired
+ports with `Here` = the port(s) the browser's address belongs to, found by `HerePorts` from the interface addresses and bridge members, and
+`DefaultRoute` from `/proc/net/route`; suggestions by `suggest`), `HandleCheck` (`build` lays the form over the router's settings, converts a
+netmask given as `/24`, runs `NetworkConfig.Validate` and maps the field names to the form's; errors are filtered to the pages up to the one
+asked), `HandleApply` (under one mutex: build, `StageNetwork`, `SetupAdmin`, undo the draft if the account fails, sign in), the restore
+handlers (`backup.Service.HandleOpen`/`HandlePreviewChoice` reused; `RestoreFirstRun` forces the administrators in, refuses a backup without
+them and one whose ports are missing and not chosen, makes no pre-restore copy, then `MarkConfigured`), and `Guard`, which answers 409 once
+the router is set up. Every answer ends up in `network.json.staged`, `auth.json` and the `configured` flag (a test reads them back with a new
+`Manager`). The page is `first_run.html` with `first_run.js` (all state in one object, one `render()` per page, `data-f` bound inputs; the
+wizard has its own small helpers because the dashboard scripts are not loaded). After finishing, `sessionStorage['pr_open_review']` makes
+`config_banner.js` open the review dialog on the first dashboard. Tests: `internal/setup` (every answer saved, other connection modes, netmask
+forms, per-step checks, the connected port protected, failed attempts leave nothing, one winner among eight at once, closed after setup,
+unknown fields refused, restore choices that cut the browser off) and `internal/backup/firstrun_test.go` (restore onto a blank router with
+ports chosen; saved on disk; token single use). Checked in the browser against an empty data directory, with a stand-in list of ports (the
+laptop has one): new router end to end, errors per field, the review opening, and a restore with missing ports.
+
 ## 7e. Static routes (built 2026-10-08)
 
 **Model.** `NetworkConfig.Routes` is a list of `{name, destination, gateway, metric, disabled}` (JSON keys
@@ -1029,7 +1048,7 @@ every future page works on every screen automatically.
 
 | Method and path | Auth | Notes |
 |---|---|---|
-| `GET /first_run`, `POST /api/v1/setup/apply` | none, only while unconfigured | creates the admin |
+| `GET /first_run`, `/api/v1/setup/*` (info, check, apply, restore/open, restore/preview, restore/apply) | none, only while unconfigured (409 after) | the first-run wizard, docs/setup.md |
 | `GET /login`, `POST /api/v1/login` | none | rate limited |
 | `POST /logout` | session + CSRF token (form field) | GET returns 405 |
 | `GET /`, `/dashboard` | session | server-rendered shell; embeds the CSRF token |

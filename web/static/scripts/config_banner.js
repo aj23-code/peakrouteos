@@ -374,6 +374,11 @@ window.ConfigBanner = (function () {
 
         setInterval(tick, 250);
         refresh();
+
+        // right after first-run setup the settings are a draft: show what will change straight away
+        let fresh = false;
+        try { fresh = sessionStorage.getItem('pr_open_review') === '1'; sessionStorage.removeItem('pr_open_review'); } catch (e) { fresh = false; }
+        if (fresh) openReview();
     }
 
     document.addEventListener('DOMContentLoaded', init);

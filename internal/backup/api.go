@@ -178,6 +178,28 @@ func (s *Service) HandlePreview(w http.ResponseWriter, r *http.Request) {
 	write(w, http.StatusOK, rep)
 }
 
+// HandlePreviewChoice: POST /api/v1/setup/restore/preview {"token", "wan", "lan"} is the report again with the ports assigned by hand
+// (first-run setup, where the router has none yet).
+func (s *Service) HandlePreviewChoice(w http.ResponseWriter, r *http.Request) {
+	if !methods(w, r, http.MethodPost) {
+		return
+	}
+	var req struct {
+		Token string `json:"token"`
+		PortChoice
+	}
+	if err := auth.DecodeJSONStrict(w, r, &req, 4<<10); err != nil {
+		write(w, http.StatusBadRequest, errBody{err.Error()})
+		return
+	}
+	rep, err := s.PreviewChoice(req.Token, req.PortChoice)
+	if err != nil {
+		write(w, http.StatusNotFound, errBody{capital(err.Error()) + "."})
+		return
+	}
+	write(w, http.StatusOK, rep)
+}
+
 // HandleRestore: POST /api/v1/backup/restore {"token", "settings", "admins", "certificates", "history", "keep_ports"}.
 func (s *Service) HandleRestore(w http.ResponseWriter, r *http.Request) {
 	if !methods(w, r, http.MethodPost) {

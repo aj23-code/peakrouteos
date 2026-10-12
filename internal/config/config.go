@@ -474,6 +474,22 @@ func (m *Manager) SetupAdmin(user User) error {
 	return nil
 }
 
+// MarkConfigured marks the system configured without creating an account (first-run setup by restoring a backup, whose
+// administrators have been put in place). Like SetupAdmin it is the last step and is written durably; it changes nothing when the
+// system already is configured.
+func (m *Manager) MarkConfigured() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.configured {
+		return nil
+	}
+	if err := fsutil.WriteFileAtomic(m.path(configuredFlag), []byte("1"), 0644); err != nil {
+		return fmt.Errorf("failed to write configured flag: %w", err)
+	}
+	m.configured = true
+	return nil
+}
+
 // SyncBuildMetadata records the running binary's version, architecture and kernel in sys.json.
 // It writes only when something changed (or the file is missing) so a restart doesn't rewrite
 // the file for no reason.

@@ -197,7 +197,7 @@ func (s *Service) Inspect(data []byte, pass string) (*Report, error) {
 	token := newToken()
 	s.pending[token] = &open{bundle: b, expires: now.Add(openFor)}
 	s.mu.Unlock()
-	return s.report(token, b, s.portsMissing(b)), nil
+	return s.report(token, b, s.portsMissing(b), nil), nil
 }
 
 // Preview is the report again, with this router's own ports kept or not.
@@ -206,8 +206,16 @@ func (s *Service) Preview(token string, keepPorts bool) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := s.report(token, b, keepPorts)
-	return r, nil
+	return s.report(token, b, keepPorts, nil), nil
+}
+
+// PreviewChoice is the report again with the ports assigned by hand (first-run setup).
+func (s *Service) PreviewChoice(token string, choice PortChoice) (*Report, error) {
+	b, err := s.get(token)
+	if err != nil {
+		return nil, err
+	}
+	return s.report(token, b, false, &choice), nil
 }
 
 func (s *Service) get(token string) (*Bundle, error) {
@@ -293,6 +301,48 @@ func parseNetwork(b *Bundle) (config.NetworkConfig, error) {
 	return cfg, nil
 }
 
+// chooseOwnPorts puts the ports the page assigned in place of the backup's: which port is the internet connection and which are LAN
+// ports (a LAN port keeps what the backup said it carried, as far as those networks exist), and the Wi-Fi adapters that are here.
+// Everything else is the backup's.
+func (s *Service) chooseOwnPorts(restored config.NetworkConfig, c PortChoice) config.NetworkConfig {
+	cur := s.Manager.NetworkConfig()
+	restored.WanInterface = c.Wan
+	restored.LanInterfaces = append([]string(nil), c.Lan...)
+	restored.Interfaces = append([]config.SystemInterface(nil), cur.Interfaces...)
+	exists := map[string]bool{"": true, config.DefaultNetworkID: true}
+	for _, n := range restored.Networks {
+		exists[n.ID] = true
+	}
+	lan := map[string]bool{}
+	for _, p := range c.Lan {
+		lan[p] = true
+	}
+	kept := map[string]config.PortNetworks{}
+	for port, pn := range restored.PortNetworks {
+		if !lan[port] {
+			continue
+		}
+		if !exists[pn.Native] {
+			pn.Native = ""
+		}
+		var tagged []string
+		for _, t := range pn.Tagged {
+			if exists[t] {
+				tagged = append(tagged, t)
+			}
+		}
+		pn.Tagged = tagged
+		if pn.Native != "" || len(pn.Tagged) > 0 {
+			kept[port] = pn
+		}
+	}
+	restored.PortNetworks = nil
+	if len(kept) > 0 {
+		restored.PortNetworks = kept
+	}
+	return s.onlyRadiosHere(restored)
+}
+
 // keepOwnPorts puts this router's own port assignments in place of the backup's: which port is the internet connection, which are
 // LAN ports and which networks they carry, and the Wi-Fi adapters. Everything else is the backup's.
 func (s *Service) keepOwnPorts(restored config.NetworkConfig) config.NetworkConfig {
@@ -324,6 +374,11 @@ func (s *Service) keepOwnPorts(restored config.NetworkConfig) config.NetworkConf
 			restored.PortNetworks[port] = pn
 		}
 	}
+	return s.onlyRadiosHere(restored)
+}
+
+// onlyRadiosHere leaves out the Wi-Fi adapters this router does not have.
+func (s *Service) onlyRadiosHere(restored config.NetworkConfig) config.NetworkConfig {
 	if restored.Wifi != nil && s.Radios != nil {
 		have := map[string]bool{}
 		for _, r := range s.Radios() {
@@ -354,7 +409,7 @@ func problemsOf(err error) []Problem {
 	return []Problem{err.Error()}
 }
 
-func (s *Service) settingsReport(b *Bundle, keepPorts bool) *SettingsReport {
+func (s *Service) settingsReport(b *Bundle, keepPorts bool, choice *PortChoice) *SettingsReport {
 	r := &SettingsReport{Changes: []config.Change{}, Problems: []Problem{}, MissingPorts: []string{}, KeepPorts: keepPorts}
 	cfg, err := parseNetwork(b)
 	if err != nil {
@@ -364,11 +419,17 @@ func (s *Service) settingsReport(b *Bundle, keepPorts bool) *SettingsReport {
 	if m := s.missingPorts(cfg); len(m) > 0 {
 		r.MissingPorts = m
 	}
-	if keepPorts {
+	switch {
+	case choice != nil:
+		if err := s.checkChoice(*choice); err != nil {
+			r.Problems = append(r.Problems, err.Error())
+		}
+		cfg = s.chooseOwnPorts(cfg, *choice)
+	case keepPorts:
 		cfg = s.keepOwnPorts(cfg)
 	}
 	if err := cfg.Validate(); err != nil {
-		r.Problems = problemsOf(err)
+		r.Problems = append(r.Problems, problemsOf(err)...)
 	}
 	r.Changes = config.DiffNetwork(s.Manager.NetworkConfig(), cfg)
 	if r.Changes == nil {
@@ -468,11 +529,11 @@ func certsReport(b *Bundle) *CertsReport {
 	return r
 }
 
-func (s *Service) report(token string, b *Bundle, keepPorts bool) *Report {
+func (s *Service) report(token string, b *Bundle, keepPorts bool, choice *PortChoice) *Report {
 	m := b.Manifest
 	r := &Report{Token: token, Created: m.Created, Hostname: m.Hostname, Software: m.Software, Sections: m.Sections, History: []HistoryFile{}}
 	if m.Has(Settings) {
-		r.Settings = s.settingsReport(b, keepPorts)
+		r.Settings = s.settingsReport(b, keepPorts, choice)
 	}
 	if m.Has(Admins) {
 		r.Admins = s.adminsReport(b)
@@ -490,6 +551,13 @@ func (s *Service) report(token string, b *Bundle, keepPorts bool) *Report {
 
 // ---- restoring ----------------------------------------------------------------------------------------------------------------
 
+// PortChoice assigns this router's ports explicitly (first-run setup, where the router has none yet): which port is the internet
+// connection and which are LAN ports. It takes the place of KeepPorts.
+type PortChoice struct {
+	Wan string   `json:"wan"`
+	Lan []string `json:"lan"`
+}
+
 // Options say what to restore.
 type Options struct {
 	Settings     bool `json:"settings"`
@@ -497,6 +565,8 @@ type Options struct {
 	Certificates bool `json:"certificates"`
 	History      bool `json:"history"`
 	KeepPorts    bool `json:"keep_ports"`
+	// Ports, when set, assigns the ports (see PortChoice).
+	Ports *PortChoice `json:"ports,omitempty"`
 }
 
 // Result says what was done.
@@ -506,6 +576,64 @@ type Result struct {
 	NeedsRestart  bool     `json:"needs_restart"`  // the history comes back when the daemon starts next
 	DraftReplaced bool     `json:"draft_replaced"` // the settings are now the draft, and replaced one that was waiting
 	Copy          string   `json:"copy"`           // the id of the copy of the router's own state that was kept
+}
+
+// checkChoice says whether the ports assigned are ones this router has, used once each.
+func (s *Service) checkChoice(c PortChoice) error {
+	if c.Wan == "" {
+		return errors.New("choose the port of the internet connection")
+	}
+	if len(c.Lan) == 0 {
+		return errors.New("choose at least one LAN port")
+	}
+	have, known := s.portNames()
+	set := map[string]bool{}
+	for _, n := range have {
+		set[n] = true
+	}
+	seen := map[string]bool{c.Wan: true}
+	if known && !set[c.Wan] {
+		return fmt.Errorf("this router has no port %q", c.Wan)
+	}
+	for _, p := range c.Lan {
+		switch {
+		case known && !set[p]:
+			return fmt.Errorf("this router has no port %q", p)
+		case seen[p]:
+			return fmt.Errorf("the port %q is chosen twice", p)
+		}
+		seen[p] = true
+	}
+	return nil
+}
+
+// RestoreFirstRun restores a backup onto a router that is not set up yet (the caller has made sure of that): the administrators must
+// come with it (there would be no one to sign in), nothing is kept as a copy (there is nothing yet to go back to), and the router is
+// marked as set up when it is done.
+func (s *Service) RestoreFirstRun(token string, o Options) (*Result, error) {
+	b, err := s.get(token)
+	if err != nil {
+		return nil, err
+	}
+	if !b.Manifest.Has(Admins) {
+		return nil, errors.New("this backup has no administrators, so it cannot set up a new router: set one up as a new router and restore the backup there")
+	}
+	o.Admins = true
+	o.Settings = o.Settings && b.Manifest.Has(Settings)
+	o.Certificates = o.Certificates && b.Manifest.Has(Certificates)
+	o.History = o.History && b.Manifest.Has(History)
+	if o.Settings && o.Ports == nil && !o.KeepPorts && s.portsMissing(b) {
+		return nil, errors.New("this router does not have the ports the backup uses: choose which of its ports to use")
+	}
+	res, err := s.apply(b, o, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Manager.MarkConfigured(); err != nil {
+		return nil, err
+	}
+	s.Forget(token)
+	return res, nil
 }
 
 // Restore restores the chosen sections of an open backup.
@@ -539,7 +667,13 @@ func (s *Service) apply(b *Bundle, o Options, keepCopy bool) (*Result, error) {
 		if err != nil {
 			return nil, err
 		}
-		if o.KeepPorts {
+		switch {
+		case o.Ports != nil:
+			if err := s.checkChoice(*o.Ports); err != nil {
+				return nil, err
+			}
+			cfg = s.chooseOwnPorts(cfg, *o.Ports)
+		case o.KeepPorts:
 			cfg = s.keepOwnPorts(cfg)
 		}
 		if err := cfg.Validate(); err != nil {
