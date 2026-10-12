@@ -473,6 +473,16 @@ window.VPNModule = (function () {
             </div></section>`;
     }
 
+    // a WireGuard device's file as a code to scan with the phone's WireGuard app (drawn here in the page: the file does not leave it).
+    // The file of an OpenVPN device is too big for a code, and a file with a place for the device's own key is not complete.
+    function qrHtml(f) {
+        if (f.kind !== 'wg-device' || !window.QR) return '';
+        const svg = window.QR.svg(f.config, 260);
+        if (!svg) return '<p class="form-hint">This file is too big for a QR code: use Download or Copy.</p>';
+        return `<div class="vpn-qr"><div class="vpn-qr-code">${svg}</div>
+            <p class="form-hint"><strong>Scan this with the WireGuard app on a phone</strong> (<em>+</em>, <em>Scan from QR code</em>) instead of sending the file. It holds the device's private key like the file does: show it only to the device, and hide it when done.</p></div>`;
+    }
+
     function fileCardHtml() {
         const f = fileShown;
         let intro;
@@ -483,11 +493,12 @@ window.VPNModule = (function () {
         } else if (f.kind === 'ov-device') {
             intro = `<strong>Keep this file safe.</strong> It holds the device's private key, which this router does not keep: this is the only time it can be shown. Import it into the OpenVPN app on the device (<em>OpenVPN Connect: Import profile, Upload file</em>; on Linux <code>openvpn --config</code>), then delete it. The device can connect once the change is committed.`;
         } else {
-            intro = `<strong>Keep this file safe.</strong> It holds the device's private key, which this router does not keep: this is the only time it can be shown. Import it into the WireGuard app on the device (<em>Add tunnel, Import from file</em>; on a phone, send the file to it, a QR code is not built yet), then delete it. The device can connect once the change is committed.`;
+            intro = `<strong>Keep this file safe.</strong> It holds the device's private key, which this router does not keep: this is the only time it can be shown. Import it into the WireGuard app on the device (<em>Add tunnel, Import from file</em>; or scan the code below with a phone), then delete it. The device can connect once the change is committed.`;
         }
         return `<section class="card vpn-file" id="vpn-file">
             <div class="net-card-head"><h2>${escapeHtml(f.title)}</h2></div>
             <p class="form-hint">${intro}</p>
+            ${qrHtml(f)}
             <pre class="vpn-conf">${escapeHtml(f.config)}</pre>
             <div class="form-actions">
                 <button type="button" class="cfg-btn cfg-btn--ghost" id="vpn-file-copy">Copy</button>

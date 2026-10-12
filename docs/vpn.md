@@ -91,7 +91,7 @@ This section describes WireGuard; the OpenVPN remote access server is in section
    **use this router for DNS**, the two zone switches.
 3. **Add a device**: a name; the router makes its keys and shows the **file** (the private key is in it, shown only once and not
    kept) to **copy or download**. Import it in the WireGuard app (*Add tunnel, Import from file*; on a phone, send the file to it,
-   a QR code is not built yet). A device with its own keys (*Public key of the device*) gets a file with a placeholder for its private
+   or scan the **QR code** the page shows with the phone's WireGuard app: *+*, *Scan from QR code*). A device with its own keys (*Public key of the device*) gets a file with a placeholder for its private
    key.
 4. Commit. The device connects; its row says **Connected** with the last handshake and traffic.
 
@@ -103,6 +103,12 @@ names are unique; each device has a fixed address in the remote access network (
 Devices reach another site's networks through this router when that is wanted: those networks are in what devices send to the
 router. The router on the other end must also have the remote access network in the networks it sends back here (add `10.8.0.0/24`
 to the networks behind this router on its side of the tunnel), because WireGuard only passes traffic for addresses it was told about.
+
+**The QR code** is drawn in the page, from the file the page already holds (nothing is sent anywhere), for a WireGuard device whose
+keys the router made. It is a normal QR code (byte mode, error correction L, up to 858 bytes; a file with a pre-shared key still fits).
+A file with a place for the device's own key has no code, and neither has an OpenVPN file. It holds the device's private key like the
+file does: it is shown only with the file, until you hide it. The encoder is in `web/static/scripts/qr.js` and is the same algorithm
+as `internal/qr` (Go), whose tests read the codes back with an independent decoder and hold the script to the same output.
 
 ## 5. Where the files go
 
@@ -231,7 +237,7 @@ block is a block, every address an address).
 
 ## 12. Still to do
 
-- A **QR code** for a device's file (WireGuard and OpenVPN).
+- A QR code for an OpenVPN device's file (it is too big for one: about 2,300 bytes against the 858 the page can draw).
 - IPv6 (everything here is IPv4 for now).
 - Renewing the **server certificate** and the authority before they run out (20 and 10 years: for now it would mean starting again).
 - A test on real hardware after an ISO rebuild (`wireguard-tools` and `openvpn` are added to `buildISO.sh`); the real tools were

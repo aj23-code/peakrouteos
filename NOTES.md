@@ -519,7 +519,8 @@ router: router is the server, a file per device). Both engines on both tabs. `vp
   `nsenter` into namespaces made with `unshare -n sleep`, move links with `ip link ... netns PID`, `wg-quick` runs as the (user
   namespace) root, `in` is a shell keyword, a stand-in `systemctl` runs openvpn in the background, and `user nobody` has to be taken
   out of the files in the lab (no such user inside a one-user namespace).
-- Not done: QR codes, IPv6, renewing the server certificate, real hardware.
+- **QR codes** for a WireGuard device's file: `web/static/scripts/qr.js` draws them in the page (the file never leaves it). Same algorithm as `internal/qr`; the Go tests read codes back with an independent decoder (format and version words, Reed-Solomon check of every block, known capacities) and pin SHA-256 fingerprints that the script must match (checked in the browser). Not scanned with a real phone yet. OpenVPN files are too big for one (858 bytes at most).
+- Not done: IPv6, renewing the server certificate, real hardware, a scan test with a phone.
 
 ## 7e. Static routes (built 2026-10-08)
 

@@ -1704,3 +1704,7 @@ height: 260px;
 .vpn-inline input[type="file"] { font-size: 0.85rem; color: var(--text-muted); }
 .card-stack .card > .radio-row + .radio-row { margin-top: 0.75rem; }
 .card-stack .card > .radio-row + .form-grid { margin-top: 1rem; }
+.vpn-qr { display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: center; margin-top: 1rem; }
+.vpn-qr-code { background: #fff; padding: 0.4rem; border-radius: 0.5rem; line-height: 0; }
+.vpn-qr-code svg { display: block; max-width: 100%; height: auto; }
+.vpn-qr .form-hint { flex: 1; min-width: 14rem; margin: 0; }
