@@ -478,33 +478,48 @@ follows https redirects), so a commit that changes only this has an empty plan.
   can crash it and leave a file broken.
 - Not checked against a real service.
 
-## 7m. VPN (WireGuard built 2026-10-11)
+## 7m. VPN (built 2026-10-11: WireGuard and OpenVPN)
 
 Design, rules and API are in **`docs/vpn.md`**. Services, VPN has two tabs: **Site to site** and **Client VPN** (remote access to the
-router: router is the server, a file per device). OpenVPN (with a built-in CA) is stage B. `vpn` in `network.json`: `sites` (up to 8:
-name, engine, keys, port, tunnel address, endpoint, keep-alive, remote networks, `internet`/`isolated`) and `wg_remote` (server key,
-port, network `10.8.0.0/24`, endpoint, `full_tunnel`, routes, `dns`, switches, up to 100 `clients`: name, **public** key, address).
+router: router is the server, a file per device). Both engines on both tabs. `vpn` in `network.json`: `sites` (up to 8; `engine`
+`wireguard` or `openvpn`), `wg_remote` (WireGuard server and up to 100 `clients`), `ov_remote` (OpenVPN server and up to 100
+`clients`: name, certificate **serial**, address) and `ca` (the built-in authority).
 
-- **Zones.** A VPN that is switched on is a firewall zone like a Local Network (`vpn-ra`, `vpn-<id>`): `config.NetworkConfig.VPNZones()`
-  feeds `FirewallTab` (kind `vpn`), the rule `from`/`to` checks and the translator's nft pairs (`nftVPNRules`: the UDP ports on the
-  WAN, DNS and ping to the router, internet only when switched on, member pairs open unless isolated, MSS clamp 1380).
-  `nftablesNetworkRules` was rewritten so Local Networks and VPNs are members of one set of pairs.
-- **Files.** wg-quick files in `/etc/wireguard/wgra.conf` and `wgs<N>.conf` (0600, managed directory), and one sync script
-  (`/usr/local/sbin/peakroute-wg-sync`, sha256 fingerprints in `/run/peakroute-wg`, touches only `wgra`/`wgs<number>`) run by the
-  `wireguard` service and by the daemon at start. The pre-check loads every file into a scratch interface (`wg setconf`); `wg-quick
-  strip` alone does **not** validate keys.
-- **Keys** (`internal/wg`): Curve25519 in Go; a device's private key is made on the router, shown once in the file and not kept
-  (only its public key). A pre-shared key is typed or made in the page and is write-only like every secret. Reading status:
-  `wg.Reader` runs `wg show all dump` (cached 2 s), the API shows Connected (handshake under 3 min), Idle or Waiting.
-- **Remote devices reaching a remote site** need the other router to list the remote access network among its networks
-  (cryptokey routing); documented in `docs/vpn.md`.
-- **Tests:** unit tests for the model, translator and API; **a real end-to-end lab** (`translator/vpn_e2e_test.go`: two routers and a
-  client in network namespaces with the real `wg`, `wg-quick` and the generated nft rules: site tunnel, remote access, policy,
-  isolation, removal) and a real check of the pre-check command. The tools are extracted from the Debian packages for the test
-  (skipped when they are missing). Mutation checks on config, translator and API. Lab lessons: `unshare -rmn` plus `nsenter` into a
-  second namespace made with `unshare -n sleep`, move links with `ip link ... netns PID`, `wg-quick` runs as the (user namespace)
-  root, and `in` is a shell keyword.
-- Not done: OpenVPN, QR code, IPv6, real hardware.
+- **Zones.** A VPN that is switched on is a firewall zone like a Local Network (`vpn-ra`, `vpn-ora`, `vpn-<id>`): `NetworkConfig.VPNZones()`
+  feeds `FirewallTab` (kind `vpn`), the rule `from`/`to` checks and the translator's nft pairs (`nftVPNRules`: the ports by protocol on
+  the WAN, DNS and ping to the router, internet only when switched on, member pairs open unless isolated, MSS clamp 1380).
+  `nftablesNetworkRules` was rewritten so Local Networks and VPNs are members of one set of pairs. A site's interface is
+  `VPNSite.Interface()` (`wgs1`, `ovs1`; `wgra`, `ovra`).
+- **WireGuard files.** wg-quick files in `/etc/wireguard` (0600, managed directory) and one sync script (`peakroute-wg-sync`, sha256
+  fingerprints in `/run/peakroute-wg`, touches only `wgra`/`wgs<number>`) run by the `wireguard` service and by the daemon at start.
+  The pre-check loads every file into a scratch interface (`wg setconf`); `wg-quick strip` alone does **not** validate keys.
+- **OpenVPN files.** `internal/pki` is the authority (ECDSA P-256; authority 20 y, server 10 y, devices 5 y; CRL; tls-crypt key).
+  One file per tunnel with everything inline in `/etc/openvpn/{server,client}/pr-*.conf` (managed by prefix), one file per device in
+  `/etc/openvpn/ccd/` (a managed directory with `Any`: no suffix; `ccd-exclusive`, so no file means refused), systemd instances of the
+  package's `openvpn-server@`/`openvpn-client@` units started by `peakroute-ovpn-sync` (service `openvpn`, after `wireguard`). A
+  server's file carries a hash of its device files so that a change restarts it. **A device's certificate is only good on its own
+  server** (`verify-x509-name`: `ra-` prefix for remote access, `<id>-peer` for a tunnel). OpenVPN will not take a /30 for a server's
+  network (`--server` wants /29 or wider), hence `10.98.N.1/29`. A client tunnel imports a file (`internal/ovpn`: strict, takes only
+  the blocks and the address; `route-nopull`). Nothing is pre-checked (OpenVPN cannot read a file without running it): the renderer
+  re-encodes every PEM block (`pki.Normalize`) and `ensureSafeOVPN` checks every address.
+- **Keys and secrets.** A device's or peer's private key is made on the router, shown once in the file and not kept (only the serial
+  and the end date). Revocation: remove, new file or removing the server puts the serial on the CRL (`revoke`, regenerates it; ECDSA
+  signatures differ every time, so a CRL is made only when something is revoked). A certificate that has run out must not make the
+  configuration unsavable: validation checks who signed and for what, not the dates (the page warns). WireGuard pre-shared keys
+  are typed or made in the page; every secret is write-only (*set*/*changed* in the review).
+- **Status.** WireGuard: `wg.Reader` runs `wg show all dump` (cached 2 s). OpenVPN: `ovpn.Reader` reads the servers' status files
+  (`/run/openvpn-server/status-<name>.log`, version 2, written every 10 s) and a client tunnel is Connected while its interface is up.
+- **Remote devices reaching a remote site** need the other router to list the remote access network among its networks (cryptokey
+  routing for WireGuard, plain routing for OpenVPN); documented in `docs/vpn.md`.
+- **Tests.** Unit tests for the model, translator, API, pki and the file reader/writer; **two real end-to-end labs**
+  (`translator/vpn_e2e_test.go` for WireGuard and `openvpn_e2e_test.go`: routers and devices in network namespaces with the real tools
+  and the generated nft rules: tunnels, remote access, policy, isolation, removal; for OpenVPN also the ccd files, the revocation list,
+  the wrong kind of certificate, the status file and the script). The WireGuard tools are extracted from the Debian packages for the
+  test (skipped when missing); `openvpn` is the host's. Mutation checks on config, translator and API. Lab lessons: `unshare -rmn` plus
+  `nsenter` into namespaces made with `unshare -n sleep`, move links with `ip link ... netns PID`, `wg-quick` runs as the (user
+  namespace) root, `in` is a shell keyword, a stand-in `systemctl` runs openvpn in the background, and `user nobody` has to be taken
+  out of the files in the lab (no such user inside a one-user namespace).
+- Not done: QR codes, IPv6, renewing the server certificate, real hardware.
 
 ## 7e. Static routes (built 2026-10-08)
 

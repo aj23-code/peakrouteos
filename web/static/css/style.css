@@ -1699,3 +1699,8 @@ height: 260px;
 .vpn-conf { margin: 1rem 0 0; padding: 0.9rem; overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.85rem; white-space: pre; user-select: all; }
 .card-stack .card > .vpn-dl { margin-top: 0.9rem; }
 @media (max-width: 640px) { .vpn-dl { grid-template-columns: 1fr; } .vpn-dl dd { margin-bottom: 0.4rem; } }
+.vpn-textarea { width: 100%; box-sizing: border-box; padding: 0.55rem 0.7rem; border: 1px solid var(--border-color); border-radius: 0.4rem; background: transparent; color: inherit; font: 0.82rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+.vpn-textarea[aria-invalid="true"] { border-color: #ef4444; }
+.vpn-inline input[type="file"] { font-size: 0.85rem; color: var(--text-muted); }
+.card-stack .card > .radio-row + .radio-row { margin-top: 0.75rem; }
+.card-stack .card > .radio-row + .form-grid { margin-top: 1rem; }

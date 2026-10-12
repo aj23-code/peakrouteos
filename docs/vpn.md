@@ -1,6 +1,6 @@
 # PeakRoute OS VPN
 
-Status (2026-10-11): WireGuard built (site to site and remote access). OpenVPN is the next stage (section 9). This file is a living
+Status (2026-10-11): built, with WireGuard and OpenVPN, for site to site and for remote access. This file is a living
 document: every commit that changes the page updates it, and it is meant to become the VPN chapter of the user documentation.
 
 ---
@@ -15,15 +15,18 @@ The VPN page (Services, VPN) has two tabs:
   at home. This router is the server; you add each **device** and give it a small file to import into the WireGuard app. One server,
   up to 100 devices.
 
-Both use **WireGuard** (a kernel feature on Debian 13; the tools are `wireguard-tools`). OpenVPN follows (section 9). Like everything
-else, changes are saved as a draft and start when committed.
+Both can use **WireGuard** (a kernel feature on Debian 13; the tools are `wireguard-tools`) or **OpenVPN** (the `openvpn` package, with
+certificates made by the router itself: sections 9 to 11). WireGuard is the simpler and faster choice; OpenVPN is for devices and
+sites that speak only that. Like everything else, changes are saved as a draft and start when committed. A router can run both
+engines at the same time, each remote access server and each tunnel being a zone of its own.
 
 ## 2. How it fits the firewall
 
 Every VPN is its own network ("zone") in the firewall, like a Local Network:
 
-- the **remote access server** is the zone `vpn-ra` ("Remote access");
-- each **site tunnel** is the zone `vpn-<id>` (`vpn-s1`, named after the tunnel).
+- the **WireGuard remote access server** is the zone `vpn-ra` ("Remote access");
+- the **OpenVPN remote access server** is the zone `vpn-ora` ("Remote access (OpenVPN)");
+- each **site tunnel**, of either engine, is the zone `vpn-<id>` (`vpn-s1`, named after the tunnel).
 
 Each has its own tab on Firewall, Rules, with *your rules* for traffic coming from it, and can be named as a destination in other
 rules. A VPN zone only exists while it is switched on. The fixed lines (grey, cannot be changed) are the same ideas as for a Local
@@ -38,9 +41,13 @@ Without isolation a VPN and a Local Network (or another VPN) may talk both ways;
 open specific things. A VPN may always use this router's **DNS and ping** and nothing else of the router itself; the web interface and
 SSH are not reachable from a VPN unless a rule on that VPN's tab says so. The tunnels' UDP ports are open on the internet connection.
 
-TCP connections through a tunnel are asked to use segments that fit it (MSS clamp 1380).
+TCP connections through a tunnel are asked to use segments that fit it (MSS clamp 1380). The ports the tunnels listen on are open on
+the internet connection, each with its own protocol: UDP for WireGuard and for OpenVPN over UDP, TCP for OpenVPN over TCP. A tunnel
+that only calls the other router (WireGuard with no listening need, an OpenVPN client) opens nothing.
 
-## 3. Site to site
+## 3. Site to site (WireGuard)
+
+This section describes WireGuard; OpenVPN tunnels are in section 9.
 
 Each side of a tunnel needs: its own private key (made by the router, never shown), the other router's **public key**, the networks
 behind the other router, and a small address in the tunnel's own network.
@@ -72,7 +79,9 @@ in the page (shown once) for you to enter on the other router too, or paste the 
 
 **Changing the key of this router** (*New key for this router*) means the other router must be given the new public key.
 
-## 4. Client VPN (remote access)
+## 4. Client VPN (remote access, WireGuard)
+
+This section describes WireGuard; the OpenVPN remote access server is in section 9 and works the same way for the person using the page.
 
 1. **Set up** the server: the **address devices connect to** (a name, ideally a Dynamic DNS name, or an address of this router that
    can be reached from the internet; the port is added), the **port** (UDP, default 51821; forward it from a router in front), and
@@ -122,23 +131,108 @@ the page until it is closed): the router keeps the device's *public* key.
 
 | Call | Does |
 |---|---|
-| `GET /api/v1/vpn` | the page: tunnels, remote access with devices, how each is going (from `wg show all dump`), this router's networks, suggestions |
-| `POST /api/v1/vpn/sites` | add a tunnel (this router's key is made) |
-| `PUT /api/v1/vpn/sites/{id}` | change (a field left out stays; `new_key`; `preshared_key` a key or `generate`); `DELETE` removes |
-| `PUT /api/v1/vpn/remote` | set up or change the server; `DELETE` removes it with its devices |
-| `POST /api/v1/vpn/remote/clients` | add a device (`name`, optionally `public_key`, `preshared`); the answer has the file |
+| `GET /api/v1/vpn` | the page: tunnels of both engines, both remote access servers with devices, the authority, how each is going, this router's networks, suggestions |
+| `POST /api/v1/vpn/sites` | add a tunnel (`engine`: `wireguard` by default, or `openvpn` with a `role`) |
+| `PUT /api/v1/vpn/sites/{id}` | change (a field left out stays); WireGuard: `new_key`, `preshared_key` a key or `generate`; OpenVPN: `new_file` (server), `file` (client) ; `DELETE` removes (and revokes the other router's certificate) |
+| `PUT /api/v1/vpn/remote` | set up or change the WireGuard server; `DELETE` removes it with its devices |
+| `POST /api/v1/vpn/remote/clients` | add a WireGuard device (`name`, optionally `public_key`, `preshared`); the answer has the file |
 | `PUT/DELETE /api/v1/vpn/remote/clients/{id}` | rename, switch, `new_key` (answer has the new file), remove |
-| `GET /api/v1/vpn/remote/clients/{id}/file` | the file for a device with its own keys (a placeholder for the private key) |
+| `GET /api/v1/vpn/remote/clients/{id}/file` | the file for a WireGuard device with its own keys (a placeholder for the private key) |
+| `PUT /api/v1/vpn/ov-remote` | set up or change the OpenVPN server (the first time it makes the authority, when there is none, and the control channel key); `DELETE` removes it and revokes its devices |
+| `POST /api/v1/vpn/ov-remote/clients` | add an OpenVPN device (`name`): the router makes its certificate and key; the answer has the file |
+| `PUT/DELETE /api/v1/vpn/ov-remote/clients/{id}` | rename, switch, `new_file` (a new certificate, the old one revoked; answer has the file), remove (revokes) |
+
+The engines' settings are not mixed: a request that names OpenVPN settings for a WireGuard tunnel, or the other way round, is refused.
 
 ## 8. Status
 
-A peer is **Connected** with a handshake in the last three minutes, **Idle** after that (WireGuard connects again when there is
-traffic), **Waiting** when it has never connected. A tunnel that is only in the draft shows no status.
+A WireGuard peer is **Connected** with a handshake in the last three minutes, **Idle** after that (WireGuard connects again when
+there is traffic), **Waiting** when it has never connected. An OpenVPN device or peer is **Connected** (with where from, since when and
+how much it moved) or **Not connected**; an OpenVPN client tunnel is Connected while its interface is up. A tunnel that is only in
+the draft shows no status.
 
-## 9. Still to do
+## 9. OpenVPN
 
-- **OpenVPN** (stage B): site to site and remote access, with a **built-in certificate authority** that makes and signs the server and
-  client certificates and gives `.ovpn` downloads; the same two tabs, the same zones and rules.
-- A **QR code** for a device's file.
+OpenVPN is the second engine of both tabs. It is a separate way of doing the same things, with the same zones and rules; what
+differs is how the two sides know and trust each other (certificates instead of keys) and a few limits.
+
+**Site to site.** The two routers play different parts, because the certificates come from one of them:
+
+- the router that **waits** ("This router waits") makes a file for the other. When you add the tunnel the page asks for the **address
+  the other router connects to** (a name or an address of this router that can be reached from the internet, and the port), the
+  protocol, the port to listen on, and the tunnel's own network (a **/29 or wider**, suggested `10.98.N.1/29`; OpenVPN will not take
+  less; this router takes the first address and the other router the next). The router makes a certificate for the other router and
+  shows you the **file** to give it, once: it holds the other router's private key, which this router does not keep;
+- the router that **connects** ("This router connects") imports that file (pasted, or chosen from disk). It takes the address, the
+  protocol, the keys and (when the file has them) the networks behind the other router from it; the networks can be given by hand.
+  It writes its own file from those and nothing else: a script, a plugin or any other line in the imported file is ignored.
+
+Both sides list **the networks behind the other router**, as with WireGuard. The one that connects takes only what is listed (it
+ignores routes and DNS the other side might push); the one that waits is told the networks behind the other router by that same
+list (it routes them to the tunnel). The file is also an ordinary OpenVPN client file, so another product can be the other side (it then adds its own routes).
+**New file for the other router** makes a new certificate (the old one stops being accepted when this is committed).
+
+**Remote access.** The same as WireGuard's, with a protocol choice (UDP or TCP, so that it can get through networks that block UDP) and
+the default network `10.9.0.0/24`. Each device has its own certificate and a fixed address (`10.9.0.2`, ...). What a device is told
+(the networks to send through the tunnel, the router as DNS server, all traffic) is pushed to it when it connects. The file is
+imported into the OpenVPN app (OpenVPN Connect on a phone or computer; on Linux `openvpn --config file.ovpn`). A device whose file
+the router cannot make (no address to connect to yet) is refused before anything is kept.
+
+**What is not the same.** An OpenVPN server does not show who is merely configured but silent as "Waiting": a device is connected or
+not. A change to a server's devices (adding, removing, switching off, a new file) restarts that server, which drops the devices
+that are connected for a few seconds (they reconnect by themselves); it is the only way to be sure a removed device is cut off at
+once. An OpenVPN tunnel's port cannot be shared with another tunnel, and the same port number cannot be used by WireGuard.
+
+## 10. The certificate authority
+
+OpenVPN needs certificates, and making them by hand is what puts people off. The router is its own **certificate authority**. It is
+made the first time something needs it (the first OpenVPN server or tunnel that waits) and shown at the bottom of the Client VPN tab.
+
+| What | Valid for | Notes |
+|---|---|---|
+| the authority | 20 years | ECDSA P-256; its key never leaves `network.json` |
+| the server certificate | 10 years | one for all the OpenVPN servers of this router; used only to serve |
+| a device's or a peer router's certificate | 5 years | made with the device; used only to connect; its name tells which server may accept it |
+
+- **A device's certificate only works on the server it was made for**: remote access devices are named `ra-<id>` and the server
+  accepts only those; the other router of a site tunnel is named `<tunnel id>-peer` and that tunnel's server accepts only that name.
+- **Revocation.** When a device is removed, gets a new file, or its server is removed, its certificate goes on a **list of
+  certificates that are no longer accepted**, and the list is made again and given to the servers. A device is also refused
+  because it has no device file any more (the first line of defence); the list is the second, for a certificate that was copied.
+  The page shows how many are on the list.
+- **Running out.** A certificate that is within 60 days of running out, or has, is marked on the page (a device row, the tunnel it
+  is for, the server certificate). A device gets a new file with **New file**; a router that connects needs a new file from the other
+  router. A certificate that has run out never stops the router from saving other changes.
+- **Secrets.** The authority's key, the server's key, the control channel keys and the key of a tunnel that connects are stored in
+  `network.json` (0600) and in the 0600 files in `/etc/openvpn`, and are never shown again: not by the API, not in the review
+  (*set* or *changed*), not in logs. A device's key exists only in the file made for it (and in the page until it is closed). The
+  authority and what it made must be part of a backup.
+- The control channel of every server and tunnel is protected with a shared key (`tls-crypt`), so that a server does not even answer
+  a packet from someone who does not have the file. Data uses AES-256-GCM, AES-128-GCM or ChaCha20-Poly1305, TLS 1.2 or later.
+
+## 11. Where the OpenVPN files go
+
+| Path | Content |
+|---|---|
+| `/etc/openvpn/server/pr-ra.conf` | the remote access server (0600; the certificates, key, revocation list and control channel key are inside) |
+| `/etc/openvpn/server/pr-s<N>.conf` | a site tunnel where this router waits (0600) |
+| `/etc/openvpn/client/pr-s<N>.conf` | a site tunnel where this router connects (0600) |
+| `/etc/openvpn/ccd/ra-<id>`, `/etc/openvpn/ccd/s<N>-peer` | one file per device, and per tunnel's other router: its address, and for a tunnel the networks behind it. A device **without** a file is refused |
+| `/usr/local/sbin/peakroute-ovpn-sync` | the script that brings the services in line with the files (rewritten on every commit that has OpenVPN tunnels) |
+| `/run/openvpn-server/status-<name>.log` | who is connected (written by the server every 10 seconds; the page reads it) |
+
+The directories belong to PeakRoute OS: a `pr-*.conf` in the two server and client directories, or any file in `ccd`, that is not wanted
+is deleted at commit. Each tunnel is a unit of the package's own service files (`openvpn-server@pr-ra`, `openvpn-client@pr-s2`...).
+The script restarts a unit only when its file changed or it is not running, stops the ones that are no longer wanted, and
+only touches `pr-ra` and `pr-s<N>`. The daemon runs it again when it starts, so tunnels come back after a reboot. A server's file holds
+a fingerprint of its device files, so that changing one restarts the server. A tunnel is not checked before the commit the way
+WireGuard's files are (OpenVPN cannot read a file without using it): what is written is checked by the router instead, strictly (every
+block is a block, every address an address).
+
+## 12. Still to do
+
+- A **QR code** for a device's file (WireGuard and OpenVPN).
 - IPv6 (everything here is IPv4 for now).
-- A test on real hardware after an ISO rebuild (`wireguard-tools` is added to `buildISO.sh`).
+- Renewing the **server certificate** and the authority before they run out (20 and 10 years: for now it would mean starting again).
+- A test on real hardware after an ISO rebuild (`wireguard-tools` and `openvpn` are added to `buildISO.sh`); the real tools were
+  tried in network namespaces (WireGuard and OpenVPN, with the real `wg-quick` and `openvpn`), not through systemd.
