@@ -564,6 +564,7 @@ func main() {
 	mux.HandleFunc("/api/v1/dns/forwards", requireAuth(netAPI.HandleDNSForwards))
 	mux.HandleFunc("/api/v1/dns/forwards/{id}", requireAuth(netAPI.HandleDNSForward))
 	mux.HandleFunc("/api/v1/wifi/radios/{name}", requireAuth(netAPI.HandleWifiRadio))
+	mux.HandleFunc("/api/v1/wifi/stations/{name}", requireAuth(netAPI.HandleWifiStation))
 	mux.HandleFunc("/api/v1/wifi/networks", requireAuth(netAPI.HandleWifiNetworks))
 	mux.HandleFunc("/api/v1/wifi/networks/{id}", requireAuth(netAPI.HandleWifiNetwork))
 	mux.HandleFunc("/api/v1/uplinks", requireAuth(netAPI.HandleUplinks))

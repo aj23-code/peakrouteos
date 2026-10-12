@@ -22,15 +22,15 @@ func chans(nums ...int) []wireless.Channel {
 // wlan0 is 2.4 GHz only (802.11n); wlan1 is 5 GHz (802.11ac) and can run two networks at once.
 func fakeWireless() wireless.Report {
 	return wireless.Report{IWAvailable: true, Adapters: []wireless.Adapter{
-		{Name: "wlan0", CapabilitiesKnown: true, APCapable: true, MaxAP: 1, Bands: []wireless.Band{
+		{Name: "wlan0", CapabilitiesKnown: true, APCapable: true, Modes: []string{"managed", "AP"}, MaxAP: 1, Bands: []wireless.Band{
 			{Name: config.Band24, Widths: []int{20, 40}, HT: true, Channels: chans(1, 6, 11)}}},
-		{Name: "wlan1", CapabilitiesKnown: true, APCapable: true, MaxAP: 2, Bands: []wireless.Band{
+		{Name: "wlan1", CapabilitiesKnown: true, APCapable: true, Modes: []string{"managed", "AP"}, MaxAP: 2, Bands: []wireless.Band{
 			{Name: config.Band5, Widths: []int{20, 40, 80}, HT: true, VHT: true, Channels: append(chans(36, 40, 44, 48),
 				wireless.Channel{Number: 52, DFS: true}, wireless.Channel{Number: 149, NoIR: true}, wireless.Channel{Number: 165, Disabled: true})}}},
-		{Name: "wlan2", CapabilitiesKnown: true, APCapable: false, Bands: []wireless.Band{{Name: config.Band24, Widths: []int{20}, Channels: chans(1)}}},
+		{Name: "wlan2", CapabilitiesKnown: true, APCapable: false, Modes: []string{"managed"}, Bands: []wireless.Band{{Name: config.Band24, Widths: []int{20}, Channels: chans(1)}}},
 		{Name: "wlan3", CapabilitiesKnown: false},
 		// 802.11n, but this one only offers 20 MHz channels: the configuration rules alone would allow 40
-		{Name: "wlan4", CapabilitiesKnown: true, APCapable: true, MaxAP: 1, Bands: []wireless.Band{
+		{Name: "wlan4", CapabilitiesKnown: true, APCapable: true, Modes: []string{"managed", "AP"}, MaxAP: 1, Bands: []wireless.Band{
 			{Name: config.Band24, Widths: []int{20}, HT: true, Channels: chans(1, 6, 11)}}},
 	}}
 }

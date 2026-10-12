@@ -221,6 +221,13 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	d.Artifacts = append(d.Artifacts, wifi...)
 	// always managed, so that taking the Wi-Fi section out of the configuration clears the files too
 	d.ManagedDirs = append(d.ManagedDirs, ManagedDir{Path: PathHostapdDir, Service: SvcWifi})
+	// Wi-Fi client adapters (the internet connection, or a link into a local network)
+	stations, err := stationArtifacts(cfg)
+	if err != nil {
+		return Desired{}, err
+	}
+	d.Artifacts = append(d.Artifacts, stations...)
+	d.ManagedDirs = append(d.ManagedDirs, ManagedDir{Path: PathWpaDir, Service: SvcNetworking})
 
 	// Upstream DNS servers for LAN clients: the ones set with a static address, or the ones that replace
 	// the provider's with DHCP or PPPoE
@@ -331,12 +338,13 @@ func renderInterfaces(cfg config.NetworkConfig, lan string) string {
 	b.WriteString("auto lo\niface lo inet loopback\n\n")
 
 	writeWanStanza(&b, cfg)
+	writeStationStanzas(&b, cfg)
 	fmt.Fprintf(&b, "auto %s\n", lan)
 	fmt.Fprintf(&b, "iface %s inet static\n", lan)
 	fmt.Fprintf(&b, "    address %s\n", cfg.LanIP)
 	fmt.Fprintf(&b, "    netmask %s\n", cfg.LanSubnet)
 	if lan == "br0" {
-		fmt.Fprintf(&b, "    bridge_ports %s\n", strings.Join(cfg.LanInterfaces, " "))
+		fmt.Fprintf(&b, "    bridge_ports %s\n", strings.Join(defaultPorts(cfg), " "))
 	} else {
 		// The wizard leaves an empty line here for a single LAN port; keeping it means a box the
 		// wizard configured shows no change on its first commit

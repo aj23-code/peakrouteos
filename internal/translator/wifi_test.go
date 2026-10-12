@@ -335,7 +335,7 @@ func TestOnlyWhatIsSwitchedOnIsRendered(t *testing.T) {
 	// the directory is managed whether or not there is a Wi-Fi section, so that removing the section
 	// removes the files; on a box that has none the plan stays empty
 	for _, c := range []config.NetworkConfig{routerCfg(), cfg} {
-		if d := mustRender(t, c); len(d.ManagedDirs) != 5 || d.ManagedDirs[0].Path != PathHostapdDir || d.ManagedDirs[1].Path != PathWireGuardDir || d.ManagedDirs[2].Path != PathOVServerDir || d.ManagedDirs[4].Path != PathOVCCDDir {
+		if d := mustRender(t, c); len(d.ManagedDirs) != 6 || d.ManagedDirs[0].Path != PathHostapdDir || d.ManagedDirs[1].Path != PathWpaDir || d.ManagedDirs[2].Path != PathWireGuardDir || d.ManagedDirs[3].Path != PathOVServerDir || d.ManagedDirs[5].Path != PathOVCCDDir {
 			t.Errorf("%+v", d.ManagedDirs)
 		}
 	}
@@ -594,8 +594,9 @@ func TestTheRealHostapdUnderstandsEverySettingWeWrite(t *testing.T) {
 	auto.Channel = 0
 	cases := map[string]config.NetworkConfig{
 		"2.4 GHz, three networks, steering and every option": wifiCfg([]config.WifiRadio{r40, he5}, both, wpa3, ssid("wifi3", "Third", config.Band24)),
-		"5 GHz at 160 MHz":  wifiCfg([]config.WifiRadio{func() config.WifiRadio { r := r5(); r.Width, r.Channel = 160, 100; return r }()}, ssid("wifi1", "Home", config.Band5)),
-		"automatic channel": wifiCfg([]config.WifiRadio{auto}, ssid("wifi1", "Home", config.Band5)),
+		"a link for another PeakRoute box (WDS)":             wifiCfg([]config.WifiRadio{r5()}, func() config.WifiNetwork { n := ssid("link", "RoofLink", config.Band5); n.WDS = true; return n }()),
+		"5 GHz at 160 MHz":                                   wifiCfg([]config.WifiRadio{func() config.WifiRadio { r := r5(); r.Width, r.Channel = 160, 100; return r }()}, ssid("wifi1", "Home", config.Band5)),
+		"automatic channel":                                  wifiCfg([]config.WifiRadio{auto}, ssid("wifi1", "Home", config.Band5)),
 	}
 	checked := 0
 	for name, cfg := range cases {
@@ -609,7 +610,7 @@ func TestTheRealHostapdUnderstandsEverySettingWeWrite(t *testing.T) {
 			}
 		}
 	}
-	if checked < 4 {
+	if checked < 5 {
 		t.Fatalf("only %d files were checked", checked)
 	}
 }

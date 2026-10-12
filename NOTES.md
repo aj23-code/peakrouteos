@@ -909,6 +909,35 @@ setting, then AP mode (the limited GUI and a translator that bridges everything 
   networks card says so and cannot add a network.
 - There is no list of connected devices here: that is what the Clients page is for (see below).
 
+### Wi-Fi client adapters: the internet over Wi-Fi, and point-to-point links (built 2026-10-12)
+
+An adapter is either an access point or a **station** (a client of another access point); both are in the same Wireless page card, and
+an adapter cannot be both in use (a switched-off one does not count). `WifiConfig.Stations` (`config/wifi.go`: `WifiStation{name, ssid,
+security, passphrase, hidden, role, network, disabled}`), at most 2; WPA2, WPA3 or both, like the access point side.
+- **Role `uplink`** is the router's internet connection: saving it makes the adapter `wan_interface` (a cable port that was it is left
+  unassigned; a LAN port of that name is dropped) and refuses a connection that uses a VLAN or PPPoE (the validation says the same:
+  `wan_vlan`, `wan_mode`). Switching it off or removing it gives the internet port back to the first cable port that is not a LAN port
+  (refused with a message if none is free). An uplink that is not `wan_interface` is **not in use** (`UplinkStation`): nothing is rendered
+  for it, and the page says which port is the internet port.
+- **Role `bridge`** joins a local network like a cable port, over the air: a point-to-point link to another PeakRoute router (the far
+  end has *Accept point-to-point links* on a Wi-Fi network: hostapd `wds_sta=1`, which makes the stations' 4-address interfaces join the
+  network's bridge) or a wireless extender. The station has its own stanza (`iface wlan1 inet manual`, `pre-up iw dev $IFACE set 4addr
+  on`, `wpa-conf ...`) and is a member of the bridge: `defaultPorts` and `networkMembers` list it after the cable ports (so `LanTarget`
+  is `br0` even with one cable port), `carriedBy` counts it, and a network that a link joins cannot be deleted.
+- **How it is joined:** ifupdown's own wpa hook (`wpasupplicant` package, added to the image) starts wpa_supplicant from the stanza's
+  `wpa-conf /etc/peakroute/wpa/<adapter>.conf` (0600, a managed directory, `translator/wifi_station.go`). The network name is written in
+  hexadecimal (nothing in a name can break the file), WPA3 as `key_mgmt=SAE` with `sae_password` and management frames required, both as
+  `WPA-PSK SAE`; `scan_ssid=1` for a hidden one; `country=` from the router-wide country. A change to a file restarts networking (that
+  reads it again; the DHCP server follows, as always).
+- **API:** `PUT/DELETE /api/v1/wifi/stations/{adapter}`, staged like the rest; the adapter must exist and (if the hardware can be read)
+  have `managed` among its modes. `GET /api/v1/wifi` gains `stations` (each with `in_use`) and `wan_port`. The review shows "Wi-Fi
+  connection wlan0: joins Cafe, WPA2/WPA3, internet connection, password set" and never a password.
+- **Checked** with the real `wpa_supplicant` (v2.10; reads the whole file before it looks for the adapter, with a control that proves it
+  can see a bad setting) and the real `hostapd` for the WDS setting, both skipped where not installed. Not possible without hardware:
+  whether a given adapter does 4-address mode, WPA3 as a client or a link at all.
+- **Not built:** a scan for networks to pick from, choosing a particular access point (BSSID) or band, using the radio as client and
+  access point at once (needs the driver's combinations), roaming between several access points of one name.
+
 ### Clients: wired or wireless, and online or offline (added 2026-10-10)
 
 - **Wi-Fi stations:** `iw dev` lists the interfaces; every one in AP mode is asked `iw dev <if> station dump`

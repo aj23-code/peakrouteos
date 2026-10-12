@@ -27,13 +27,16 @@ func vlanOf(cfg config.NetworkConfig, id string) int {
 
 func networkIface(n config.Network) string { return fmt.Sprintf("br%d", n.VLAN) }
 
-// defaultPorts are the LAN ports whose untagged network is the default one.
+// defaultPorts are the LAN ports whose untagged network is the default one, then the Wi-Fi links that join it.
 func defaultPorts(cfg config.NetworkConfig) []string {
 	var out []string
 	for _, port := range cfg.LanInterfaces {
 		if cfg.PortNetworks[port].NativeID() == config.DefaultNetworkID {
 			out = append(out, port)
 		}
+	}
+	for _, st := range cfg.BridgeStations(config.DefaultNetworkID) {
+		out = append(out, st.Name)
 	}
 	return out
 }
@@ -45,6 +48,9 @@ func networkMembers(cfg config.NetworkConfig, n config.Network) []string {
 		if cfg.PortNetworks[port].NativeID() == n.ID {
 			members = append(members, port)
 		}
+	}
+	for _, st := range cfg.BridgeStations(n.ID) {
+		members = append(members, st.Name)
 	}
 	for _, port := range cfg.LanInterfaces {
 		for _, t := range cfg.PortNetworks[port].Tagged {
@@ -67,7 +73,7 @@ func anyNetworkDHCP(cfg config.NetworkConfig) bool {
 
 // carriedBy reports whether any LAN port or Wi-Fi network carries a network.
 func carriedBy(cfg config.NetworkConfig, id string) bool {
-	if wifiCarries(cfg, id) {
+	if wifiCarries(cfg, id) || len(cfg.BridgeStations(id)) > 0 {
 		return true
 	}
 	for _, port := range cfg.LanInterfaces {
@@ -106,6 +112,7 @@ func renderInterfacesNetworks(cfg config.NetworkConfig, lan string) string {
 	var b strings.Builder
 	b.WriteString("auto lo\niface lo inet loopback\n\n")
 	writeWanStanza(&b, cfg)
+	writeStationStanzas(&b, cfg)
 
 	// a VLAN interface for every port that carries a network tagged
 	for _, port := range cfg.LanInterfaces {

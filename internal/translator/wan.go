@@ -63,6 +63,10 @@ func writeWanStanza(b *strings.Builder, cfg config.NetworkConfig) {
 		opts = append(opts, "hwaddress ether "+cfg.WanMAC)
 	}
 	static := strings.EqualFold(cfg.WanMode, "static")
+	// a Wi-Fi connection is joined by wpa_supplicant, started from this stanza
+	if st, ok := cfg.UplinkStation(); ok {
+		opts = append(opts, "wpa-conf "+wpaPath(st.Name))
+	}
 	if mtu := cfg.WanMTU; !pppoe && mtu > 0 && mtu != cfg.UsualWanMTU() {
 		// a VLAN interface cannot be larger than the port under it
 		if vlan && mtu > config.DefaultWanMTU {

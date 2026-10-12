@@ -22,6 +22,13 @@ const (
 
 	MaxWifiNetworks = 16
 	MaxWifiRadios   = 4
+
+	// A station is an adapter used as a Wi-Fi client of another access point. As the uplink it is the router's internet connection
+	// (the adapter is the internet port); as a bridge it joins a local network (a point-to-point link between two PeakRoute boxes,
+	// a wireless extender), using 4-address mode so that the devices behind it keep their own addresses.
+	StationUplink   = "uplink"
+	StationBridge   = "bridge"
+	MaxWifiStations = 2
 )
 
 // WifiRadio is how one adapter is used as an access point.
@@ -50,17 +57,34 @@ type WifiNetwork struct {
 	BandSteering    bool `json:"band_steering"`
 	Hidden          bool `json:"hidden,omitempty"`           // not announced in beacons
 	ClientIsolation bool `json:"client_isolation,omitempty"` // devices on the SSID cannot talk to each other
-	Disabled        bool `json:"disabled,omitempty"`
+	// WDS lets another PeakRoute box link to this network in 4-address mode (the far end of a point-to-point link).
+	WDS      bool `json:"wds,omitempty"`
+	Disabled bool `json:"disabled,omitempty"`
+}
+
+// WifiStation is an adapter used as a client of another access point.
+type WifiStation struct {
+	Name       string `json:"name"` // the adapter, e.g. wlp3s0
+	SSID       string `json:"ssid"` // the network to join
+	Security   string `json:"security"`
+	Passphrase string `json:"passphrase"`
+	Hidden     bool   `json:"hidden,omitempty"` // the network does not announce its name: ask for it by name
+	Role       string `json:"role"`             // StationUplink or StationBridge
+	// Network is the local network a bridge joins ("lan" is the default one).
+	Network  string `json:"network,omitempty"`
+	Disabled bool   `json:"disabled,omitempty"`
 }
 
 // WifiConfig is the whole Wi-Fi setup.
 type WifiConfig struct {
 	Radios   []WifiRadio   `json:"radios,omitempty"`
 	Networks []WifiNetwork `json:"networks,omitempty"`
+	Stations []WifiStation `json:"stations,omitempty"`
 }
 
 func (w WifiConfig) clone() WifiConfig {
 	w.Radios = append([]WifiRadio(nil), w.Radios...)
+	w.Stations = append([]WifiStation(nil), w.Stations...)
 	if len(w.Networks) > 0 {
 		nets := make([]WifiNetwork, len(w.Networks))
 		for i, n := range w.Networks {
@@ -116,6 +140,49 @@ func (w WifiConfig) Active() (radios []WifiRadio, networks []WifiNetwork) {
 		}
 	}
 	return radios, networks
+}
+
+// FindStation returns a station by adapter name.
+func (w WifiConfig) FindStation(name string) (WifiStation, bool) {
+	for _, st := range w.Stations {
+		if st.Name == name {
+			return st, true
+		}
+	}
+	return WifiStation{}, false
+}
+
+// ActiveStations are the stations that are switched on.
+func (w WifiConfig) ActiveStations() []WifiStation {
+	var out []WifiStation
+	for _, st := range w.Stations {
+		if !st.Disabled {
+			out = append(out, st)
+		}
+	}
+	return out
+}
+
+// UplinkStation returns the station that is the internet connection: switched on, with the uplink role, and the adapter that is the
+// internet port. (One that is not the internet port is not in use.)
+func (c NetworkConfig) UplinkStation() (WifiStation, bool) {
+	for _, st := range c.WifiSettings().ActiveStations() {
+		if st.Role == StationUplink && st.Name == c.WanInterface {
+			return st, true
+		}
+	}
+	return WifiStation{}, false
+}
+
+// BridgeStations are the stations in use that join a local network.
+func (c NetworkConfig) BridgeStations(networkID string) []WifiStation {
+	var out []WifiStation
+	for _, st := range c.WifiSettings().ActiveStations() {
+		if st.Role == StationBridge && st.Network == networkID {
+			out = append(out, st)
+		}
+	}
+	return out
 }
 
 // ---- channels ------------------------------------------------------------------------------------
@@ -372,6 +439,75 @@ func (c NetworkConfig) validateWifi(add func(field, format string, args ...any))
 		}
 	}
 
+	// stations
+	if len(w.Stations) > MaxWifiStations {
+		add("wifi.stations", "at most %d adapters can be used as Wi-Fi clients", MaxWifiStations)
+	}
+	apNames := map[string]bool{} // adapters that are access points in use
+	for _, r := range w.Radios {
+		if !r.Disabled {
+			apNames[r.Name] = true
+		}
+	}
+	stSeen := map[string]bool{}
+	uplinks := 0
+	for i, st := range w.Stations {
+		field := func(n string) string { return fmt.Sprintf("wifi.stations[%d].%s", i, n) }
+		switch {
+		case !IsValidInterfaceName(st.Name):
+			add(field("name"), "must be an adapter name (letters, digits, '.', '_' or '-', up to 15 characters)")
+		case stSeen[st.Name]:
+			add(field("name"), "this adapter is listed more than once")
+		case apNames[st.Name] && !st.Disabled:
+			add(field("name"), "this adapter is an access point: an adapter is either an access point or a client")
+		default:
+			stSeen[st.Name] = true
+		}
+		if !ValidSSID(st.SSID) {
+			add(field("ssid"), "use 1 to 32 characters, with no space at either end")
+		}
+		if !validSecurity(st.Security) {
+			add(field("security"), "must be WPA2, WPA3 or both")
+		}
+		if !ValidPassphrase(st.Passphrase) {
+			add(field("passphrase"), "use 8 to 63 characters (letters, digits and punctuation)")
+		}
+		switch st.Role {
+		case StationUplink:
+			if !st.Disabled {
+				uplinks++
+			}
+		case StationBridge:
+			if st.Network != DefaultNetworkID {
+				if _, ok := c.FindNetwork(st.Network); !ok {
+					add(field("network"), "choose the local network this link joins")
+				}
+			}
+			if st.Name == c.WanInterface {
+				add(field("role"), "this adapter is the internet port: it cannot also join a local network")
+			}
+			for _, lan := range c.LanInterfaces {
+				if lan == st.Name {
+					add(field("role"), "this adapter is also a LAN port")
+				}
+			}
+		default:
+			add(field("role"), "choose whether this is the internet connection or a link into a local network")
+		}
+	}
+	if uplinks > 1 {
+		add("wifi.stations", "only one adapter can be the internet connection")
+	}
+	if st, ok := c.UplinkStation(); ok {
+		if c.WanVlan > 0 {
+			add("wan_vlan", "a VLAN cannot be used on a Wi-Fi connection (%s)", st.Name)
+		}
+		if c.WanKind() == WanPPPoE {
+			add("wan_mode", "PPPoE cannot run over a Wi-Fi connection (%s)", st.Name)
+		}
+	}
+	activeStations := w.ActiveStations()
+
 	// every band a switched-on network uses needs a switched-on radio for it
 	radios, networks := w.Active()
 
@@ -406,7 +542,7 @@ func (c NetworkConfig) validateWifi(add func(field, format string, args ...any))
 		sort.Strings(missing)
 		add("wifi.coverage", "no adapter is switched on for: %s", strings.Join(missing, ", "))
 	}
-	if len(radios) > 0 && len(networks) > 0 && c.Country == "" {
+	if ((len(radios) > 0 && len(networks) > 0) || len(activeStations) > 0) && c.Country == "" {
 		add("country", "choose your country in System, Settings before switching Wi-Fi on: it decides which channels may be used")
 	}
 }

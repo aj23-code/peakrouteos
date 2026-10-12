@@ -223,6 +223,10 @@ func renderHostapd(cfg config.NetworkConfig, p radioPlan, firstOn map[string]str
 		if n.ClientIsolation {
 			line("ap_isolate=1")
 		}
+		if n.WDS {
+			// the far end of a point-to-point link: 4-address mode, the link joins this network's bridge
+			line("wds_sta=1")
+		}
 		// 802.11k and v let devices ask where to roam to and let the access point suggest it
 		line("rrm_neighbor_report=1")
 		line("bss_transition=1")

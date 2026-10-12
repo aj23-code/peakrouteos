@@ -182,6 +182,7 @@ func DiffNetwork(active, candidate NetworkConfig) []Change {
 	}
 	changes = append(changes, diffWanSecret(active, candidate)...)
 	changes = append(changes, diffWifi(active, candidate)...)
+	changes = append(changes, diffStations(active, candidate)...)
 	changes = append(changes, diffFirewall(active, candidate)...)
 	changes = append(changes, diffDNS(active, candidate)...)
 	changes = append(changes, diffDDNS(active, candidate)...)
@@ -420,6 +421,9 @@ func wifiNetworkText(c NetworkConfig, n WifiNetwork) string {
 	if n.ClientIsolation {
 		parts = append(parts, "devices isolated from each other")
 	}
+	if n.WDS {
+		parts = append(parts, "accepts point-to-point links")
+	}
 	if n.Disabled {
 		parts = append(parts, "switched off")
 	}
@@ -483,6 +487,58 @@ func diffWifi(active, candidate NetworkConfig) []Change {
 	for _, n := range a.Networks {
 		if !seenNet[n.ID] {
 			changes = append(changes, Change{Field: "wifi_networks", Label: label(n), Old: wifiNetworkText(active, n), New: "(removed)"})
+		}
+	}
+	return changes
+}
+
+func stationText(c NetworkConfig, st WifiStation) string {
+	security := map[string]string{SecurityWPA2: "WPA2", SecurityWPA3: "WPA3", SecurityWPA2WPA3: "WPA2/WPA3"}[st.Security]
+	if security == "" {
+		security = text(st.Security)
+	}
+	role := "internet connection"
+	if st.Role == StationBridge {
+		role = "link into " + localNetworkName(c, st.Network)
+	}
+	parts := []string{"joins " + text(st.SSID), security, role}
+	if st.Hidden {
+		parts = append(parts, "hidden network")
+	}
+	if st.Disabled {
+		parts = append(parts, "switched off")
+	}
+	return strings.Join(parts, ", ")
+}
+
+func diffStations(active, candidate NetworkConfig) []Change {
+	a, b := active.WifiSettings(), candidate.WifiSettings()
+	var changes []Change
+	label := func(st WifiStation) string { return "Wi-Fi connection " + st.Name }
+	before := map[string]WifiStation{}
+	for _, st := range a.Stations {
+		before[st.Name] = st
+	}
+	seen := map[string]bool{}
+	for _, st := range b.Stations {
+		seen[st.Name] = true
+		old, existed := before[st.Name]
+		if !existed {
+			changes = append(changes, Change{Field: "wifi_stations", Label: label(st), Old: valueNone, New: stationText(candidate, st) + ", password set"})
+			continue
+		}
+		oldText, newText := stationText(active, old), stationText(candidate, st)
+		if oldText == newText && old.Passphrase == st.Passphrase {
+			continue
+		}
+		if old.Passphrase != st.Passphrase {
+			newText += ", new password"
+		}
+		changes = append(changes, Change{Field: "wifi_stations", Label: label(st), Old: oldText, New: newText})
+	}
+	for _, st := range a.Stations {
+		if !seen[st.Name] {
+			changes = append(changes, Change{Field: "wifi_stations", Label: label(st), Old: stationText(active, st), New: "(removed)"})
 		}
 	}
 	return changes

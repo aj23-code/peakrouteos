@@ -12,6 +12,7 @@ window.WirelessModule = (function () {
     let localNets = [];       // GET /api/v1/networks: where a Wi-Fi network can be joined
     let lastReport = '';
     let radios = {};          // adapter name -> { form, errors, message }
+    let stations = {};        // adapter name -> { form, errors, message, confirmRemove }
     let ssids = [];           // { key, isNew, server, form, errors, message, confirmDelete }
     let selected = null;
     let busy = false;
@@ -109,8 +110,15 @@ window.WirelessModule = (function () {
         return html;
     }
 
+    const serverStation = (a) => ((wifi && wifi.stations) || []).find(x => x.name === a.name);
+    const serverRadio = (a) => ((wifi && wifi.radios) || []).find(x => x.name === a.name);
+
     function radioHtml(a) {
         if (!a.capabilities_known || !a.ap_capable) return '';
+        const stn = serverStation(a);
+        if (stn && stn.enabled) {
+            return '<div class="wifi-radio"><p class="form-hint">This adapter is used as a Wi-Fi client (below). An adapter is either an access point or a client: switch the client off and save to use it as an access point.</p></div>';
+        }
         const st = radioState(a);
         const f = st.form;
         const band = bandOf(a, f.band);
@@ -146,11 +154,149 @@ window.WirelessModule = (function () {
         </div>`;
     }
 
+    // ---------------------------------------------------------------- adapters: use as a Wi-Fi client
+
+    const ROLES = [
+        ['uplink', 'The internet connection', 'This adapter becomes the internet port: the router connects to another Wi-Fi network (a hotel, a café, a neighbour) and shares it. A cable port that was the internet port is left unassigned.'],
+        ['bridge', 'A link into a local network', 'The adapter joins a local network like a cable port, over the air: a point-to-point link to another PeakRoute router, or a wireless extender. Devices behind it keep their own addresses.'],
+    ];
+
+    function stationFormOf(a) {
+        const s0 = serverStation(a);
+        if (s0) return { enabled: s0.enabled, ssid: s0.ssid || '', passphrase: s0.passphrase || '', security: s0.security || 'wpa2-wpa3', hidden: !!s0.hidden,
+            role: s0.role || 'uplink', network: s0.network || 'lan', show: false };
+        return { enabled: false, ssid: '', passphrase: '', security: 'wpa2-wpa3', hidden: false, role: 'uplink', network: 'lan', show: false };
+    }
+
+    const stationNorm = (f) => JSON.stringify([f.enabled, f.ssid, f.passphrase, f.security, f.hidden, f.role, f.role === 'bridge' ? f.network : '']);
+
+    function stationState(a) {
+        if (!stations[a.name]) stations[a.name] = { form: stationFormOf(a), errors: {}, message: null, confirmRemove: false };
+        return stations[a.name];
+    }
+
+    function stationDirty(a) {
+        const st = stationState(a);
+        if (!serverStation(a) && !st.form.enabled) return false;
+        return stationNorm(st.form) !== stationNorm(stationFormOf(a));
+    }
+
+    function stationHtml(a) {
+        const canClient = !a.capabilities_known || a.modes.includes('managed');
+        if (!canClient) return '';
+        const rad = serverRadio(a);
+        if (rad && rad.enabled) {
+            return '<div class="wifi-station"><p class="form-hint">This adapter is an access point (above). An adapter is either an access point or a client: switch the access point off and save to use it as a Wi-Fi client.</p></div>';
+        }
+        const st = stationState(a);
+        const f = st.form;
+        const server = serverStation(a);
+        const lock = !editable() || busy;
+        const off = lock || !f.enabled;
+        const dirty = stationDirty(a);
+        const key = escapeHtml(a.name);
+        const err = (field) => st.errors[field] ? `<p class="field-error">${escapeHtml(st.errors[field])}</p>` : '';
+        const netOptions = (localNets.length ? localNets : [{ id: 'lan', default: true }])
+            .map(n => optionHtml(n.id, n.default ? 'LAN' : `${n.name} (VLAN ${n.vlan})`, f.network)).join('');
+        const notUsed = server && server.enabled && !server.in_use && server.role === 'uplink';
+        const input = (field, label, type, extra) => `<div class="form-field"><label for="st-${key}-${field}">${label}</label>
+            ${field === 'passphrase'
+                ? `<div class="pass-row"><input type="${f.show ? 'text' : 'password'}" id="st-${key}-${field}" data-st="${key}" data-stf="${field}" value="${escapeHtml(f[field])}" autocomplete="off" spellcheck="false" autocapitalize="off"${st.errors[field] ? ' aria-invalid="true"' : ''}${off ? ' disabled' : ''}><button type="button" class="cfg-btn cfg-btn--ghost st-reveal" data-st="${key}" aria-pressed="${f.show}">${f.show ? 'Hide' : 'Show'}</button></div>`
+                : `<input type="${type}" id="st-${key}-${field}" data-st="${key}" data-stf="${field}" value="${escapeHtml(f[field])}" autocomplete="off" spellcheck="false" autocapitalize="off" ${extra || ''}${st.errors[field] ? ' aria-invalid="true"' : ''}${off ? ' disabled' : ''}>`}
+            ${err(field)}</div>`;
+
+        return `<div class="wifi-station" data-adapter="${key}">
+            <div class="net-card-head"><h3 class="form-section">Wi-Fi client</h3>${server && server.pending ? '<span class="tag tag-draft">Draft</span>' : ''}</div>
+            <label class="toggle toggle--block"><input type="checkbox" data-st="${key}" data-stf="enabled"${f.enabled ? ' checked' : ''}${lock ? ' disabled' : ''}>
+                <span><strong>Connect this adapter to another Wi-Fi network</strong><span class="form-hint">The adapter joins a network as a client, the way a phone does.</span></span></label>
+            <div class="form-grid${f.enabled ? '' : ' is-off'}">
+                ${input('ssid', 'Network name', 'text', 'placeholder="Name of the Wi-Fi network"')}
+                ${input('passphrase', 'Password')}
+                <div class="form-field"><label for="st-${key}-security">Security</label>
+                    <select id="st-${key}-security" class="role-select" data-st="${key}" data-stf="security"${off ? ' disabled' : ''}>${SECURITY.map(x => optionHtml(x[0], x[1], f.security)).join('')}</select>${err('security')}</div>
+                <div class="form-field"><label class="toggle"><input type="checkbox" data-st="${key}" data-stf="hidden"${f.hidden ? ' checked' : ''}${off ? ' disabled' : ''}> <span>The network's name is hidden</span></label></div>
+            </div>
+            <h3 class="form-section">Use it as</h3>
+            <div class="net-access">
+                ${ROLES.map(r => `<label class="toggle toggle--block"><input type="radio" name="st-role-${key}" data-st="${key}" data-stf="role" value="${r[0]}"${f.role === r[0] ? ' checked' : ''}${off ? ' disabled' : ''}>
+                    <span><strong>${r[1]}</strong><span class="form-hint">${r[2]}</span></span></label>`).join('')}
+            </div>
+            ${err('role')}
+            ${f.role === 'bridge' ? `<div class="form-grid"><div class="form-field"><label for="st-${key}-network">Local Network</label>
+                <select id="st-${key}-network" class="role-select" data-st="${key}" data-stf="network"${off ? ' disabled' : ''}>${netOptions}</select>${err('network')}</div></div>` : ''}
+            ${notUsed ? `<p class="form-hint net-warn">Not in use: the internet port is <strong>${escapeHtml(wifi.wan_port || '?')}</strong> now. Save again to make this adapter the internet port.</p>` : ''}
+            ${(!wifi.country && f.enabled) ? '<p class="form-hint net-warn">A country must be chosen in Settings before this can be committed.</p>' : ''}
+            ${st.message ? `<div class="form-message${st.message.kind === 'ok' ? ' form-message--ok' : ''}" role="alert">${escapeHtml(st.message.text)}</div>` : ''}
+            <div class="form-actions">
+                ${server ? `<button type="button" class="cfg-btn cfg-btn--danger st-remove" data-st="${key}"${lock ? ' disabled' : ''}>${st.confirmRemove ? 'Click again to remove' : 'Stop using as a client'}</button>` : ''}
+                <span class="form-hint">${dirty ? 'You have unsaved changes.' : ''}</span>
+                <button type="button" class="cfg-btn cfg-btn--ghost st-reset" data-st="${key}"${busy || !dirty ? ' disabled' : ''}>Reset</button>
+                <button type="button" class="cfg-btn cfg-btn--primary st-save" data-st="${key}"${lock || !dirty ? ' disabled' : ''}>Save to draft</button>
+            </div>
+        </div>`;
+    }
+
+    const ST_FIELDS = ['ssid', 'passphrase', 'security', 'role', 'network', 'name'];
+
+    async function saveStation(a) {
+        const st = stationState(a);
+        const f = st.form;
+        st.message = null;
+        st.errors = {};
+        busy = true;
+        renderAdapters();
+        const res = await apiFetch('/api/v1/wifi/stations/' + encodeURIComponent(a.name), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ssid: f.ssid, passphrase: f.passphrase, security: f.security, hidden: f.hidden, role: f.role, network: f.role === 'bridge' ? f.network : '', enabled: f.enabled }),
+        });
+        busy = false;
+        if (!res || !res.ok) {
+            const e = await errorOf(res, `Saving failed${res ? ' (' + res.status + ')' : ''}.`);
+            const general = [];
+            e.fields.forEach(x => { if (ST_FIELDS.includes(x.field)) st.errors[x.field] = x.message; else general.push(x.message); });
+            st.message = { text: general.join(' ') || (Object.keys(st.errors).length ? 'Some settings need attention.' : e.general), kind: 'error' };
+            renderAdapters();
+            return;
+        }
+        await load();
+        stations[a.name] = { form: stationFormOf(a), errors: {}, message: { text: 'Saved as a draft. Review and commit it from the bar at the top when you are ready.', kind: 'ok' }, confirmRemove: false };
+        renderAdapters();
+        afterSave();
+    }
+
+    async function removeStation(a) {
+        const st = stationState(a);
+        if (!st.confirmRemove) {
+            st.confirmRemove = true;
+            renderAdapters();
+            setTimeout(() => { if (st.confirmRemove) { st.confirmRemove = false; renderAdapters(); } }, 4000);
+            return;
+        }
+        st.confirmRemove = false;
+        busy = true;
+        renderAdapters();
+        const res = await apiFetch('/api/v1/wifi/stations/' + encodeURIComponent(a.name), { method: 'DELETE' });
+        busy = false;
+        if (!res || !res.ok) {
+            const e = await errorOf(res, 'The Wi-Fi client could not be removed.');
+            st.message = { text: e.fields.map(x => x.message).join(' ') || e.general, kind: 'error' };
+            renderAdapters();
+            return;
+        }
+        delete stations[a.name];
+        showMessage('Wi-Fi client removed from the draft. Review and commit it from the bar at the top when you are ready.', 'ok');
+        await load();
+        afterSave();
+    }
+
     function adapterHtml(a) {
         let badge;
         if (!a.capabilities_known) badge = '<span class="tag">Capabilities unknown</span>';
         else if (a.ap_capable) badge = '<span class="tag tag-ok">Can be an access point</span>';
         else badge = '<span class="tag tag-warn">Cannot be an access point</span>';
+        const srv = serverStation(a);
+        if (srv && srv.enabled) badge += ` <span class="tag tag-ok">Wi-Fi client${srv.in_use ? '' : ' (not in use)'}</span>`;
 
         return `<section class="card wifi-adapter" data-adapter="${escapeHtml(a.name)}">
             <div class="net-card-head">
@@ -166,6 +312,7 @@ window.WirelessModule = (function () {
                 ${a.max_ap ? `<div><dt>Wi-Fi networks at once</dt><dd>${a.max_ap}</dd></div>` : ''}
             </dl>
             ${radioHtml(a)}
+            ${stationHtml(a)}
             <details class="wifi-caps"><summary>Bands and channels</summary>${a.bands.map(bandHtml).join('')}</details>
         </section>`;
     }
@@ -230,12 +377,12 @@ window.WirelessModule = (function () {
         return {
             ssid: n.ssid || '', passphrase: n.passphrase || '', network: n.network || 'lan', security: n.security || 'wpa2-wpa3',
             b24: (n.bands || []).includes('2.4 GHz'), b5: (n.bands || []).includes('5 GHz'),
-            steering: !!n.band_steering, hidden: !!n.hidden, isolation: !!n.client_isolation, enabled: n.enabled !== false,
+            steering: !!n.band_steering, hidden: !!n.hidden, isolation: !!n.client_isolation, wds: !!n.wds, enabled: n.enabled !== false,
             show: false,
         };
     }
 
-    const ssidNorm = (f) => JSON.stringify([f.ssid, f.passphrase, f.network, f.security, f.b24, f.b5, f.steering, f.hidden, f.isolation, f.enabled]);
+    const ssidNorm = (f) => JSON.stringify([f.ssid, f.passphrase, f.network, f.security, f.b24, f.b5, f.steering, f.hidden, f.isolation, f.wds, f.enabled]);
     const ssidDirty = (c) => c.isNew || ssidNorm(c.form) !== ssidNorm(ssidFormOf(c.server));
 
     function bandsOf(f) { return BANDS.filter(b => (b === '2.4 GHz' ? f.b24 : f.b5)); }
@@ -330,6 +477,7 @@ window.WirelessModule = (function () {
                 ${ssidToggle(c, 'enabled', 'Switched on', 'Off, the network is kept here but not broadcast.')}
                 ${ssidToggle(c, 'hidden', 'Hide the name', 'The network does not show up in the list of Wi-Fi networks; devices have to be told its name.')}
                 ${ssidToggle(c, 'isolation', 'Isolate devices from each other', 'Devices on this Wi-Fi network cannot talk to each other, only to the network behind it.')}
+                ${ssidToggle(c, 'wds', 'Accept point-to-point links', 'Lets another PeakRoute router link to this network over the air (set its adapter to link into a local network), so two sites share one network. Use a WPA3 or WPA2 network that nobody else knows the password of.')}
             </div>
 
             ${c.message ? `<div class="form-message${c.message.kind === 'ok' ? ' form-message--ok' : ''}" role="alert">${escapeHtml(c.message.text)}</div>` : ''}
@@ -374,7 +522,7 @@ window.WirelessModule = (function () {
         const bands = bandsOf(f);
         return {
             ssid: f.ssid, passphrase: f.passphrase, network: f.network, security: f.security, bands,
-            band_steering: bands.length === 2 && f.steering, hidden: f.hidden, client_isolation: f.isolation, enabled: f.enabled,
+            band_steering: bands.length === 2 && f.steering, hidden: f.hidden, client_isolation: f.isolation, wds: f.wds, enabled: f.enabled,
         };
     }
 
@@ -463,6 +611,7 @@ window.WirelessModule = (function () {
         // adapter forms follow the server unless they hold unsaved edits
         ((report && report.adapters) || []).forEach(a => {
             if (!radios[a.name] || !radioDirty(a)) radios[a.name] = { form: radioFormOf(a), errors: {}, message: radios[a.name] ? radios[a.name].message : null };
+            if (!stations[a.name] || !stationDirty(a)) stations[a.name] = { form: stationFormOf(a), errors: {}, message: stations[a.name] ? stations[a.name].message : null, confirmRemove: false };
         });
     }
 
@@ -519,6 +668,19 @@ window.WirelessModule = (function () {
                 return;
             }
 
+            if (el.dataset.stf) {
+                const a = report.adapters.find(x => x.name === el.dataset.st);
+                if (!a) return;
+                const st = stationState(a);
+                const key = el.dataset.stf;
+                if (el.type === 'radio' && !el.checked) return;
+                st.form[key] = el.type === 'checkbox' ? el.checked : el.value;
+                delete st.errors[key];
+                st.message = null;
+                renderAdapters();
+                return;
+            }
+
             const c = el.dataset.key && cardOf(el.dataset.key);
             if (!c) return;
             const field = el.dataset.field;
@@ -537,6 +699,22 @@ window.WirelessModule = (function () {
         // typing in a text box must not rebuild the card (that would drop the focus)
         body.addEventListener('input', (e) => {
             const el = e.target;
+            if (el.dataset && el.dataset.stf && el.type !== 'checkbox' && el.type !== 'radio' && el.tagName !== 'SELECT') {
+                const a = report.adapters.find(x => x.name === el.dataset.st);
+                if (!a) return;
+                const st = stationState(a);
+                st.form[el.dataset.stf] = el.value;
+                delete st.errors[el.dataset.stf];
+                el.removeAttribute('aria-invalid');
+                const msg = el.closest('.form-field').querySelector('.field-error');
+                if (msg) msg.remove();
+                const box = body.querySelector(`.wifi-station[data-adapter="${el.dataset.st}"]`);
+                const dirty = stationDirty(a);
+                const save = box && box.querySelector('.st-save'), reset = box && box.querySelector('.st-reset');
+                if (save) save.disabled = !editable() || busy || !dirty;
+                if (reset) reset.disabled = busy || !dirty;
+                return;
+            }
             const c = el.dataset && el.dataset.key && cardOf(el.dataset.key);
             if (!c || el.type === 'checkbox' || el.tagName === 'SELECT') return;
             c.form[el.dataset.field] = el.value;
@@ -562,6 +740,21 @@ window.WirelessModule = (function () {
             const btn = e.target.closest('button');
             if (!btn) return;
             if (btn.id === 'wifi-add') { addSsid(); return; }
+            if (btn.dataset.st) {
+                const a = report.adapters.find(x => x.name === btn.dataset.st);
+                if (!a) return;
+                if (btn.classList.contains('st-save')) saveStation(a);
+                else if (btn.classList.contains('st-remove')) removeStation(a);
+                else if (btn.classList.contains('st-reset')) { stations[a.name] = { form: stationFormOf(a), errors: {}, message: null, confirmRemove: false }; renderAdapters(); }
+                else if (btn.classList.contains('st-reveal')) {
+                    const st = stationState(a);
+                    st.form.show = !st.form.show;
+                    renderAdapters();
+                    const f = document.getElementById(`st-${a.name}-passphrase`);
+                    if (f) f.focus();
+                }
+                return;
+            }
             if (btn.classList.contains('radio-save') || btn.classList.contains('radio-reset')) {
                 const a = report.adapters.find(x => x.name === btn.dataset.adapter);
                 if (!a) return;
@@ -592,7 +785,7 @@ window.WirelessModule = (function () {
         const key = 'new-' + newCount;
         ssids.push({
             key, isNew: true, server: null, errors: {}, message: null, confirmDelete: false,
-            form: { ssid: '', passphrase: '', network: 'lan', security: 'wpa2-wpa3', b24, b5, steering: b24 && b5, hidden: false, isolation: false, enabled: true, show: false },
+            form: { ssid: '', passphrase: '', network: 'lan', security: 'wpa2-wpa3', b24, b5, steering: b24 && b5, hidden: false, isolation: false, wds: false, enabled: true, show: false },
         });
         selected = key;
         renderSsids();
@@ -607,6 +800,7 @@ window.WirelessModule = (function () {
         wifi = null;
         lastReport = '';
         radios = {};
+        stations = {};
         ssids = [];
         selected = null;
         load();

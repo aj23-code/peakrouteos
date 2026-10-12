@@ -36,8 +36,24 @@ type WifiNetwork struct {
 	BandSteering    bool     `json:"band_steering"`
 	Hidden          bool     `json:"hidden"`
 	ClientIsolation bool     `json:"client_isolation"`
+	WDS             bool     `json:"wds"`
 	Enabled         bool     `json:"enabled"`
 	Pending         bool     `json:"pending"`
+}
+
+// WifiStation is an adapter used as a client of another access point.
+type WifiStation struct {
+	Name       string `json:"name"`
+	SSID       string `json:"ssid"`
+	Passphrase string `json:"passphrase"`
+	Security   string `json:"security"`
+	Hidden     bool   `json:"hidden"`
+	Role       string `json:"role"`    // "uplink" (the internet connection) or "bridge" (a link into a local network)
+	Network    string `json:"network"` // bridge: the local network
+	Enabled    bool   `json:"enabled"`
+	// InUse: an uplink counts only while the adapter is the internet port (an uplink that is not says which port is).
+	InUse   bool `json:"in_use"`
+	Pending bool `json:"pending"`
 }
 
 type wifiResponse struct {
@@ -45,7 +61,10 @@ type wifiResponse struct {
 	Country  string        `json:"country"`
 	Radios   []WifiRadio   `json:"radios"`
 	Networks []WifiNetwork `json:"networks"`
-	Editable bool          `json:"editable"`
+	Stations []WifiStation `json:"stations"`
+	// WanPort is the internet port in the draft: the adapter of an uplink station is it, or it is a cable port.
+	WanPort  string `json:"wan_port"`
+	Editable bool   `json:"editable"`
 }
 
 func (a *API) wifiView() wifiResponse {
@@ -53,8 +72,8 @@ func (a *API) wifiView() wifiResponse {
 	staged, _ := a.Manager.StagedNetworkConfig()
 	draft := staged.WifiSettings()
 
-	resp := wifiResponse{Country: staged.Country,
-		Radios: []WifiRadio{}, Networks: []WifiNetwork{}, Editable: a.editable()}
+	resp := wifiResponse{Country: staged.Country, WanPort: staged.WanInterface,
+		Radios: []WifiRadio{}, Networks: []WifiNetwork{}, Stations: []WifiStation{}, Editable: a.editable()}
 
 	oldRadios := map[string]config.WifiRadio{}
 	for _, r := range active.Radios {
@@ -69,13 +88,23 @@ func (a *API) wifiView() wifiResponse {
 		old, had := active.FindNetwork(n.ID)
 		resp.Networks = append(resp.Networks, wifiNetworkView(n, !had || !reflect.DeepEqual(old, n)))
 	}
+	for _, st := range draft.Stations {
+		old, had := active.FindStation(st.Name)
+		resp.Stations = append(resp.Stations, stationView(staged, st, !had || old != st))
+	}
 	return resp
+}
+
+func stationView(c config.NetworkConfig, st config.WifiStation, pending bool) WifiStation {
+	inUse := !st.Disabled && (st.Role == config.StationBridge || st.Name == c.WanInterface)
+	return WifiStation{Name: st.Name, SSID: st.SSID, Passphrase: st.Passphrase, Security: st.Security, Hidden: st.Hidden, Role: st.Role,
+		Network: st.Network, Enabled: !st.Disabled, InUse: inUse, Pending: pending}
 }
 
 func wifiNetworkView(n config.WifiNetwork, pending bool) WifiNetwork {
 	bands := append([]string{}, n.Bands...)
 	return WifiNetwork{ID: n.ID, SSID: n.SSID, Passphrase: n.Passphrase, Network: n.Network, Security: n.Security, Bands: bands,
-		BandSteering: n.BandSteering, Hidden: n.Hidden, ClientIsolation: n.ClientIsolation, Enabled: !n.Disabled, Pending: pending}
+		BandSteering: n.BandSteering, Hidden: n.Hidden, ClientIsolation: n.ClientIsolation, WDS: n.WDS, Enabled: !n.Disabled, Pending: pending}
 }
 
 // wifiOf returns the draft's Wi-Fi section, creating it if there is none yet.
@@ -88,7 +117,7 @@ func wifiOf(c *config.NetworkConfig) *config.WifiConfig {
 
 // tidyWifi drops an empty Wi-Fi section, so that undoing every change leaves no draft.
 func tidyWifi(c *config.NetworkConfig) {
-	if w := c.Wifi; w != nil && len(w.Radios) == 0 && len(w.Networks) == 0 {
+	if w := c.Wifi; w != nil && len(w.Radios) == 0 && len(w.Networks) == 0 && len(w.Stations) == 0 {
 		c.Wifi = nil
 	}
 }
@@ -250,6 +279,7 @@ type wifiNetworkRequest struct {
 	BandSteering    *bool    `json:"band_steering"`
 	Hidden          *bool    `json:"hidden"`
 	ClientIsolation *bool    `json:"client_isolation"`
+	WDS             *bool    `json:"wds"`
 	Enabled         *bool    `json:"enabled"`
 }
 
@@ -266,7 +296,7 @@ func errorsForWifi(err error, prefix string) error {
 		switch {
 		case strings.HasPrefix(e.Field, prefix):
 			out = append(out, config.FieldError{Field: strings.TrimPrefix(e.Field, prefix), Message: e.Message})
-		case e.Field == "wifi.networks" || e.Field == "wifi.radios":
+		case e.Field == "wifi.networks" || e.Field == "wifi.radios" || e.Field == "wifi.stations":
 			out = append(out, config.FieldError{Field: strings.TrimPrefix(e.Field, "wifi."), Message: e.Message})
 		}
 	}
@@ -348,6 +378,9 @@ func applyWifiRequest(n *config.WifiNetwork, req wifiNetworkRequest) {
 	}
 	if req.ClientIsolation != nil {
 		n.ClientIsolation = *req.ClientIsolation
+	}
+	if req.WDS != nil {
+		n.WDS = *req.WDS
 	}
 	if req.Enabled != nil {
 		n.Disabled = !*req.Enabled
@@ -450,4 +483,191 @@ func (a *API) HandleWifiNetwork(w http.ResponseWriter, r *http.Request) {
 		body = wifiNetworkView(n, !had || !reflect.DeepEqual(old, n))
 	}
 	a.answerStaged(w, err, http.StatusOK, "These settings cannot be saved: ", body)
+}
+
+// ---- Wi-Fi client adapters ---------------------------------------------------------------------------
+
+type stationRequest struct {
+	SSID       *string `json:"ssid"`
+	Passphrase *string `json:"passphrase"`
+	Security   *string `json:"security"`
+	Hidden     *bool   `json:"hidden"`
+	Role       *string `json:"role"`
+	Network    *string `json:"network"`
+	Enabled    *bool   `json:"enabled"`
+}
+
+// freeWiredPort picks a cable port for the internet connection to go back to when the Wi-Fi adapter stops being it: the first one that
+// is not a LAN port.
+func (a *API) freeWiredPort(c *config.NetworkConfig) (string, bool) {
+	if a.Ports == nil {
+		return "", false
+	}
+	ports, err := a.Ports()
+	if err != nil {
+		return "", false
+	}
+	used := map[string]bool{}
+	for _, p := range c.LanInterfaces {
+		used[p] = true
+	}
+	for _, p := range ports {
+		if !p.Wireless && !used[p.Name] {
+			return p.Name, true
+		}
+	}
+	return "", false
+}
+
+// releaseWan gives the internet connection back to a cable port when the adapter that is it stops being used as one.
+func (a *API) releaseWan(c *config.NetworkConfig, adapter string) error {
+	if c.WanInterface != adapter {
+		return nil
+	}
+	port, ok := a.freeWiredPort(c)
+	if !ok {
+		return config.ValidationError{{Field: "role", Message: "no cable port is free to be the internet port again: free one on the Ports page first"}}
+	}
+	c.WanInterface = port
+	return nil
+}
+
+// HandleWifiStation: PUT /api/v1/wifi/stations/{name} sets how an adapter is used as a Wi-Fi client; DELETE stops using it.
+func (a *API) HandleWifiStation(w http.ResponseWriter, r *http.Request) {
+	if !allowMethods(w, r, http.MethodPut, http.MethodDelete) || !a.requireEditable(w) {
+		return
+	}
+	name := r.PathValue("name")
+	if r.Method == http.MethodDelete {
+		err := a.Manager.StageNetwork(func(c *config.NetworkConfig) error {
+			wf := wifiOf(c)
+			kept := wf.Stations[:0:0]
+			for _, x := range wf.Stations {
+				if x.Name != name {
+					kept = append(kept, x)
+				}
+			}
+			uplink := len(kept) != len(wf.Stations)
+			wf.Stations = kept
+			tidyWifi(c)
+			if uplink {
+				return a.releaseWan(c, name)
+			}
+			return nil
+		})
+		a.answerStaged(w, err, http.StatusOK, "", a.wifiView())
+		return
+	}
+
+	var req stationRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	report, haveHardware := a.hardware(r.Context())
+	if haveHardware {
+		var adapter *wireless.Adapter
+		for i := range report.Adapters {
+			if report.Adapters[i].Name == name {
+				adapter = &report.Adapters[i]
+			}
+		}
+		var problem string
+		switch {
+		case adapter == nil:
+			problem = "there is no Wi-Fi adapter with this name"
+		case adapter.CapabilitiesKnown && !hasMode(adapter.Modes, "managed"):
+			problem = "this adapter cannot connect to a Wi-Fi network (it has no client mode)"
+		}
+		if problem != "" {
+			fieldErrors(w, http.StatusBadRequest, "This adapter cannot be set up like this: "+problem,
+				config.ValidationError{{Field: "name", Message: problem}})
+			return
+		}
+	}
+
+	err := a.Manager.StageNetwork(func(c *config.NetworkConfig) error {
+		wf := wifiOf(c)
+		idx := -1
+		for i := range wf.Stations {
+			if wf.Stations[i].Name == name {
+				idx = i
+			}
+		}
+		if idx < 0 {
+			// what is left out: WPA2/WPA3 (most networks), the internet connection, the default network, on
+			wf.Stations = append(wf.Stations, config.WifiStation{Name: name, Security: config.SecurityWPA2WPA3, Role: config.StationUplink, Network: config.DefaultNetworkID})
+			idx = len(wf.Stations) - 1
+		}
+		st := &wf.Stations[idx]
+		wasUplink := st.Role == config.StationUplink && !st.Disabled
+		if req.SSID != nil {
+			st.SSID = *req.SSID
+		}
+		if req.Passphrase != nil {
+			st.Passphrase = *req.Passphrase
+		}
+		if req.Security != nil {
+			st.Security = strings.TrimSpace(*req.Security)
+		}
+		if req.Hidden != nil {
+			st.Hidden = *req.Hidden
+		}
+		if req.Role != nil {
+			st.Role = strings.TrimSpace(*req.Role)
+		}
+		if req.Network != nil {
+			st.Network = strings.TrimSpace(*req.Network)
+		}
+		if st.Role == config.StationUplink {
+			st.Network = ""
+		} else if st.Network == "" {
+			st.Network = config.DefaultNetworkID
+		}
+		if req.Enabled != nil {
+			st.Disabled = !*req.Enabled
+		}
+		isUplink := st.Role == config.StationUplink && !st.Disabled
+
+		switch {
+		case isUplink:
+			// the adapter is the internet port now (a cable port that was it is left unassigned); the connection cannot keep what
+			// Wi-Fi cannot do
+			if c.WanVlan > 0 || c.WanKind() == config.WanPPPoE {
+				return config.ValidationError{{Field: "role", Message: "the internet connection uses a VLAN or PPPoE, which cannot run over Wi-Fi: change it on the Network page first"}}
+			}
+			c.WanInterface = name
+			kept := c.LanInterfaces[:0:0]
+			for _, p := range c.LanInterfaces {
+				if p != name {
+					kept = append(kept, p)
+				}
+			}
+			c.LanInterfaces = kept
+		case wasUplink:
+			if err := a.releaseWan(c, name); err != nil {
+				return err
+			}
+		}
+		if err := errorsForWifi(c.Validate(), fmt.Sprintf("wifi.stations[%d].", idx)); err != nil {
+			return err
+		}
+		return nil
+	})
+	var body any
+	if err == nil {
+		draft, _ := a.Manager.StagedNetworkConfig()
+		st, _ := draft.WifiSettings().FindStation(name)
+		old, had := a.Manager.NetworkConfig().WifiSettings().FindStation(name)
+		body = stationView(draft, st, !had || old != st)
+	}
+	a.answerStaged(w, err, http.StatusOK, "This Wi-Fi connection cannot be set up like this: ", body)
+}
+
+func hasMode(modes []string, want string) bool {
+	for _, m := range modes {
+		if m == want {
+			return true
+		}
+	}
+	return false
 }

@@ -351,6 +351,12 @@ func (a *API) deleteNetwork(w http.ResponseWriter, id string) {
 					Message: fmt.Sprintf("the Wi-Fi network %q still joins this network; move or delete it first", wn.SSID)})
 			}
 		}
+		for _, st := range c.WifiSettings().Stations {
+			if st.Role == config.StationBridge && st.Network == id {
+				problems = append(problems, config.FieldError{Field: "wifi",
+					Message: fmt.Sprintf("the Wi-Fi link on %s still joins this network; move or delete it first", st.Name)})
+			}
+		}
 		for _, r := range c.FirewallSettings().Rules {
 			if r.From == id || r.To == id {
 				problems = append(problems, config.FieldError{Field: "firewall",
