@@ -24,6 +24,7 @@ import (
 
 	"peakroute/internal/auth"
 	"peakroute/internal/backup"
+	"peakroute/internal/bootstrap"
 	"peakroute/internal/cert"
 	"peakroute/internal/config"
 	"peakroute/internal/console"
@@ -154,15 +155,25 @@ func main() {
 	if devMode {
 		runner = &translator.LogRunner{}
 	}
+	// The setup network: until a local network is committed the wired ports are joined in a temporary bridge with an address, so
+	// the welcome page can be reached (docs/setup.md). It lets go of the ports before a commit or a revert touches them and is
+	// brought back afterwards if there is still no local network.
+	setupNet := &bootstrap.Service{Run: runner, Manager: cfgMgr, Ports: network.GetPhysicalInterfaces, Dir: "/run/peakroute-setup"}
+	if devMode {
+		setupNet.Dir = filepath.Join(systemRoot, "run", "peakroute-setup")
+	}
 	configSvc = pipeline.New(pipeline.Options{
 		Manager:  cfgMgr,
 		FS:       translator.RootFS(systemRoot),
 		Runner:   runner,
 		StateDir: configDir,
+		Before:   setupNet.Stop,
+		Settled:  setupNet.Reconcile,
 	})
 	if err := configSvc.Resume(); err != nil {
 		log.Printf("Warning: could not resume a pending configuration change: %v", err)
 	}
+	setupNet.Reconcile()
 
 	// Initialize session tracking and rate limiting
 	sessionMgr = auth.NewSessionManager(cfgMgr)

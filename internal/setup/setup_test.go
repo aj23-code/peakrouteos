@@ -551,3 +551,46 @@ func TestAfterARestoreTheConsoleLoginIsMade(t *testing.T) {
 		t.Fatal("no warning")
 	}
 }
+
+// ---- which port of a bridge the browser is plugged into
+
+const arpTable = `IP address       HW type     Flags       HW address            Mask     Device
+192.168.77.100   0x1         0x2         AA:BB:CC:00:11:22     *        brsetup
+192.168.77.101   0x1         0x2         aa:bb:cc:00:11:33     *        brsetup
+192.168.77.102   0x1         0x0         00:00:00:00:00:00     *        brsetup
+10.0.0.5         0x1         0x2         aa:bb:cc:00:99:99     *        enp9s0
+`
+
+const fdbTable = `33:33:00:00:00:01 dev enp2s0 self permanent
+aa:bb:cc:00:11:22 dev enp3s0 master brsetup
+aa:bb:cc:00:11:33 dev enp2s0 master brsetup
+aa:bb:cc:00:11:44 dev enp9s0 master brsetup
+`
+
+func TestTheClientsHardwareAddressComesFromTheARPTable(t *testing.T) {
+	if got := parseARP(arpTable, "192.168.77.100", "brsetup"); got != "aa:bb:cc:00:11:22" {
+		t.Fatalf("%q", got)
+	}
+	for _, c := range [][2]string{{"192.168.77.102", "brsetup"}, {"192.168.77.100", "enp9s0"}, {"1.2.3.4", "brsetup"}} {
+		if got := parseARP(arpTable, c[0], c[1]); got != "" {
+			t.Errorf("%v: %q", c, got)
+		}
+	}
+	if parseARP("", "1.2.3.4", "x") != "" || parseARP("only a header", "1.2.3.4", "x") != "" {
+		t.Fatal("garbage")
+	}
+}
+
+func TestTheBridgeMemberIsFoundFromItsForwardingTable(t *testing.T) {
+	members := []string{"enp2s0", "enp3s0", "enp4s0"}
+	if got := parseFDB(fdbTable, "aa:bb:cc:00:11:22", members); got != "enp3s0" {
+		t.Fatalf("%q", got)
+	}
+	if got := parseFDB(fdbTable, "aa:bb:cc:00:11:33", members); got != "enp2s0" {
+		t.Fatalf("%q", got)
+	}
+	// a port that is not a member of this bridge, an address that is not there
+	if parseFDB(fdbTable, "aa:bb:cc:00:11:44", members) != "" || parseFDB(fdbTable, "de:ad:be:ef:00:00", members) != "" || parseFDB("", "x", members) != "" {
+		t.Fatal("found a port that is not there")
+	}
+}

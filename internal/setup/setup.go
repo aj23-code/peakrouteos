@@ -7,6 +7,7 @@ package setup
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,9 +16,11 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"peakroute/internal/auth"
 	"peakroute/internal/backup"
@@ -670,12 +673,69 @@ func HerePorts(r *http.Request) []string {
 			}
 			if ones, bits := ipn.Mask.Size(); bits == 32 {
 				if p, err := netip.ParsePrefix(fmt.Sprintf("%s/%d", ipn.IP, ones)); err == nil && p.Masked().Contains(ip) {
-					return membersOf(ifc.Name)
+					return narrow(ifc.Name, membersOf(ifc.Name), ip)
 				}
 			}
 		}
 	}
 	return nil
+}
+
+// narrow finds the one member of a bridge that a client is plugged into: its hardware address is in the ARP table (it has just talked to
+// the router) and the bridge's forwarding table says which port it was learned on. If either is missing, all the members are returned.
+func narrow(bridge string, members []string, ip netip.Addr) []string {
+	if len(members) < 2 {
+		return members
+	}
+	arp, err := os.ReadFile("/proc/net/arp")
+	if err != nil {
+		return members
+	}
+	mac := parseARP(string(arp), ip.String(), bridge)
+	if mac == "" {
+		return members
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "bridge", "fdb", "show", "br", bridge).Output()
+	if err != nil {
+		return members
+	}
+	if port := parseFDB(string(out), mac, members); port != "" {
+		return []string{port}
+	}
+	return members
+}
+
+// parseARP reads /proc/net/arp: the hardware address of an IP address seen on a device ("" if none).
+func parseARP(text, ip, dev string) string {
+	for _, line := range strings.Split(text, "\n")[1:] {
+		f := strings.Fields(line)
+		if len(f) >= 6 && f[0] == ip && f[5] == dev && f[3] != "00:00:00:00:00:00" {
+			return strings.ToLower(f[3])
+		}
+	}
+	return ""
+}
+
+// parseFDB reads `bridge fdb show`: the member port a hardware address was learned on ("" if it is not among the members).
+func parseFDB(text, mac string, members []string) string {
+	for _, line := range strings.Split(text, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 3 || strings.ToLower(f[0]) != mac {
+			continue
+		}
+		for i := 1; i+1 < len(f); i++ {
+			if f[i] == "dev" {
+				for _, m := range members {
+					if m == f[i+1] {
+						return m
+					}
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // membersOf is the interface itself, or the ports of a bridge.

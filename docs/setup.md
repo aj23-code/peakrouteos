@@ -4,6 +4,26 @@ A router that has not been set up shows the setup wizard at `/first_run` (every 
 that needs no sign-in, and it is open **only until the router is set up**: from then on every `/api/v1/setup/*` route answers 409
 and the page sends you to the sign-in.
 
+## How you reach it: the setup network
+
+A router that has not been set up has no address anyone could browse to. So, **until settings with a local network are committed**,
+the daemon builds a *setup network* (`internal/bootstrap`): all the wired ports are joined in a temporary bridge `brsetup` with the
+address **192.168.77.1/24**, and a DHCP server on it hands out `192.168.77.100` to `.199` (1 hour). Plug a computer into any port, let
+it take an address, and open `https://192.168.77.1`.
+
+- The address is unusual on purpose: `192.168.1.1` is what most internet providers' routers use, and a router behind one would clash.
+- No router and no DNS server are offered in the leases, and there is no DNS on it: a computer that has another connection (Wi-Fi) keeps
+  using that one for the internet, and the address is typed.
+- It follows the *committed* settings, not the wizard: the wizard only saves a draft, so the setup network stays until the first commit
+  (and so does the way in if the router is restarted before the draft is applied). The commit lets go of the ports first, so they can
+  join the real bridge, and the setup network **comes back if the change fails or is reverted** (the pipeline's `Before` and `Settled`
+  hooks).
+- Wi-Fi adapters are left alone (the wireless pages set them up).
+- The wizard finds the port you are plugged into from the router's ARP table and the bridge's forwarding table (`bridge fdb`), so only
+  that one is protected, not every port of the setup bridge.
+- If you plug the internet cable in a port while setting up, the setup DHCP server would answer on that network too: keep the modem out
+  until the wizard is finished.
+
 ## The pages
 
 **Welcome.** The choice: *Set up as a new router*, or *Restore from a backup*.
@@ -90,6 +110,8 @@ letter, and refuses a name the system already uses (an account or a group). The 
 
 ## Still to do
 
+- `peakroute.local` (mDNS) and a captive-portal style redirect, so the address need not be typed.
+- Wired ports plugged in after the daemon started (a USB network adapter) are not joined to the setup network until it restarts.
 - Wi-Fi in the wizard (a name and password for a first access point).
 - Choosing the update channel and an automatic update window (when Updates exist).
 - The image (no installer, no console wizard: it is flashed and the first thing seen is this page): the `sudo` package, root's password

@@ -53,6 +53,12 @@ type Options struct {
 	Mode          func() string // operation mode; defaults to the Manager's sys.json value
 	Now           func() time.Time
 	AfterFunc     func(d time.Duration, f func()) Timer
+
+	// Before runs just before a commit or a revert touches the system, and Settled when it is over (whatever the result, and after
+	// network.json has been put back if it failed). The setup network lets go of the ports in Before and takes them again in Settled
+	// if no real network is left (docs/setup.md). Both may be nil.
+	Before  func()
+	Settled func()
 }
 
 // Outcome describes how the most recent commit ended.
@@ -108,6 +114,8 @@ type Service struct {
 	stateDir string
 	window   time.Duration
 	mode     func() string
+	before   func()
+	settled  func()
 	now      func() time.Time
 	after    func(d time.Duration, f func()) Timer
 
@@ -145,11 +153,25 @@ func New(o Options) *Service {
 		stateDir: o.StateDir,
 		window:   o.ConfirmWindow,
 		mode:     o.Mode,
+		before:   o.Before,
+		settled:  o.Settled,
 		now:      o.Now,
 		after:    o.AfterFunc,
 		ctx:      ctx,
 		cancel:   cancel,
 		state:    StateIdle,
+	}
+}
+
+func (s *Service) beforeTouch() {
+	if s.before != nil {
+		s.before()
+	}
+}
+
+func (s *Service) settle() {
+	if s.settled != nil {
+		s.settled()
 	}
 }
 
@@ -263,6 +285,7 @@ func (s *Service) Commit() error {
 
 	if p.plan.Empty() {
 		s.last = &Outcome{Kind: "committed", At: s.now(), Message: "Saved. The system already matched this configuration, so nothing was restarted."}
+		s.settle()
 		return nil
 	}
 
@@ -274,10 +297,12 @@ func (s *Service) Commit() error {
 
 func (s *Service) runApply(p planned, previous, candidate config.NetworkConfig) {
 	defer s.wg.Done()
+	s.beforeTouch()
 	res := s.applier.Apply(s.ctx, p.desired, p.plan)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.settle()
 
 	if !res.OK {
 		s.failLocked(previous, candidate, res, "The change could not be applied: "+res.Error+".")
@@ -392,6 +417,7 @@ func (s *Service) beginRevertLocked(reason string) {
 
 func (s *Service) runRevert(pc *pendingConfirm, reason string) {
 	defer s.wg.Done()
+	s.beforeTouch()
 	res := s.applier.Restore(s.ctx, pc.Snapshot)
 
 	revertErr := s.mgr.RevertNetwork(pc.Previous, &pc.Candidate)
@@ -411,6 +437,7 @@ func (s *Service) runRevert(pc *pendingConfirm, reason string) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.settle()
 	s.state = StateIdle
 	s.last = &Outcome{Kind: "reverted", At: s.now(), Message: message, Steps: res.Steps, Problems: res.Problems}
 }
