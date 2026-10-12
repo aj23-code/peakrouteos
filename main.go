@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"embed"
 	"errors"
 	"flag"
@@ -233,10 +234,49 @@ func main() {
 	// Drop timed-out web sessions in the background
 	sessionMgr.StartJanitor(pollerCtx, time.Minute)
 
-	// Bootstrap self-signed TLS cert if missing
-	if err := cert.EnsureTLSCert(); err != nil {
+	// The web interface's certificate: made by this router's own web authority for the names and addresses the router has now (unless
+	// a custom one was uploaded), checked again every twelve hours, and served without a restart when it changes.
+	certMgr := &cert.Manager{Wanted: func() cert.Names {
+		cfg := cfgMgr.NetworkConfig()
+		var n cert.Names
+		host := cfg.Hostname
+		if host == "" {
+			host, _ = os.Hostname()
+		}
+		if host != "" {
+			n.DNS = append(n.DNS, host)
+			if cfg.Domain != "" {
+				n.DNS = append(n.DNS, host+"."+cfg.Domain)
+			}
+		}
+		for _, a := range append([]string{cfg.LanIP}, func() []string {
+			var ips []string
+			for _, nw := range cfg.Networks {
+				ips = append(ips, nw.IP)
+			}
+			return ips
+		}()...) {
+			if ip := net.ParseIP(a); ip != nil {
+				n.IPs = append(n.IPs, ip)
+			}
+		}
+		return n
+	}}
+	if err := certMgr.Ensure(); err != nil {
 		log.Fatalf("[-] TLS initialization error: %v", err)
 	}
+	go func() {
+		for {
+			select {
+			case <-pollerCtx.Done():
+				return
+			case <-time.After(12 * time.Hour):
+				if err := certMgr.Ensure(); err != nil {
+					log.Printf("[-] Checking the web interface's certificate failed: %v", err)
+				}
+			}
+		}
+	}()
 
 	// Parse embedded HTML templates
 	tmpl, err = template.ParseFS(embeddedFiles, "web/templates/*")
@@ -254,7 +294,11 @@ func main() {
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
 	// Register API endpoints. Every /api/v1/* route except login/setup goes through requireAuth.
-	mux.HandleFunc("/api/v1/cert/upload", requireAuth(cert.HandleUploadCert))
+	mux.HandleFunc("/api/v1/certificates", requireAuth(certMgr.HandleStatus))
+	mux.HandleFunc("/api/v1/certificates/names", requireAuth(certMgr.HandleExtraNames))
+	mux.HandleFunc("/api/v1/certificates/regenerate", requireAuth(certMgr.HandleRegenerate))
+	mux.HandleFunc("/api/v1/certificates/upload", requireAuth(certMgr.HandleUpload))
+	mux.HandleFunc("/api/v1/certificates/authority.crt", requireAuth(certMgr.HandleAuthority))
 
 	// System Stats Telemetry Endpoint
 	mux.HandleFunc("/api/v1/system/stats", requireAuth(func(w http.ResponseWriter, r *http.Request) {
@@ -389,6 +433,7 @@ func main() {
 		i, err := net.InterfaceByName(iface)
 		return err == nil && i.Flags&net.FlagUp != 0
 	}
+	mux.HandleFunc("/api/v1/vpn/ca/renew-server", requireAuth(netAPI.HandleVPNCARenewServer))
 	mux.HandleFunc("/api/v1/vpn/ov-remote", requireAuth(netAPI.HandleVPNOVRemote))
 	mux.HandleFunc("/api/v1/vpn/ov-remote/clients", requireAuth(netAPI.HandleVPNOVClients))
 	mux.HandleFunc("/api/v1/vpn/ov-remote/clients/{id}", requireAuth(netAPI.HandleVPNOVClient))
@@ -566,6 +611,7 @@ func main() {
 		Handler:      secureMux,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
+		TLSConfig:    &tls.Config{GetCertificate: certMgr.GetCertificate, MinVersion: tls.VersionTLS12},
 	}
 
 	// Capture OS signals for graceful shutdown
@@ -574,7 +620,7 @@ func main() {
 
 	go func() {
 		fmt.Printf("[+] PeakRoute OS daemon active on https://0.0.0.0%s\n", listenPort)
-		if err := server.ListenAndServeTLS(cert.CertPath, cert.KeyPath); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := server.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("[-] HTTPS server crashed: %v", err)
 		}
 	}()

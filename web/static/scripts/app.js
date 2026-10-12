@@ -234,6 +234,11 @@ function loadView(viewName) {
                 activeViewCleanup = window.DiagnosticsModule.init();
             }
             break;
+        case 'certificates':
+            if (window.CertificatesModule) {
+                activeViewCleanup = window.CertificatesModule.init();
+            }
+            break;
         case 'settings':
             if (window.SettingsModule) {
                 activeViewCleanup = window.SettingsModule.init();

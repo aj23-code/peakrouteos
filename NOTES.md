@@ -42,7 +42,7 @@ records what the system does, why it is built that way, and what was learned on 
 | `internal/fsutil` | crash-safe atomic file writes |
 | `internal/system` | stats (CPU, memory, interfaces), traffic history DB, journal logs |
 | `internal/network` | physical interface discovery, DHCP leases, per-device traffic tracker |
-| `internal/cert` | self-signed TLS cert generation and certificate upload |
+| `internal/cert` | the web interface's certificate: built-in (own web authority) or uploaded; renewal; the Certificates API |
 | `web/` | HTML templates, CSS, JS (no framework; one module per view) |
 | `buildISO.sh`, `full_build.sh` | image build (`full_build.sh` builds the binary then the ISO) |
 
@@ -106,8 +106,7 @@ records what the system does, why it is built that way, and what was learned on 
   (DHCP hostnames come from LAN clients; dnsmasq normally filters them, but the UI does not rely on it.)
 - **First-run setup page:** username 3-32 characters, password 8-72 bytes with confirmation, enforced
   on the server.
-- **TLS:** self-signed certificate generated at startup (no SANs yet, see TODO #23). A custom
-  certificate can be uploaded (authenticated, validated as a matching unexpired pair, installed atomically).
+- **TLS:** the certificate is made by the router's own web authority for its names and addresses (docs/certificates.md), or uploaded; served without a restart.
 
 ## 6. Statistics and traffic history
 
@@ -522,6 +521,23 @@ router: router is the server, a file per device). Both engines on both tabs. `vp
 - **QR codes** for a WireGuard device's file: `web/static/scripts/qr.js` draws them in the page (the file never leaves it). Same algorithm as `internal/qr`; the Go tests read codes back with an independent decoder (format and version words, Reed-Solomon check of every block, known capacities) and pin SHA-256 fingerprints that the script must match (checked in the browser). Not scanned with a real phone yet. OpenVPN files are too big for one (858 bytes at most).
 - Not done: IPv6, renewing the server certificate, real hardware, a scan test with a phone.
 
+## 7n. Certificates (built 2026-10-11)
+
+Design and rules are in **`docs/certificates.md`**. System, Certificates (the entry that was greyed out). `internal/cert`: a `Manager`
+keeps the web interface's certificate. **Built-in**: signed by a **web authority of its own** (ECDSA P-256, `ca.crt`/`ca.key` next to
+`tls.crt`), separate from the VPN's (the user's decision: not shared). Good for localhost, host name, host.domain, the address of every
+Local Network, loopback and the extra names (`extra-names.json`, up to 10). `Ensure` runs at start and every 12 h (main.go) and
+makes the certificate again when it is missing/damaged, not signed by our authority (the old self-signed one is migrated at once),
+within 30 days of expiry, or lacks a name or address the router now has; the authority is only made again when its files are broken.
+**Custom**: an upload (checked before anything changes, key staged and swapped with the certificate, `custom` marker written first) is
+never touched by `Ensure`. The server uses `tls.Config.GetCertificate` (`ListenAndServeTLS("", "")`), so changes apply without a restart.
+Not part of the draft/commit pipeline (applies at once, like passwords). `Wanted()` is fed from the configuration *in effect*. The page
+(`certificates.js`) also shows the OpenVPN authority and its certificates (from `/api/v1/vpn`) and **renews the OpenVPN server
+certificate** (`POST /api/v1/vpn/ca/renew-server`, through the draft because the servers restart). The VPN page keeps only a pointer.
+Tests: `internal/cert` (verified against the authority for every name and address, migration, renewal, names, custom kept and replaced
+on request, refused uploads leave the pair alone, the API), netapi renewal. Checked in the browser. The old `/api/v1/cert/upload` route is
+gone (replaced by `/api/v1/certificates/upload`).
+
 ## 7e. Static routes (built 2026-10-08)
 
 **Model.** `NetworkConfig.Routes` is a list of `{name, destination, gateway, metric, disabled}` (JSON keys
@@ -877,7 +893,7 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 | Network: Internet, **Local Networks**, Ports, Wireless, Routes | WAN uplink; each local network with its address range *and* DHCP; physical ports; static routes | Internet (`internet`), Local Networks (`networks`), Ports (`network-physical`), Wireless (`wireless`) and Routes (`routes`) |
 | Firewall: Rules, Port forwarding, Connections, Logs | | all four built (`firewall-rules`, `firewall-forwards`, `firewall-connections`, `firewall-log`); design in `docs/firewall.md` |
 | Services: DNS, VPN, Dynamic DNS | | all three built (`dns`, `vpn`, `ddns`) |
-| System: Settings, Administrators, Certificates, Backup and restore, Updates, System logs, Diagnostics | | Settings (`settings`), System logs (`logs`; the Logs page renamed 2026-10-11, firewall traffic moved to Firewall, Logs), Diagnostics (`diagnostics`: the DNS lookup so far; ping and traceroute would follow) |
+| System: Settings, Administrators, Certificates (`certificates`), Backup and restore, Updates, System logs, Diagnostics | | Settings (`settings`), System logs (`logs`; the Logs page renamed 2026-10-11, firewall traffic moved to Firewall, Logs), Diagnostics (`diagnostics`: the DNS lookup so far; ping and traceroute would follow) |
 
 - **Planned pages are listed but greyed out and not clickable** (a `<span class="nav-item nav-soon">`, no
   `data-view`), because the whole product will be built before it is used. To hide them instead, add

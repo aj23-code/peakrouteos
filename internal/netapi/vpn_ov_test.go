@@ -710,3 +710,51 @@ func TestRevokingTwiceListsACertificateOnce(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+func TestRenewingTheOpenVPNServerCertificate(t *testing.T) {
+	e := standard(t)
+	call := func(method string) *httptest.ResponseRecorder {
+		return e.do(e.api.HandleVPNCARenewServer, method, "", "")
+	}
+	if rec := call(http.MethodPost); rec.Code != http.StatusNotFound {
+		t.Fatalf("without an authority: %d %s", rec.Code, rec.Body)
+	}
+	e.ovRemote(http.MethodPut, `{"endpoint":"vpn.example.com"}`)
+	e.addOVClient(`{"name":"Phone"}`)
+	e.commit()
+	was := e.draft().VPNSettings().CA
+	rec := call(http.MethodPost)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	now := e.draft().VPNSettings()
+	if now.CA.ServerCert == was.ServerCert || now.CA.ServerKey == was.ServerKey || now.CA.Cert != was.Cert || now.CA.Key != was.Key || len(now.CA.Revoked) != 0 {
+		t.Fatalf("the authority or the revocations changed, or the server certificate did not: %+v", now.CA)
+	}
+	if err := pki.Verify(now.CA.Cert, now.CA.ServerCert, true, time.Now()); err != nil {
+		t.Fatalf("%v", err)
+	}
+	if err := e.draft().Validate(); err != nil {
+		t.Fatalf("%v", err)
+	}
+	e.noSecretsIn("the answer", rec.Body.String())
+	// the servers are restarted by the commit: there is something to review, never a key
+	var all string
+	for _, c := range e.staged() {
+		all += c.Label + "|" + c.Old + "|" + c.New + "\n"
+	}
+	if !strings.Contains(all, "Server certificate of the OpenVPN servers|set|changed") {
+		t.Fatalf("%s", all)
+	}
+	// the devices' own files stay good: their certificates are the authority's, and the device is still listed
+	if len(now.OVRemote.Clients) != 1 {
+		t.Fatal("a device went")
+	}
+	if rec := call(http.MethodGet); rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("%d", rec.Code)
+	}
+	e.editable = false
+	if rec := call(http.MethodPost); rec.Code != http.StatusConflict {
+		t.Fatalf("%d", rec.Code)
+	}
+}

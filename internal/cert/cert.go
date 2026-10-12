@@ -1,19 +1,36 @@
+// Package cert is the certificate of the router's web interface (docs/certificates.md).
+//
+// Two ways to have one:
+//   - the built-in certificate: made by this router's own web authority (a certificate authority of its own, separate from the
+//     VPN's), for the router's names and addresses, and renewed by itself. A browser warns until it trusts the authority; the page
+//     offers the authority's certificate to install once on a computer or phone, and the warnings stop;
+//   - a custom certificate: one the administrator uploaded (from a public authority, say). It is never replaced or renewed here.
+//
+// Changes apply at once: the server asks for its certificate on every new connection (GetCertificate), so nothing restarts.
 package cert
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"log"
 	"math/big"
-	"path/filepath"
+	"net"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
 	"time"
-	"io"
-	"net/http"
 
 	"peakroute/internal/fsutil"
 )
@@ -23,203 +40,569 @@ var (
 	KeyPath  = "/etc/peakroute/certs/tls.key"
 )
 
+// EnableDevPaths keeps everything under dir (the development mode never touches the host's /etc).
 func EnableDevPaths(dir string) {
 	os.MkdirAll(dir, 0700)
 	CertPath = dir + "/tls.crt"
 	KeyPath = dir + "/tls.key"
 }
 
-// EnsureTLSCert verifies the existence and validity of the TLS cert.
-// Automatically regenerates self-signed certs if expired or near expiration.
-func EnsureTLSCert() error {
-	// If files don't exist yet, generate fresh self-signed cert
-	if _, err := os.Stat(CertPath); os.IsNotExist(err) {
-		return GenerateSelfSignedCert()
-	}
+const (
+	org          = "PeakRoute OS"
+	caCommonName = "PeakRoute OS Web CA"
 
-	// Read existing cert to check validity and issuer
-	certBytes, err := os.ReadFile(CertPath)
-	if err != nil {
-		return fmt.Errorf("failed to read cert: %w", err)
-	}
+	leafYears    = 1
+	caYears      = 10
+	renewBefore  = 30 * 24 * time.Hour
+	maxExtraName = 10
+)
 
-	block, _ := pem.Decode(certBytes)
-	if block == nil {
-		fmt.Println("[!] Corrupted cert file detected. Regenerating...")
-		return GenerateSelfSignedCert()
-	}
+func dir() string        { return filepath.Dir(CertPath) }
+func caCertPath() string { return filepath.Join(dir(), "ca.crt") }
+func caKeyPath() string  { return filepath.Join(dir(), "ca.key") }
+func customMark() string { return filepath.Join(dir(), "custom") }
+func extraPath() string  { return filepath.Join(dir(), "extra-names.json") }
 
-	parsedCert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		fmt.Println("[!] Failed to parse x509 cert. Regenerating...")
-		return GenerateSelfSignedCert()
-	}
-
-	// DO NOT auto-renew custom/uploaded certificates.
-	// We check if the Issuer matches our auto-generated subject line safely.
-	isSelfSigned := parsedCert.Issuer.CommonName == "PeakRoute OS Local CA" ||
-	(len(parsedCert.Issuer.Organization) > 0 && parsedCert.Issuer.Organization[0] == "PeakRoute OS")
-
-	if !isSelfSigned {
-		fmt.Println("[+] Custom TLS certificate detected. Skipping auto-renewal.")
-		return nil
-	}
-
-	// Auto-renew if within 30 days of expiration or already expired
-	timeUntilExpiry := time.Until(parsedCert.NotAfter)
-	if timeUntilExpiry < 30*24*time.Hour {
-		fmt.Printf("[!] Self-signed TLS cert expiring in %v days. Auto-renewing...\n", int(timeUntilExpiry.Hours()/24))
-		return GenerateSelfSignedCert()
-	}
-
-	fmt.Printf("[+] TLS cert valid (expires in %d days)\n", int(timeUntilExpiry.Hours()/24))
-
-	return nil
+// Names are what the built-in certificate must be good for: the router's names and its addresses on its own networks.
+type Names struct {
+	DNS []string
+	IPs []net.IP
 }
 
-// GenerateSelfSignedCert issues a 365-day self-signed certificate.
-func GenerateSelfSignedCert() error {
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return fmt.Errorf("failed to generate RSA key: %w", err)
-	}
+// Manager keeps the web interface's certificate.
+type Manager struct {
+	// Wanted says which names and addresses the router has right now (from its configuration). Nil: only "localhost".
+	Wanted func() Names
 
-	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
-	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
-	if err != nil {
-		return fmt.Errorf("failed to generate serial number: %w", err)
-	}
+	mu  sync.Mutex
+	cur *tls.Certificate
+}
 
-	template := x509.Certificate{
-		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			Organization: []string{"PeakRoute OS"},
-			CommonName:   "PeakRoute OS Local CA",
-		},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().AddDate(1, 0, 0), // Valid for 1 year (365 days)
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+func newKey() (*ecdsa.PrivateKey, error) { return ecdsa.GenerateKey(elliptic.P256(), rand.Reader) }
+
+func serial() (*big.Int, error) {
+	n, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 127))
+	if err != nil {
+		return nil, err
+	}
+	return n.Add(n, big.NewInt(1)), nil
+}
+
+func readCert(path string) (*x509.Certificate, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	blk, _ := pem.Decode(b)
+	if blk == nil || blk.Type != "CERTIFICATE" {
+		return nil, errors.New("not a certificate")
+	}
+	return x509.ParseCertificate(blk.Bytes)
+}
+
+func readKey(path string) (*ecdsa.PrivateKey, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	blk, _ := pem.Decode(b)
+	if blk == nil {
+		return nil, errors.New("not a key")
+	}
+	switch blk.Type {
+	case "EC PRIVATE KEY":
+		return x509.ParseECPrivateKey(blk.Bytes)
+	case "PRIVATE KEY":
+		k, err := x509.ParsePKCS8PrivateKey(blk.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		if e, ok := k.(*ecdsa.PrivateKey); ok {
+			return e, nil
+		}
+	}
+	return nil, errors.New("not an EC key")
+}
+
+func pemCert(der []byte) []byte {
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+}
+
+func pemKey(k *ecdsa.PrivateKey) ([]byte, error) {
+	der, err := x509.MarshalPKCS8PrivateKey(k)
+	if err != nil {
+		return nil, err
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), nil
+}
+
+// ensureAuthority returns the web authority, making it when there is none (or its files are not a pair).
+func ensureAuthority() (*x509.Certificate, *ecdsa.PrivateKey, error) {
+	c, cerr := readCert(caCertPath())
+	k, kerr := readKey(caKeyPath())
+	if cerr == nil && kerr == nil && c.IsCA {
+		if pub, ok := c.PublicKey.(*ecdsa.PublicKey); ok && pub.Equal(&k.PublicKey) && time.Now().Before(c.NotAfter) {
+			return c, k, nil
+		}
+	}
+	key, err := newKey()
+	if err != nil {
+		return nil, nil, err
+	}
+	sn, err := serial()
+	if err != nil {
+		return nil, nil, err
+	}
+	now := time.Now()
+	tpl := &x509.Certificate{
+		SerialNumber:          sn,
+		Subject:               pkix.Name{Organization: []string{org}, CommonName: caCommonName},
+		NotBefore:             now.Add(-time.Hour),
+		NotAfter:              now.AddDate(caYears, 0, 0),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		MaxPathLenZero:        true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, &key.PublicKey, key)
+	if err != nil {
+		return nil, nil, err
+	}
+	kp, err := pemKey(key)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := os.MkdirAll(dir(), 0755); err != nil {
+		return nil, nil, err
+	}
+	// the key first: a certificate without its key is useless, a key without its certificate is only made again
+	if err := fsutil.WriteFileAtomic(caKeyPath(), kp, 0600); err != nil {
+		return nil, nil, err
+	}
+	if err := fsutil.WriteFileAtomic(caCertPath(), pemCert(der), 0644); err != nil {
+		return nil, nil, err
+	}
+	c, err = x509.ParseCertificate(der)
+	return c, key, err
+}
+
+func cleanNames(n Names, extra []string) (dns []string, ips []net.IP) {
+	seen := map[string]bool{}
+	addDNS := func(s string) {
+		s = strings.ToLower(strings.TrimSpace(s))
+		if s != "" && !seen[s] {
+			seen[s] = true
+			dns = append(dns, s)
+		}
+	}
+	addIP := func(ip net.IP) {
+		if ip == nil {
+			return
+		}
+		if v4 := ip.To4(); v4 != nil {
+			ip = v4
+		}
+		if s := ip.String(); !seen[s] {
+			seen[s] = true
+			ips = append(ips, ip)
+		}
+	}
+	addDNS("localhost")
+	for _, d := range n.DNS {
+		addDNS(d)
+	}
+	for _, ip := range n.IPs {
+		addIP(ip)
+	}
+	addIP(net.ParseIP("127.0.0.1"))
+	addIP(net.ParseIP("::1"))
+	for _, e := range extra {
+		if ip := net.ParseIP(strings.TrimSpace(e)); ip != nil {
+			addIP(ip)
+		} else {
+			addDNS(e)
+		}
+	}
+	return dns, ips
+}
+
+// ValidExtraName reports whether text may be added to the certificate: a name or an address, nothing else.
+func ValidExtraName(s string) bool {
+	if net.ParseIP(s) != nil {
+		return true
+	}
+	if len(s) == 0 || len(s) > 253 || strings.HasPrefix(s, ".") || strings.HasSuffix(s, ".") || strings.Contains(s, "..") {
+		return false
+	}
+	for _, label := range strings.Split(s, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, r := range label {
+			if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// ExtraNames are the names and addresses the administrator added to the built-in certificate (a name from Dynamic DNS, say).
+func ExtraNames() []string {
+	b, err := os.ReadFile(extraPath())
+	if err != nil {
+		return []string{}
+	}
+	var list []string
+	if json.Unmarshal(b, &list) != nil {
+		return []string{}
+	}
+	return list
+}
+
+// SetExtraNames saves them (lower case, no duplicates).
+func SetExtraNames(list []string) ([]string, error) {
+	var out []string
+	seen := map[string]bool{}
+	for _, s := range list {
+		s = strings.ToLower(strings.TrimSpace(s))
+		if s == "" || seen[s] {
+			continue
+		}
+		if !ValidExtraName(s) {
+			return nil, fmt.Errorf("%q is not a name or an address", s)
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	if len(out) > maxExtraName {
+		return nil, fmt.Errorf("at most %d names", maxExtraName)
+	}
+	sort.Strings(out)
+	b, _ := json.Marshal(out)
+	if err := os.MkdirAll(dir(), 0755); err != nil {
+		return nil, err
+	}
+	if err := fsutil.WriteFileAtomic(extraPath(), b, 0644); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = []string{}
+	}
+	return out, nil
+}
+
+func (m *Manager) wanted() ([]string, []net.IP) {
+	var n Names
+	if m.Wanted != nil {
+		n = m.Wanted()
+	}
+	return cleanNames(n, ExtraNames())
+}
+
+// issue makes the built-in certificate for the names and writes it (and its key) in place.
+func (m *Manager) issue() error {
+	ca, caKey, err := ensureAuthority()
+	if err != nil {
+		return err
+	}
+	dns, ips := m.wanted()
+	key, err := newKey()
+	if err != nil {
+		return err
+	}
+	sn, err := serial()
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	cn := "PeakRoute OS"
+	if len(dns) > 1 {
+		cn = dns[1] // the first is "localhost"
+	}
+	notAfter := now.AddDate(leafYears, 0, 0)
+	if notAfter.After(ca.NotAfter) {
+		notAfter = ca.NotAfter
+	}
+	tpl := &x509.Certificate{
+		SerialNumber:          sn,
+		Subject:               pkix.Name{Organization: []string{org}, CommonName: cn},
+		NotBefore:             now.Add(-time.Hour),
+		NotAfter:              notAfter,
+		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
+		DNSNames:              dns,
+		IPAddresses:           ips,
 	}
-
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	der, err := x509.CreateCertificate(rand.Reader, tpl, ca, &key.PublicKey, caKey)
 	if err != nil {
-		return fmt.Errorf("failed to create certificate: %w", err)
+		return err
 	}
-
-	certDir := filepath.Dir(CertPath)
-	if err := os.MkdirAll(certDir, 0755); err != nil {
-		return fmt.Errorf("failed to create certificate directory %s: %w", certDir, err)
-	}
-
-	// Save Cert
-	certOut, err := os.Create(CertPath)
+	kp, err := pemKey(key)
 	if err != nil {
-		return fmt.Errorf("failed to open cert file for writing: %w", err)
+		return err
 	}
-	defer certOut.Close()
-	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
-
-	// Save Key
-	keyOut, err := os.OpenFile(KeyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err := os.MkdirAll(dir(), 0755); err != nil {
+		return err
+	}
+	// both files are staged first and swapped in back to back, so that a failed write cannot leave a mismatched pair
+	sk, err := fsutil.StageFile(KeyPath, kp, 0600)
 	if err != nil {
-		return fmt.Errorf("failed to open key file for writing: %w", err)
+		return err
 	}
-	defer keyOut.Close()
-
-	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
+	defer os.Remove(sk)
+	sc, err := fsutil.StageFile(CertPath, pemCert(der), 0644)
 	if err != nil {
-		return fmt.Errorf("failed to marshal private key: %w", err)
+		return err
 	}
-	pem.Encode(keyOut, &pem.Block{Type: "PRIVATE KEY", Bytes: privBytes})
+	defer os.Remove(sc)
+	if err := fsutil.CommitFile(sk, KeyPath); err != nil {
+		return err
+	}
+	if err := fsutil.CommitFile(sc, CertPath); err != nil {
+		return err
+	}
+	os.Remove(customMark())
+	log.Printf("[+] Made the web interface's certificate for %s", strings.Join(append(append([]string{}, dns...), ipStrings(ips)...), ", "))
+	return m.Reload()
+}
 
-	fmt.Println("[+] Successfully generated/renewed 1-year self-signed TLS cert.")
+func ipStrings(ips []net.IP) []string {
+	out := make([]string, len(ips))
+	for i, ip := range ips {
+		out[i] = ip.String()
+	}
+	return out
+}
+
+// Custom says whether the installed certificate is one the administrator uploaded.
+func Custom() bool {
+	if _, err := os.Stat(customMark()); err == nil {
+		return true
+	}
+	// installed by an older version, which had no mark: not ours when it was not issued by an authority named like ours
+	c, err := readCert(CertPath)
+	if err != nil {
+		return false
+	}
+	if len(c.Issuer.Organization) == 0 || c.Issuer.Organization[0] != org {
+		return true
+	}
+	return false
+}
+
+// Ensure makes sure there is a good certificate: at start, and now and then. A custom certificate is left alone. The built-in one is
+// made again when it is missing, damaged, not made by the web authority (the self-signed one of older versions), about to run out,
+// or not good for a name or address the router now has.
+func (m *Manager) Ensure() error {
+	if _, err := os.Stat(CertPath); err == nil && Custom() {
+		log.Println("[+] Custom TLS certificate in use; not renewing it.")
+		return m.Reload()
+	}
+	leaf, err := readCert(CertPath)
+	if err != nil {
+		return m.issue()
+	}
+	ca, _, err := ensureAuthority()
+	if err != nil {
+		return err
+	}
+	if _, err := tls.LoadX509KeyPair(CertPath, KeyPath); err != nil {
+		return m.issue()
+	}
+	if leaf.CheckSignatureFrom(ca) != nil || leaf.Issuer.String() != ca.Subject.String() {
+		return m.issue()
+	}
+	if time.Until(leaf.NotAfter) < renewBefore {
+		return m.issue()
+	}
+	if missing := m.missing(leaf); len(missing) > 0 {
+		log.Printf("[!] The web interface's certificate lacks %s; making it again", strings.Join(missing, ", "))
+		return m.issue()
+	}
+	return m.Reload()
+}
+
+func isLoopback(s string) bool { return s == "localhost" || s == "127.0.0.1" || s == "::1" }
+
+// missing lists what the router has (names and addresses) that the certificate is not good for.
+func (m *Manager) missing(leaf *x509.Certificate) []string {
+	dns, ips := m.wanted()
+	have := map[string]bool{}
+	for _, d := range leaf.DNSNames {
+		have[strings.ToLower(d)] = true
+	}
+	for _, ip := range leaf.IPAddresses {
+		have[ip.String()] = true
+	}
+	var out []string
+	for _, d := range dns {
+		if !have[d] {
+			out = append(out, d)
+		}
+	}
+	for _, ip := range ips {
+		if !have[ip.String()] {
+			out = append(out, ip.String())
+		}
+	}
+	return out
+}
+
+// Reload reads the installed pair into memory; new connections use it from then on.
+func (m *Manager) Reload() error {
+	pair, err := tls.LoadX509KeyPair(CertPath, KeyPath)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.cur = &pair
+	m.mu.Unlock()
 	return nil
 }
 
-// HandleUploadCert processes user-uploaded custom TLS certificate and key files.
-func HandleUploadCert(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
+// GetCertificate is for tls.Config.
+func (m *Manager) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cur == nil {
+		return nil, errors.New("no certificate")
 	}
+	return m.cur, nil
+}
 
-	// Limit upload size to 1MB to prevent abuse
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+// Regenerate makes the built-in certificate now, for the names the router has (and takes the place of a custom one).
+func (m *Manager) Regenerate() error { return m.issue() }
 
-	// Parse multipart form (expecting 'cert' and 'key' file inputs)
-	if err := r.ParseMultipartForm(1 << 20); err != nil {
-		http.Error(w, "File upload too large or invalid multipart form", http.StatusBadRequest)
-		return
-	}
-
-	// Read cert file
-	certFile, _, err := r.FormFile("cert")
+// Install puts an uploaded pair in place, if it is a good one: a certificate and the key that belongs to it, not out of date, and the
+// first certificate of the file is the one for the server (a chain may follow).
+func (m *Manager) Install(certPEM, keyPEM []byte) error {
+	pair, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
-		http.Error(w, "Missing 'cert' file field", http.StatusBadRequest)
-		return
+		return errors.New("the certificate or the private key is not valid, or they do not belong together")
 	}
-	defer certFile.Close()
-
-	// Read key file
-	keyFile, _, err := r.FormFile("key")
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
 	if err != nil {
-		http.Error(w, "Missing 'key' file field", http.StatusBadRequest)
-		return
+		return errors.New("the certificate cannot be read")
 	}
-	defer keyFile.Close()
-
-	certBytes, err := io.ReadAll(certFile)
+	if time.Now().After(leaf.NotAfter) {
+		return errors.New("the certificate has already run out")
+	}
+	if time.Now().Before(leaf.NotBefore.Add(-24 * time.Hour)) {
+		return errors.New("the certificate is not valid yet")
+	}
+	if leaf.IsCA {
+		return errors.New("that is the certificate of an authority, not of a server")
+	}
+	if err := os.MkdirAll(dir(), 0755); err != nil {
+		return err
+	}
+	sk, err := fsutil.StageFile(KeyPath, keyPEM, 0600)
 	if err != nil {
-		http.Error(w, "Failed to read certificate file", http.StatusInternalServerError)
-		return
+		return err
 	}
-
-	keyBytes, err := io.ReadAll(keyFile)
+	defer os.Remove(sk)
+	sc, err := fsutil.StageFile(CertPath, certPEM, 0644)
 	if err != nil {
-		http.Error(w, "Failed to read private key file", http.StatusInternalServerError)
-		return
+		return err
 	}
+	defer os.Remove(sc)
+	// the mark first: a crash between the steps must leave a custom certificate marked as custom, never one that would be replaced
+	if err := fsutil.WriteFileAtomic(customMark(), []byte("custom\n"), 0644); err != nil {
+		return err
+	}
+	if err := fsutil.CommitFile(sk, KeyPath); err != nil {
+		return err
+	}
+	if err := fsutil.CommitFile(sc, CertPath); err != nil {
+		return err
+	}
+	log.Println("[+] Custom TLS certificate installed.")
+	return m.Reload()
+}
 
-	// Never touch the installed cert/key unless the upload is a valid, matching pair
-	pair, err := tls.X509KeyPair(certBytes, keyBytes)
-	if err != nil {
-		http.Error(w, "Invalid certificate or private key, or they do not match", http.StatusBadRequest)
-		return
+// AuthorityPEM is the web authority's certificate (public), to be installed on a computer or a phone. It is made if there is none.
+func (m *Manager) AuthorityPEM() ([]byte, error) {
+	if _, _, err := ensureAuthority(); err != nil {
+		return nil, err
 	}
-	if pair.Leaf != nil && time.Now().After(pair.Leaf.NotAfter) {
-		http.Error(w, "Certificate has already expired", http.StatusBadRequest)
-		return
-	}
+	return os.ReadFile(caCertPath())
+}
 
-	// Stage and flush both files first, then swap them in back to back, so a failed write
-	// can't leave a half-written or mismatched cert/key behind
-	stagedCert, err := fsutil.StageFile(CertPath, certBytes, 0644)
-	if err != nil {
-		http.Error(w, "Failed to write certificate to disk", http.StatusInternalServerError)
-		return
-	}
-	defer os.Remove(stagedCert) // no-op once committed
+// ---- what the page shows -------------------------------------------------------------------------------------------
 
-	stagedKey, err := fsutil.StageFile(KeyPath, keyBytes, 0600)
-	if err != nil {
-		http.Error(w, "Failed to write private key to disk", http.StatusInternalServerError)
-		return
-	}
-	defer os.Remove(stagedKey)
+// Details describes a certificate.
+type Details struct {
+	Subject     string   `json:"subject"`
+	Issuer      string   `json:"issuer"`
+	NotBefore   int64    `json:"not_before"` // Unix milliseconds
+	NotAfter    int64    `json:"not_after"`
+	DaysLeft    int      `json:"days_left"`
+	Names       []string `json:"names"`
+	Fingerprint string   `json:"fingerprint"` // SHA-256, upper case hex with colons
+}
 
-	if err := fsutil.CommitFile(stagedKey, KeyPath); err != nil {
-		http.Error(w, "Failed to install private key", http.StatusInternalServerError)
-		return
+func fingerprint(der []byte) string {
+	h := sha256.Sum256(der)
+	s := strings.ToUpper(hex.EncodeToString(h[:]))
+	var parts []string
+	for i := 0; i < len(s); i += 2 {
+		parts = append(parts, s[i:i+2])
 	}
-	if err := fsutil.CommitFile(stagedCert, CertPath); err != nil {
-		http.Error(w, "Failed to install certificate", http.StatusInternalServerError)
-		return
-	}
+	return strings.Join(parts, ":")
+}
 
-	fmt.Println("[+] Custom TLS certificate successfully uploaded and installed.")
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"success","message":"Certificate uploaded. Restart daemon or service to apply changes."}`))
+func describe(c *x509.Certificate) Details {
+	names := append([]string{}, c.DNSNames...)
+	names = append(names, ipStrings(c.IPAddresses)...)
+	sub := c.Subject.CommonName
+	if sub == "" && len(c.Subject.Organization) > 0 {
+		sub = c.Subject.Organization[0]
+	}
+	iss := c.Issuer.CommonName
+	if iss == "" && len(c.Issuer.Organization) > 0 {
+		iss = c.Issuer.Organization[0]
+	}
+	return Details{Subject: sub, Issuer: iss, NotBefore: c.NotBefore.UnixMilli(), NotAfter: c.NotAfter.UnixMilli(),
+		DaysLeft: int(time.Until(c.NotAfter).Hours() / 24), Names: names, Fingerprint: fingerprint(c.Raw)}
+}
+
+// Status is the page's data.
+type Status struct {
+	Mode       string   `json:"mode"` // "builtin" or "custom"
+	Web        *Details `json:"web"`  // null: the certificate cannot be read
+	Wanted     []string `json:"wanted"`
+	Missing    []string `json:"missing"`     // names the router has that the certificate is not good for
+	SelfSigned bool     `json:"self_signed"` // the certificate vouches for itself (it is not made by an authority)
+	Extra      []string `json:"extra_names"`
+	Authority  *Details `json:"authority"`
+}
+
+// Status says what is installed.
+func (m *Manager) Status() Status {
+	st := Status{Mode: "builtin", Extra: ExtraNames(), Wanted: []string{}, Missing: []string{}}
+	if Custom() {
+		st.Mode = "custom"
+	}
+	dns, ips := m.wanted()
+	st.Wanted = append(append([]string{}, dns...), ipStrings(ips)...)
+	if leaf, err := readCert(CertPath); err == nil {
+		d := describe(leaf)
+		st.Web = &d
+		for _, n := range m.missing(leaf) {
+			if !isLoopback(n) { // a certificate for the network's names is not wrong for lacking "localhost"
+				st.Missing = append(st.Missing, n)
+			}
+		}
+		st.SelfSigned = leaf.Subject.String() == leaf.Issuer.String()
+	}
+	if ca, err := readCert(caCertPath()); err == nil {
+		d := describe(ca)
+		st.Authority = &d
+	}
+	if st.Missing == nil {
+		st.Missing = []string{}
+	}
+	return st
 }

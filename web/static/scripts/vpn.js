@@ -572,17 +572,10 @@ window.VPNModule = (function () {
     // ---------------------------------------------------------------- the authority
 
     function caCardHtml() {
-        const ca = data.ca;
-        if (!ca) return '';
-        const soon = (ms) => ms && ms < Date.now() + 60 * 864e5;
+        if (!data.ca) return '';
         return `<section class="card">
             <div class="net-card-head"><h2>Certificates (OpenVPN)</h2></div>
-            <p class="form-hint">OpenVPN needs certificates. This router is its own certificate authority: it makes and signs the certificates of the server and of each device, and keeps a list of the ones that are no longer accepted (a device that is removed, or that gets a new file). Nothing has to be made by hand.</p>
-            <dl class="vpn-dl">
-                <dt>Authority</dt><dd>${escapeHtml(ca.subject)}, valid until ${escapeHtml(dateOf(ca.not_after))}</dd>
-                <dt>Server certificate</dt><dd>valid until ${escapeHtml(dateOf(ca.server_not_after))}${soon(ca.server_not_after) ? ' <span class="net-warn">Runs out soon.</span>' : ''}</dd>
-                <dt>No longer accepted</dt><dd>${ca.revoked} certificate${ca.revoked === 1 ? '' : 's'}</dd>
-            </dl>
+            <p class="form-hint">This router is its own certificate authority for OpenVPN: it makes and signs the certificates of the server and of each device. The authority, the server certificate (and renewing it), the list of certificates that are no longer accepted and when each device's runs out are on <a href="#" data-goto="certificates">Certificates</a>.</p>
         </section>`;
     }
 

@@ -76,7 +76,7 @@
             <div class="folder-content">
               <a href="#" class="nav-item" data-view="settings">Settings</a>
               <a href="#" class="nav-item" data-view="admins">Administrators</a>
-              <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Certificates</span>
+              <a href="#" class="nav-item" data-view="certificates">Certificates</a>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Backup and restore</span>
               <span class="nav-item nav-soon" aria-disabled="true" title="Planned: not built yet">Updates</span>
               <a href="#" class="nav-item" data-view="logs">System logs</a>
@@ -756,6 +756,19 @@
         <div id="dns-body" class="card-stack"></div>
       </div>
 
+      <!-- View: Certificates -->
+      <div id="view-certificates" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Certificates</h1>
+            <p class="subtitle">The certificate of this router's web interface, how to make your computers and phones trust it, and the certificates of the VPN. Certificates apply at once; they are not part of the draft.</p>
+          </div>
+        </header>
+
+        <div id="certs-message" class="form-message hidden" role="alert"></div>
+        <div id="certs-body" class="card-stack"></div>
+      </div>
+
       <!-- View: VPN -->
       <div id="view-vpn" class="view-section hidden">
         <header class="dash-header">
@@ -889,6 +902,7 @@
   <script src="/static/scripts/dns.js"></script>
   <script src="/static/scripts/diagnostics.js"></script>
   <script src="/static/scripts/ddns.js"></script>
+  <script src="/static/scripts/certificates.js"></script>
   <script src="/static/scripts/qr.js"></script>
   <script src="/static/scripts/vpn.js"></script>
   <script src="/static/scripts/admins.js"></script>

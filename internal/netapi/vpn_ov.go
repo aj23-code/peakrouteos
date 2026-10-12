@@ -799,3 +799,25 @@ func (a *API) HandleVPNOVClient(w http.ResponseWriter, r *http.Request) {
 	}
 	a.answerStaged(w, err, http.StatusOK, "These settings cannot be saved: ", body)
 }
+
+// HandleVPNCARenewServer: POST /api/v1/vpn/ca/renew-server makes the OpenVPN servers a new certificate (and key) from the authority.
+// Devices are not touched (they trust the authority, not the server's certificate); the servers restart when it is committed.
+func (a *API) HandleVPNCARenewServer(w http.ResponseWriter, r *http.Request) {
+	if !allowMethods(w, r, http.MethodPost) || !a.requireEditable(w) {
+		return
+	}
+	draft, _ := a.Manager.StagedNetworkConfig()
+	if ca := draft.VPNSettings().CA; ca == nil || ca.Cert == "" || ca.Key == "" {
+		writeJSON(w, http.StatusNotFound, errorBody{Error: "there is no OpenVPN certificate authority yet"})
+		return
+	}
+	err := a.Manager.StageNetwork(func(c *config.NetworkConfig) error {
+		cert, key, err := pki.Issue(c.VPN.CA.Cert, c.VPN.CA.Key, "peakroute-server", true, time.Now())
+		if err != nil {
+			return err
+		}
+		c.VPN.CA.ServerCert, c.VPN.CA.ServerKey = cert, key
+		return vpnErrors(c.Validate(), "vpn.ca.")
+	})
+	a.answerStaged(w, err, http.StatusOK, "The certificate cannot be renewed: ", a.vpnView())
+}
