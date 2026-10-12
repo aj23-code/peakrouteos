@@ -18,6 +18,7 @@ import (
 	"peakroute/internal/auth"
 	"peakroute/internal/config"
 	"peakroute/internal/ddns"
+	"peakroute/internal/diag"
 	"peakroute/internal/network"
 	"peakroute/internal/ovpn"
 	"peakroute/internal/syslogfwd"
@@ -56,6 +57,8 @@ type API struct {
 	// Nil means Dynamic DNS is not reported.
 	DDNSStatuses func() []ddns.Status
 	DDNSUpdate   func(ctx context.Context, id string) (ddns.Status, bool)
+	// Diag runs the ping and traceroute jobs. Nil means the real programs (made on first use).
+	Diag *diag.Runner
 	// WireGuard reads the WireGuard interfaces that are running (their peers and handshakes). Nil means it is not reported.
 	WireGuard func() []wg.Interface
 	// OVConnections lists what is connected to the OpenVPN server of a name (pr-ra, pr-s1...): false when it is not running. LinkUp says

@@ -538,6 +538,19 @@ Tests: `internal/cert` (verified against the authority for every name and addres
 on request, refused uploads leave the pair alone, the API), netapi renewal. Checked in the browser. The old `/api/v1/cert/upload` route is
 gone (replaced by `/api/v1/certificates/upload`).
 
+## 7o. Diagnostics (built 2026-10-11)
+
+Design and rules are in **`docs/diagnostics.md`**. System, Diagnostics: ping, traceroute, a TCP connection test, the DNS lookup and the
+syslog test. `internal/diag` runs ping and `tracepath` as **jobs** (`Runner`: fixed programs and arguments, no shell, a validated target,
+at most three at once, 500 lines, a deadline, stoppable, the last 20 kept; the page polls every 0.7 s) because the server's 10 s write
+timeout rules out one long response; the connection test answers at once (`TryConnect`, 4 s). Sources are resolved server-side from the
+configuration in effect (internet connection's address, Local Networks' router addresses, up VPN interfaces). `tracepath` has no source
+option, so a traceroute cannot be sent from one network's address (the `traceroute` package would be needed). Starting a test is a POST
+(a read-only account cannot start one). Lessons: with `exec.Cmd` writing into an `io.Pipe`, `cmd.Wait` must run in its own goroutine
+that closes the pipe, or the reader never sees the end. Tests: the runner with a fake program (lines, stop, limits, forgetting, failure
+words, bounded output), the real `ping` on 127.0.0.1, the connection test against real listeners, the API with a fake runner; checked in
+the browser against real `ping` and `tracepath`.
+
 ## 7e. Static routes (built 2026-10-08)
 
 **Model.** `NetworkConfig.Routes` is a list of `{name, destination, gateway, metric, disabled}` (JSON keys
@@ -893,7 +906,7 @@ UniFi-style object pages. At most two levels: top-level entries, and groups with
 | Network: Internet, **Local Networks**, Ports, Wireless, Routes | WAN uplink; each local network with its address range *and* DHCP; physical ports; static routes | Internet (`internet`), Local Networks (`networks`), Ports (`network-physical`), Wireless (`wireless`) and Routes (`routes`) |
 | Firewall: Rules, Port forwarding, Connections, Logs | | all four built (`firewall-rules`, `firewall-forwards`, `firewall-connections`, `firewall-log`); design in `docs/firewall.md` |
 | Services: DNS, VPN, Dynamic DNS | | all three built (`dns`, `vpn`, `ddns`) |
-| System: Settings, Administrators, Certificates (`certificates`), Backup and restore, Updates, System logs, Diagnostics | | Settings (`settings`), System logs (`logs`; the Logs page renamed 2026-10-11, firewall traffic moved to Firewall, Logs), Diagnostics (`diagnostics`: the DNS lookup so far; ping and traceroute would follow) |
+| System: Settings, Administrators, Certificates (`certificates`), Backup and restore, Updates, System logs, Diagnostics | | Settings (`settings`), System logs (`logs`; the Logs page renamed 2026-10-11, firewall traffic moved to Firewall, Logs), Diagnostics (`diagnostics`: ping, traceroute, connection test, DNS lookup, syslog test) |
 
 - **Planned pages are listed but greyed out and not clickable** (a `<span class="nav-item nav-soon">`, no
   `data-view`), because the whole product will be built before it is used. To hide them instead, add
