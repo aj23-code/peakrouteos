@@ -177,7 +177,8 @@ func renderDnsmasqDHCPNetworks(cfg config.NetworkConfig, lan string) string {
 //   - A network reaches the internet only if its Internet switch is on. There is no other rule for it.
 //   - Two networks may talk to each other only if neither is isolated, in both directions.
 func nftablesNetworkRules(cfg config.NetworkConfig, lan string) (input, forward string) {
-	if !cfg.Bridged() {
+	vpnIn, vpnFw, vpnMembers := nftVPNRules(cfg, lan)
+	if !cfg.Bridged() && len(vpnMembers) == 0 {
 		return "", ""
 	}
 	var in, fw strings.Builder
@@ -190,15 +191,14 @@ func nftablesNetworkRules(cfg config.NetworkConfig, lan string) (input, forward 
 			fmt.Fprintf(&fw, "        iifname \"%s\" oifname \"%s\" accept\n", iface, cfg.WanDevice())
 		}
 	}
+	in.WriteString(vpnIn)
+	fw.WriteString(vpnFw)
 
-	type member struct {
-		iface string
-		open  bool // not isolated
-	}
-	members := []member{{lan, !cfg.LanIsolated}}
+	members := []policyMember{{lan, !cfg.LanIsolated}}
 	for _, n := range cfg.Networks {
-		members = append(members, member{networkIface(n), !n.Isolated})
+		members = append(members, policyMember{networkIface(n), !n.Isolated})
 	}
+	members = append(members, vpnMembers...)
 	for i := 0; i < len(members); i++ {
 		for j := i + 1; j < len(members); j++ {
 			if members[i].open && members[j].open {

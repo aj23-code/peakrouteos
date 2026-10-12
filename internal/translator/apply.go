@@ -164,6 +164,7 @@ var preChecks = map[string]command{
 	SvcNftables:   {"nft", []string{"-c", "-f", PathNftables}},
 	SvcDnsmasq:    {"dnsmasq", []string{"--test"}},
 	SvcRoutes:     routesCheckCommand(PathRoutes),
+	SvcWireGuard:  wgCheckCommand(),
 }
 
 // serviceCommands carry out an action.
@@ -178,6 +179,7 @@ var serviceCommands = map[string]command{
 	SvcNftables:   {"systemctl", []string{"reload", "nftables"}},
 	SvcDnsmasq:    {"systemctl", []string{"restart", "dnsmasq"}},
 	SvcRoutes:     routesApplyCommand(PathRoutes),
+	SvcWireGuard:  {"sh", []string{PathWGSync}},
 	// With no configuration left the service's start condition is not met, so a restart leaves it stopped.
 	SvcWifi: {"systemctl", []string{"restart", "peakroute-wifi"}},
 }
@@ -375,4 +377,12 @@ func firstLine(output string, err error) string {
 		return err.Error()
 	}
 	return "unknown error"
+}
+
+// wgCheckCommand reads every tunnel file the way WireGuard will, before anything is touched: a scratch tunnel interface is made and
+// given each file in turn (wg-quick strip alone would pass a file with a broken key), then removed.
+func wgCheckCommand() command {
+	script := "trap 'ip link del wgchk 2>/dev/null' EXIT; for f in " + PathWireGuardDir + "/wg*.conf; do [ -e \"$f\" ] || continue; " +
+		"ip link add wgchk type wireguard || exit 1; wg-quick strip \"$f\" | wg setconf wgchk /dev/stdin || exit 1; ip link del wgchk; done"
+	return command{"sh", []string{"-c", script}}
 }

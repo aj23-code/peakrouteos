@@ -231,6 +231,7 @@ func (c NetworkConfig) Validate() error {
 	c.validateSettings(add)
 	c.validateSyslog(add)
 	c.validateDDNS(add)
+	c.validateVPN(add)
 
 	if len(errs) == 0 {
 		return nil

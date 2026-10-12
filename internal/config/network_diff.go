@@ -185,6 +185,7 @@ func DiffNetwork(active, candidate NetworkConfig) []Change {
 	changes = append(changes, diffFirewall(active, candidate)...)
 	changes = append(changes, diffDNS(active, candidate)...)
 	changes = append(changes, diffDDNS(active, candidate)...)
+	changes = append(changes, diffVPN(active, candidate)...)
 	changes = append(changes, diffNetworks(active, candidate)...)
 	changes = append(changes, diffPortNetworks(active, candidate)...)
 	return append(changes, diffRoutes(active.Routes, candidate.Routes)...)

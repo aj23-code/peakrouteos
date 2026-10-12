@@ -37,6 +37,9 @@ func fwInterface(cfg config.NetworkConfig, id string) string {
 	if n, ok := cfg.FindNetwork(id); ok {
 		return networkIface(n)
 	}
+	if z, ok := cfg.FindVPNZone(id); ok {
+		return z.Iface
+	}
 	return ""
 }
 

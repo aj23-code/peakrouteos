@@ -130,6 +130,9 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	if err := ensureSafeSettings(cfg); err != nil {
 		return Desired{}, err
 	}
+	if err := ensureSafeVPN(cfg); err != nil {
+		return Desired{}, err
+	}
 	tokens = append(tokens, cfg.WanLink())
 	if strings.EqualFold(cfg.WanMode, "static") {
 		tokens = append(tokens, cfg.WanIP, cfg.WanSubnet)
@@ -227,6 +230,16 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	if cfg.Hostname != "" {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathHostname, Content: []byte(cfg.Hostname + "\n"), Mode: 0644, Service: SvcHostname})
 	}
+
+	// The VPN: the tunnels' files (the directory belongs to the translator, so a tunnel that is taken out loses its file), the script
+	// that applies them, and the DNS server listening on the remote access interface
+	if content, ok := renderDnsmasqVPN(cfg); ok {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathDnsmasqVPN, Content: []byte(content), Mode: 0644, Service: SvcDnsmasq})
+	} else {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathDnsmasqVPN, Remove: true, Service: SvcDnsmasq})
+	}
+	d.Artifacts = append(d.Artifacts, vpnArtifacts(cfg)...)
+	d.ManagedDirs = append(d.ManagedDirs, ManagedDir{Path: PathWireGuardDir, Service: SvcWireGuard})
 
 	// The time zone, and the time servers (a file only while they are not the defaults)
 	if cfg.Timezone != "" {

@@ -125,7 +125,7 @@ func (f FirewallConfig) FindForward(id string) (PortForward, bool) {
 
 // ---- networks as the firewall sees them ----------------------------------------------------------------------
 
-// networkName is how a Local Network is called in sentences.
+// networkName is how a Local Network (or a VPN) is called in sentences.
 func (c NetworkConfig) networkName(id string) string {
 	if id == DefaultNetworkID {
 		return "LAN"
@@ -133,7 +133,38 @@ func (c NetworkConfig) networkName(id string) string {
 	if n, ok := c.FindNetwork(id); ok {
 		return strings.TrimSpace(n.Name)
 	}
+	if z, ok := c.FindVPNZone(id); ok {
+		return z.Name
+	}
 	return id
+}
+
+// ZonePrefixes returns the addresses behind a Local Network or a VPN (none for anything else).
+func (c NetworkConfig) ZonePrefixes(id string) []netip.Prefix {
+	if p, ok := c.NetworkPrefix(id); ok {
+		return []netip.Prefix{p}
+	}
+	if z, ok := c.FindVPNZone(id); ok {
+		return z.Prefixes
+	}
+	return nil
+}
+
+func prefixesContain(ps []netip.Prefix, a netip.Addr) bool {
+	for _, p := range ps {
+		if p.Contains(a) {
+			return true
+		}
+	}
+	return false
+}
+
+func prefixesText(ps []netip.Prefix) string {
+	parts := make([]string, len(ps))
+	for i, p := range ps {
+		parts[i] = p.String()
+	}
+	return strings.Join(parts, ", ")
 }
 
 // NetworkPrefix returns the addresses of a Local Network (the default one included).
@@ -158,7 +189,10 @@ func (c NetworkConfig) isNetwork(id string) bool {
 	if id == DefaultNetworkID {
 		return true
 	}
-	_, ok := c.FindNetwork(id)
+	if _, ok := c.FindNetwork(id); ok {
+		return true
+	}
+	_, ok := c.FindVPNZone(id)
 	return ok
 }
 
@@ -311,11 +345,11 @@ func (c NetworkConfig) validateFirewall(add func(field, format string, args ...a
 
 		fromOK := r.From == FromWAN || c.isNetwork(r.From)
 		if !fromOK {
-			add(field("from"), "must be the internet or one of your Local Networks")
+			add(field("from"), "must be the internet, one of your Local Networks or a VPN")
 		}
 		toOK := r.To == ToAny || r.To == ToRouter || r.To == ToInternet || c.isNetwork(r.To)
 		if !toOK {
-			add(field("to"), "must be anywhere, this router, the internet or one of your Local Networks")
+			add(field("to"), "must be anywhere, this router, the internet, one of your Local Networks or a VPN")
 		}
 		if fromOK && toOK {
 			switch {
@@ -332,8 +366,8 @@ func (c NetworkConfig) validateFirewall(add func(field, format string, args ...a
 			case !ok:
 				add(field("source"), "must be an IPv4 address or range such as 192.168.1.20 or 192.168.1.0/28")
 			case r.From != FromWAN && fromOK:
-				if np, known := c.NetworkPrefix(r.From); known && !np.Contains(p.Addr()) {
-					add(field("source"), "is not inside the addresses of %s (%s)", c.networkName(r.From), np)
+				if nps := c.ZonePrefixes(r.From); len(nps) > 0 && !prefixesContain(nps, p.Addr()) {
+					add(field("source"), "is not inside the addresses of %s (%s)", c.networkName(r.From), prefixesText(nps))
 				}
 			}
 		}
@@ -343,8 +377,8 @@ func (c NetworkConfig) validateFirewall(add func(field, format string, args ...a
 			case !ok:
 				add(field("destination"), "must be an IPv4 address or range such as 192.168.1.20 or 192.168.1.0/28")
 			case c.isNetwork(r.To):
-				if np, known := c.NetworkPrefix(r.To); known && !np.Contains(p.Addr()) {
-					add(field("destination"), "is not inside the addresses of %s (%s)", c.networkName(r.To), np)
+				if nps := c.ZonePrefixes(r.To); len(nps) > 0 && !prefixesContain(nps, p.Addr()) {
+					add(field("destination"), "is not inside the addresses of %s (%s)", c.networkName(r.To), prefixesText(nps))
 				}
 			}
 		}
