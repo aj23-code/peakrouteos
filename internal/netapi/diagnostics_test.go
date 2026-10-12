@@ -226,4 +226,3 @@ func TestTheConnectionTestThroughTheAPI(t *testing.T) {
 		t.Errorf("GET: %d", rec.Code)
 	}
 }
-
