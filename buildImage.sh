@@ -12,6 +12,8 @@ set -euo pipefail
 # There is no installer and no console setup: the first thing a person sees is the welcome page of the web interface. It also
 # boots in a virtual machine for trying (see docs/image.md).
 #
+# The image is as small as it can be (the root partition grows at the first start); IMAGE_SIZE=6G makes it an exact size.
+#
 # Layout (GPT): a 1 MiB BIOS boot partition (for machines that start in legacy mode), a 128 MiB EFI system partition (FAT32, label
 # PRESP) and the root file system (ext4, label peakroute-root), which grows to fill the disk at the first start.
 # ==========================================
@@ -34,8 +36,10 @@ MOUNT_DIR="${BUILD_DIR}/mnt"
 OUTPUT_IMG="${OUTPUT_IMG:-${PROJECT_DIR}/peakroute-os.img}"
 GO_BINARY_PATH="${PROJECT_DIR}/peakroute"
 OVERLAY_DIR="${PROJECT_DIR}/image/overlay"
-# The size of the image file (sparse). The root partition fills it, and grows again to fill a bigger disk at the first start.
-IMAGE_SIZE="${IMAGE_SIZE:-4G}"
+# The size of the image file. "auto" (the default) is what the system needs plus a little room: the root partition grows to fill the disk
+# at the first start anyway, so there is nothing to gain from padding (a bigger image only takes longer to download and to write). A size
+# such as 6G (an exact size for the file) overrides it.
+IMAGE_SIZE="${IMAGE_SIZE:-auto}"
 # REUSE_ROOTFS=1 skips the download and install of Debian when a root file system from an earlier run is there (to change the
 # overlay, the scripts or the binary and build the image again in about a minute).
 REUSE_ROOTFS="${REUSE_ROOTFS:-0}"
@@ -207,9 +211,18 @@ rm -rf "${ROOTFS_DIR}"/var/lib/apt/lists/* "${ROOTFS_DIR}"/var/cache/apt/* "${RO
 
 umount -l "${ROOTFS_DIR}/dev/pts" "${ROOTFS_DIR}/proc" "${ROOTFS_DIR}/sys" "${ROOTFS_DIR}/dev"
 
-echo "[4/5] Making the disk image (${IMAGE_SIZE})..."
+echo "[4/5] Making the disk image..."
 
 rm -f "${OUTPUT_IMG}"
+if [ "${IMAGE_SIZE}" = "auto" ]; then
+    # what is in the root file system, plus a fifth for the file system's own structures and 300 MB of room for logs, certificates and
+    # the history databases before the partition has grown; plus the BIOS boot and EFI partitions and the partition tables
+    used_mb="$(du -sxm "${ROOTFS_DIR}" | cut -f1)"
+    IMAGE_SIZE="$(( used_mb * 12 / 10 + 300 + 130 + 2 ))M"
+    echo "      the root file system is ${used_mb} MB: an image of ${IMAGE_SIZE}"
+else
+    echo "      an image of ${IMAGE_SIZE}"
+fi
 truncate -s "${IMAGE_SIZE}" "${OUTPUT_IMG}"
 sfdisk --quiet "${OUTPUT_IMG}" << 'EOF'
 label: gpt
@@ -231,8 +244,8 @@ done
 
 mkfs.vfat -F32 -n PRESP "${LOOP_DEV}p2" > /dev/null
 # GRUB reads the root file system to find its configuration: leave out a feature of the newest e2fsprogs that older GRUBs do not know
-mkfs.ext4 -q -F -L peakroute-root -O ^orphan_file "${LOOP_DEV}p3" 2>/dev/null \
-    || mkfs.ext4 -q -F -L peakroute-root "${LOOP_DEV}p3"
+mkfs.ext4 -q -F -m 1 -L peakroute-root -O ^orphan_file "${LOOP_DEV}p3" 2>/dev/null \
+    || mkfs.ext4 -q -F -m 1 -L peakroute-root "${LOOP_DEV}p3"
 
 mount "${LOOP_DEV}p3" "${MOUNT_DIR}"
 echo "      copying the root file system..."

@@ -11,7 +11,8 @@ On an Ubuntu or Debian machine with `debootstrap`, `fdisk`, `dosfstools`, `e2fsp
     ./full_build.sh
 
 That builds the daemon (`peakroute`) and then runs `buildImage.sh`, which asks for `sudo` once (debootstrap, chroot and loop devices need
-root) and makes **`peakroute-os.img`** (4 GB, sparse) and its `.sha256`. `IMAGE_SIZE=6G` makes it bigger. Debian is unpacked in `build/` in the project folder, or in `/var/tmp/peakroute-build` when the project
+root) and makes **`peakroute-os.img`** and its `.sha256`. The image is only as big as what is in it plus room to start (the root file system plus a fifth
+and 300 MB, about 2 to 3 GB), because the root partition grows to the disk at the first start; `IMAGE_SIZE=6G` makes it an exact size. Debian is unpacked in `build/` in the project folder, or in `/var/tmp/peakroute-build` when the project
 folder is on a drive mounted `nodev` or `noexec` (external and data drives often are: debootstrap cannot work there); `BUILD_DIR=/some/folder`
 chooses another, which needs about 4 GB free. The script stops at the first error and checks that Debian really installed before it goes on. After a first build,
 `REUSE_ROOTFS=1 ./buildImage.sh` skips the download of Debian and builds the image again in about a minute (to try a change to the
