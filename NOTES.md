@@ -633,8 +633,8 @@ space with `sfdisk -N`, `partx -u`, `resize2fs`; once, marker `/var/lib/peakrout
 the real `sfdisk` and `sgdisk`). `image/run-qemu.sh` boots the image in QEMU (UEFI or BIOS, on a bigger virtual disk, the web interface
 forwarded). The real tools caught one mistake while writing it: the BIOS boot partition's type GUID. The first real run (the user's, with `sudo`) hit two faults that are fixed: the project drive was mounted `nodev` (debootstrap cannot work there: the build folder
 moves to `/var/tmp` then) and a `set +e` inside `cleanup` disabled the script's stop-at-first-error. The rebuilt image was written to an NVMe disk in a real
-machine and **booted to the welcome page** (the setup network works on real hardware). Still to check on it: the grow of the root partition (the partition showed
-its image size, about 1.3 GB, before the first start), the rest of the wizard flows, and Wi-Fi.
+machine and **booted to the welcome page** (the setup network works on real hardware). It then **grew the root partition to the whole disk and routed** (router setup, commit and routing worked on real hardware). Still to check on it: the rest of
+the wizard flows (access point, extender, link, restore), Wi-Fi, VPN and the other pages.
 
 ### Access point mode, the second round (2026-10-12)
 
