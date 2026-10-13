@@ -7,10 +7,12 @@ import (
 	"peakroute/internal/wireless"
 )
 
-// WifiAdapter is an adapter the wizard can use for Wi-Fi.
+// WifiAdapter is an adapter the wizard can use for Wi-Fi: to host networks, to join one (a client), or both.
 type WifiAdapter struct {
-	Name  string   `json:"name"`
-	Bands []string `json:"bands"`
+	Name   string   `json:"name"`
+	Bands  []string `json:"bands"`
+	Host   bool     `json:"host"`
+	Client bool     `json:"client"`
 }
 
 // usableAdapters are the adapters that can be an access point and whose abilities are known, by name.
@@ -60,8 +62,17 @@ func widthFor(b wireless.Band) int {
 //   - with two or more adapters the first that can serves 5 GHz and the next 2.4 GHz, so both bands are covered, with band steering.
 //
 // The channel is left automatic. It returns an empty setup if no adapter qualifies.
-func wifiFor(rep wireless.Report, name, passphrase string) config.WifiConfig {
-	adapters := usableAdapters(rep)
+func wifiFor(rep wireless.Report, name, passphrase string, except ...string) config.WifiConfig {
+	var adapters []wireless.Adapter
+	for _, a := range usableAdapters(rep) {
+		skip := false
+		for _, x := range except {
+			skip = skip || (x != "" && a.Name == x)
+		}
+		if !skip {
+			adapters = append(adapters, a)
+		}
+	}
 	var wf config.WifiConfig
 	covered := map[string]bool{}
 	add := func(a wireless.Adapter, band wireless.Band) {
@@ -107,15 +118,24 @@ func wifiFor(rep wireless.Report, name, passphrase string) config.WifiConfig {
 	return wf
 }
 
-// wifiAdapters is what the wizard page needs to know about Wi-Fi.
+// wifiAdapters is what the wizard page needs to know about Wi-Fi: the adapters whose abilities are known and that can host a network or
+// join one.
 func (s *Service) wifiAdapters() []WifiAdapter {
 	out := []WifiAdapter{}
 	if s.Wireless == nil {
 		return out
 	}
 	rep := s.wirelessReport()
-	for _, a := range usableAdapters(rep) {
-		wa := WifiAdapter{Name: a.Name, Bands: []string{}}
+	adapters := append([]wireless.Adapter(nil), rep.Adapters...)
+	sort.Slice(adapters, func(i, j int) bool { return adapters[i].Name < adapters[j].Name })
+	for _, a := range adapters {
+		if !a.CapabilitiesKnown || len(a.Bands) == 0 {
+			continue
+		}
+		wa := WifiAdapter{Name: a.Name, Bands: []string{}, Host: a.APCapable, Client: hasMode(a.Modes, "managed")}
+		if !wa.Host && !wa.Client {
+			continue
+		}
 		for _, b := range a.Bands {
 			wa.Bands = append(wa.Bands, b.Name)
 		}

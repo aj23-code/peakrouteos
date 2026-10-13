@@ -139,3 +139,48 @@ func TestOnlyAnEditableDeviceChangesMode(t *testing.T) {
 		t.Fatalf("%d", rec.Code)
 	}
 }
+
+func TestAWifiNetworkOnAnAccessPointTakesAVLANAndARouterRefusesOne(t *testing.T) {
+	e := wifiEnv(t)
+	e.setRadio("wlan1", radio5)
+	// a router: a VLAN ID is refused, with the message on the field
+	rec := e.addSSID(`{"ssid":"Guest","passphrase":"correct horse battery","bands":["5 GHz"],"vlan":20}`)
+	if rec.Code != http.StatusBadRequest || !errorFields(t, rec)["vlan"] {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if w := e.wifi(); w.APMode || len(w.Networks) != 0 {
+		t.Fatalf("%+v", w)
+	}
+	// an access point: accepted, shown, changed, and checked
+	e.ap(http.MethodPut, `{"mode":"ap"}`)
+	rec = e.addSSID(`{"ssid":"Guest","passphrase":"correct horse battery","bands":["5 GHz"],"vlan":20}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if v := decodeInto[WifiNetwork](t, rec); v.VLAN != 20 {
+		t.Fatalf("%+v", v)
+	}
+	if w := e.wifi(); !w.APMode || len(w.Networks) != 1 || w.Networks[0].VLAN != 20 {
+		t.Fatalf("%+v", w)
+	}
+	for _, bad := range []string{`{"vlan":1}`, `{"vlan":4095}`, `{"vlan":-2}`} {
+		if rec := e.ssid(http.MethodPut, "wifi1", bad); rec.Code != http.StatusBadRequest || !errorFields(t, rec)["vlan"] {
+			t.Errorf("%s: %d %s", bad, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := e.ssid(http.MethodPut, "wifi1", `{"vlan":0}`); rec.Code != 200 || decodeInto[WifiNetwork](t, rec).VLAN != 0 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAnAccessPointHasNoInternetConnectionToMake(t *testing.T) {
+	e := wifiEnv(t)
+	e.ap(http.MethodPut, `{"mode":"ap"}`)
+	code, _, raw := e.station(http.MethodPut, "wlan2", `{"ssid":"Cafe","passphrase":"correct horse battery","role":"uplink"}`)
+	if code != 400 || !strings.Contains(raw, "link into a local network") {
+		t.Fatalf("%d %s", code, raw)
+	}
+	if code, _, raw := e.station(http.MethodPut, "wlan2", `{"ssid":"Main","passphrase":"correct horse battery","role":"bridge"}`); code != 200 {
+		t.Fatalf("%d %s", code, raw)
+	}
+}

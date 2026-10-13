@@ -142,3 +142,66 @@ func TestACopyOfAnAccessPointSharesNothing(t *testing.T) {
 		t.Fatalf("%v", got)
 	}
 }
+
+func tagged(vlan int, id, name string) WifiNetwork {
+	n := homeWifi()
+	n.ID, n.SSID, n.Bands, n.BandSteering, n.VLAN = id, name, []string{Band24}, false, vlan
+	return n
+}
+
+func TestAWifiNetworkOfAnAccessPointCanBeOnAVLAN(t *testing.T) {
+	c := apNet(func(c *NetworkConfig) {
+		c.Wifi = &WifiConfig{Radios: []WifiRadio{radio24()}, Networks: []WifiNetwork{tagged(0, "w1", "Home"), tagged(20, "w2", "Guest"), tagged(20, "w3", "Guest 2"), tagged(30, "w4", "Cameras")}}
+	})
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.APVLANs(); len(got) != 2 || got[0] != 20 || got[1] != 30 {
+		t.Fatalf("%v", got)
+	}
+	// a network that is switched off does not need its VLAN
+	c.Wifi.Networks[3].Disabled = true
+	if got := c.APVLANs(); len(got) != 1 || got[0] != 20 {
+		t.Fatalf("%v", got)
+	}
+	for _, bad := range []int{1, -5, 4095, 70000} {
+		c := apNet(func(c *NetworkConfig) {
+			c.Wifi = &WifiConfig{Radios: []WifiRadio{radio24()}, Networks: []WifiNetwork{tagged(bad, "w1", "Home")}}
+		})
+		err := c.Validate()
+		if err == nil || !fieldsOf(t, err).Has("wifi.networks[0].vlan") {
+			t.Errorf("VLAN %d: %v", bad, err)
+		}
+	}
+}
+
+func TestARouterKeepsToLocalNetworksAndRefusesAWifiVLAN(t *testing.T) {
+	c := withWifi(validNet(), "US", []WifiRadio{radio24()}, tagged(20, "w1", "Home"))
+	c.Wifi.Networks[0].Network = "lan"
+	err := c.Validate()
+	if err == nil || !fieldsOf(t, err).Has("wifi.networks[0].vlan") {
+		t.Fatalf("%v", err)
+	}
+	c.Wifi.Networks[0].VLAN = 0
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTheReviewNamesTheVLANOfAWifiNetworkOnAnAccessPoint(t *testing.T) {
+	old := apNet(func(c *NetworkConfig) {
+		c.Wifi = &WifiConfig{Radios: []WifiRadio{radio24()}, Networks: []WifiNetwork{tagged(0, "w1", "Guest")}}
+	})
+	b := apNet(func(c *NetworkConfig) {
+		c.Wifi = &WifiConfig{Radios: []WifiRadio{radio24()}, Networks: []WifiNetwork{tagged(20, "w1", "Guest")}}
+	})
+	for _, ch := range DiffNetwork(old, b) {
+		if ch.Field == "wifi_networks" {
+			if !strings.Contains(ch.Old, "untagged network") || !strings.Contains(ch.New, "VLAN 20") || strings.Contains(ch.New, "joins") {
+				t.Fatalf("%+v", ch)
+			}
+			return
+		}
+	}
+	t.Fatal("the change is not in the review")
+}

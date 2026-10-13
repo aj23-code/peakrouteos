@@ -412,7 +412,14 @@ func wifiNetworkText(c NetworkConfig, n WifiNetwork) string {
 	if security == "" {
 		security = text(n.Security)
 	}
-	parts := []string{"joins " + localNetworkName(c, n.Network), security, strings.Join(n.Bands, " + ")}
+	joins := "joins " + localNetworkName(c, n.Network)
+	if c.IsAP() {
+		joins = "untagged network"
+		if n.VLAN != 0 {
+			joins = fmt.Sprintf("VLAN %d", n.VLAN)
+		}
+	}
+	parts := []string{joins, security, strings.Join(n.Bands, " + ")}
 	if n.BandSteering {
 		parts = append(parts, "band steering")
 	}

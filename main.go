@@ -363,6 +363,10 @@ func main() {
 	if devMode {
 		consoleAccounts = console.Dev{}
 	}
+	// An access point has no internet connection, networks, firewall, VPN or DHCP of its own: the interface of those pages says so
+	routerOnly := func(h http.HandlerFunc) http.HandlerFunc {
+		return netapi.RouterOnly(func() bool { return cfgMgr.NetworkConfig().IsAP() }, h)
+	}
 	netAPI := &netapi.API{Manager: cfgMgr, Ports: network.GetPhysicalInterfaces, Editable: configSvc.Idle,
 		Live: func(active config.NetworkConfig) *netapi.Live {
 			dev := active.WanDevice()
@@ -386,7 +390,7 @@ func main() {
 		}
 		return netapi.ClassifyRoutes(network.ParseRoutingTable(data))
 	}
-	mux.HandleFunc("/api/v1/routes", requireAuth(netAPI.HandleRoutes))
+	mux.HandleFunc("/api/v1/routes", requireAuth(routerOnly(netAPI.HandleRoutes)))
 	// Wi-Fi adapters and what they can do (read only)
 	wifi := wireless.Detector{SysClassNet: "/sys/class/net", Run: func(ctx context.Context, name string, args ...string) (string, error) {
 		out, err := exec.CommandContext(ctx, name, args...).Output()
@@ -420,6 +424,13 @@ func main() {
 	go presenceTracker.Run(pollerCtx)
 	netAPI.Wireless = wifi.Detect
 	netAPI.Scan = wifi.Scan
+	netAPI.Bridge = func() ([]string, bool) { return netapi.InterfaceAddrs("br0") }
+	netAPI.Gateway = func() string { return netapi.DefaultGateway("br0") }
+	netAPI.Resolvers = netapi.Resolvers
+	netAPI.Stations = stations.Get
+	netAPI.WifiDev = wifi.Interfaces
+	netAPI.Survey = wifi.Survey
+	netAPI.Link = wifi.Link
 	mux.HandleFunc("/api/v1/wifi", requireAuth(netAPI.HandleWifi))
 	// Backup and restore: one encrypted file with the settings, the administrators, the certificates and (if asked) the history;
 	// restoring shows what is in it first and puts the settings in the draft (docs/backup.md)
@@ -463,49 +474,49 @@ func main() {
 		count, max := network.ConntrackLimits()
 		return conns, count, max, ok
 	}
-	mux.HandleFunc("/api/v1/firewall/connections", requireAuth(netAPI.HandleConnections))
+	mux.HandleFunc("/api/v1/firewall/connections", requireAuth(routerOnly(netAPI.HandleConnections)))
 	if fwLogStore != nil { // a nil *Store inside the interface would not be nil
 		netAPI.FirewallLog = fwLogStore
 	}
-	mux.HandleFunc("/api/v1/firewall/log", requireAuth(netAPI.HandleFirewallLog))
-	mux.HandleFunc("/api/v1/firewall/log.csv", requireAuth(netAPI.HandleFirewallLogCSV))
-	mux.HandleFunc("/api/v1/firewall", requireAuth(netAPI.HandleFirewall))
-	mux.HandleFunc("/api/v1/firewall/counters", requireAuth(netAPI.HandleFirewallCounters))
-	mux.HandleFunc("/api/v1/firewall/order", requireAuth(netAPI.HandleFirewallOrder))
-	mux.HandleFunc("/api/v1/firewall/rules", requireAuth(netAPI.HandleFirewallRules))
-	mux.HandleFunc("/api/v1/firewall/rules/{id}", requireAuth(netAPI.HandleFirewallRule))
-	mux.HandleFunc("/api/v1/firewall/forwards", requireAuth(netAPI.HandleFirewallForwards))
-	mux.HandleFunc("/api/v1/firewall/forwards/{id}", requireAuth(netAPI.HandleFirewallForward))
+	mux.HandleFunc("/api/v1/firewall/log", requireAuth(routerOnly(netAPI.HandleFirewallLog)))
+	mux.HandleFunc("/api/v1/firewall/log.csv", requireAuth(routerOnly(netAPI.HandleFirewallLogCSV)))
+	mux.HandleFunc("/api/v1/firewall", requireAuth(routerOnly(netAPI.HandleFirewall)))
+	mux.HandleFunc("/api/v1/firewall/counters", requireAuth(routerOnly(netAPI.HandleFirewallCounters)))
+	mux.HandleFunc("/api/v1/firewall/order", requireAuth(routerOnly(netAPI.HandleFirewallOrder)))
+	mux.HandleFunc("/api/v1/firewall/rules", requireAuth(routerOnly(netAPI.HandleFirewallRules)))
+	mux.HandleFunc("/api/v1/firewall/rules/{id}", requireAuth(routerOnly(netAPI.HandleFirewallRule)))
+	mux.HandleFunc("/api/v1/firewall/forwards", requireAuth(routerOnly(netAPI.HandleFirewallForwards)))
+	mux.HandleFunc("/api/v1/firewall/forwards/{id}", requireAuth(routerOnly(netAPI.HandleFirewallForward)))
 	mux.HandleFunc("/api/v1/settings", requireAuth(netAPI.HandleSettings))
 	mux.HandleFunc("/api/v1/settings/country", requireAuth(netAPI.HandleSettingsCountry))
 	mux.HandleFunc("/api/v1/settings/domain", requireAuth(netAPI.HandleSettingsDomain))
 	netAPI.TimeStatus = network.ReadTimeStatus
 	netAPI.DDNSStatuses = ddnsUpdater.Statuses
 	netAPI.DDNSUpdate = ddnsUpdater.UpdateNow
-	mux.HandleFunc("/api/v1/ddns", requireAuth(netAPI.HandleDDNS))
-	mux.HandleFunc("/api/v1/ddns/{id}", requireAuth(netAPI.HandleDDNSEntry))
-	mux.HandleFunc("/api/v1/ddns/{id}/update", requireAuth(netAPI.HandleDDNSUpdate))
+	mux.HandleFunc("/api/v1/ddns", requireAuth(routerOnly(netAPI.HandleDDNS)))
+	mux.HandleFunc("/api/v1/ddns/{id}", requireAuth(routerOnly(netAPI.HandleDDNSEntry)))
+	mux.HandleFunc("/api/v1/ddns/{id}/update", requireAuth(routerOnly(netAPI.HandleDDNSUpdate)))
 	// VPN: site tunnels and remote access with WireGuard. The tunnels are in /etc/wireguard and survive a restart of the router only
 	// because the daemon brings them up again here.
 	wgReader := &wg.Reader{}
 	netAPI.WireGuard = wgReader.Interfaces
-	mux.HandleFunc("/api/v1/vpn", requireAuth(netAPI.HandleVPN))
-	mux.HandleFunc("/api/v1/vpn/sites", requireAuth(netAPI.HandleVPNSites))
-	mux.HandleFunc("/api/v1/vpn/sites/{id}", requireAuth(netAPI.HandleVPNSite))
-	mux.HandleFunc("/api/v1/vpn/remote", requireAuth(netAPI.HandleVPNRemote))
-	mux.HandleFunc("/api/v1/vpn/remote/clients", requireAuth(netAPI.HandleVPNClients))
-	mux.HandleFunc("/api/v1/vpn/remote/clients/{id}", requireAuth(netAPI.HandleVPNClient))
-	mux.HandleFunc("/api/v1/vpn/remote/clients/{id}/file", requireAuth(netAPI.HandleVPNClientTemplate))
+	mux.HandleFunc("/api/v1/vpn", requireAuth(routerOnly(netAPI.HandleVPN)))
+	mux.HandleFunc("/api/v1/vpn/sites", requireAuth(routerOnly(netAPI.HandleVPNSites)))
+	mux.HandleFunc("/api/v1/vpn/sites/{id}", requireAuth(routerOnly(netAPI.HandleVPNSite)))
+	mux.HandleFunc("/api/v1/vpn/remote", requireAuth(routerOnly(netAPI.HandleVPNRemote)))
+	mux.HandleFunc("/api/v1/vpn/remote/clients", requireAuth(routerOnly(netAPI.HandleVPNClients)))
+	mux.HandleFunc("/api/v1/vpn/remote/clients/{id}", requireAuth(routerOnly(netAPI.HandleVPNClient)))
+	mux.HandleFunc("/api/v1/vpn/remote/clients/{id}/file", requireAuth(routerOnly(netAPI.HandleVPNClientTemplate)))
 	ovReader := &ovpn.Reader{}
 	netAPI.OVConnections = ovReader.Connections
 	netAPI.LinkUp = func(iface string) bool {
 		i, err := net.InterfaceByName(iface)
 		return err == nil && i.Flags&net.FlagUp != 0
 	}
-	mux.HandleFunc("/api/v1/vpn/ca/renew-server", requireAuth(netAPI.HandleVPNCARenewServer))
-	mux.HandleFunc("/api/v1/vpn/ov-remote", requireAuth(netAPI.HandleVPNOVRemote))
-	mux.HandleFunc("/api/v1/vpn/ov-remote/clients", requireAuth(netAPI.HandleVPNOVClients))
-	mux.HandleFunc("/api/v1/vpn/ov-remote/clients/{id}", requireAuth(netAPI.HandleVPNOVClient))
+	mux.HandleFunc("/api/v1/vpn/ca/renew-server", requireAuth(routerOnly(netAPI.HandleVPNCARenewServer)))
+	mux.HandleFunc("/api/v1/vpn/ov-remote", requireAuth(routerOnly(netAPI.HandleVPNOVRemote)))
+	mux.HandleFunc("/api/v1/vpn/ov-remote/clients", requireAuth(routerOnly(netAPI.HandleVPNOVClients)))
+	mux.HandleFunc("/api/v1/vpn/ov-remote/clients/{id}", requireAuth(routerOnly(netAPI.HandleVPNOVClient)))
 	if !devMode {
 		for _, script := range []string{translator.PathWGSync, translator.PathOVSync} {
 			if _, err := os.Stat(script); err == nil {
@@ -552,21 +563,22 @@ func main() {
 		return nil
 	}
 	mux.HandleFunc("/api/v1/system/power", requireAuth(adminAPI.HandlePower))
-	mux.HandleFunc("/api/v1/dns", requireAuth(netAPI.HandleDNS))
+	mux.HandleFunc("/api/v1/dns", requireAuth(routerOnly(netAPI.HandleDNS)))
 	mux.HandleFunc("/api/v1/dns/lookup", requireAuth(netAPI.HandleDNSLookup))
 	mux.HandleFunc("/api/v1/diagnostics", requireAuth(netAPI.HandleDiagnostics))
 	mux.HandleFunc("/api/v1/diagnostics/jobs", requireAuth(netAPI.HandleDiagnosticsJobs))
 	mux.HandleFunc("/api/v1/diagnostics/jobs/{id}", requireAuth(netAPI.HandleDiagnosticsJob))
 	mux.HandleFunc("/api/v1/diagnostics/connect", requireAuth(netAPI.HandleDiagnosticsConnect))
-	mux.HandleFunc("/api/v1/dns/upstream", requireAuth(netAPI.HandleDNSUpstream))
-	mux.HandleFunc("/api/v1/dns/networks/{id}", requireAuth(netAPI.HandleDNSNetwork))
-	mux.HandleFunc("/api/v1/dns/hosts", requireAuth(netAPI.HandleDNSHosts))
-	mux.HandleFunc("/api/v1/dns/hosts/{id}", requireAuth(netAPI.HandleDNSHost))
-	mux.HandleFunc("/api/v1/dns/forwards", requireAuth(netAPI.HandleDNSForwards))
-	mux.HandleFunc("/api/v1/dns/forwards/{id}", requireAuth(netAPI.HandleDNSForward))
+	mux.HandleFunc("/api/v1/dns/upstream", requireAuth(routerOnly(netAPI.HandleDNSUpstream)))
+	mux.HandleFunc("/api/v1/dns/networks/{id}", requireAuth(routerOnly(netAPI.HandleDNSNetwork)))
+	mux.HandleFunc("/api/v1/dns/hosts", requireAuth(routerOnly(netAPI.HandleDNSHosts)))
+	mux.HandleFunc("/api/v1/dns/hosts/{id}", requireAuth(routerOnly(netAPI.HandleDNSHost)))
+	mux.HandleFunc("/api/v1/dns/forwards", requireAuth(routerOnly(netAPI.HandleDNSForwards)))
+	mux.HandleFunc("/api/v1/dns/forwards/{id}", requireAuth(routerOnly(netAPI.HandleDNSForward)))
 	mux.HandleFunc("/api/v1/wifi/radios/{name}", requireAuth(netAPI.HandleWifiRadio))
 	mux.HandleFunc("/api/v1/wifi/stations/{name}", requireAuth(netAPI.HandleWifiStation))
 	mux.HandleFunc("/api/v1/wifi/scan", requireAuth(netAPI.HandleWifiScan))
+	mux.HandleFunc("/api/v1/ap/status", requireAuth(netAPI.HandleAPStatus))
 	mux.HandleFunc("/api/v1/ap", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			netAPI.HandleAPSet(w, r)
@@ -576,8 +588,8 @@ func main() {
 	}))
 	mux.HandleFunc("/api/v1/wifi/networks", requireAuth(netAPI.HandleWifiNetworks))
 	mux.HandleFunc("/api/v1/wifi/networks/{id}", requireAuth(netAPI.HandleWifiNetwork))
-	mux.HandleFunc("/api/v1/uplinks", requireAuth(netAPI.HandleUplinks))
-	mux.HandleFunc("/api/v1/uplinks/{id}", requireAuth(netAPI.HandleUplink))
+	mux.HandleFunc("/api/v1/uplinks", requireAuth(routerOnly(netAPI.HandleUplinks)))
+	mux.HandleFunc("/api/v1/uplinks/{id}", requireAuth(routerOnly(netAPI.HandleUplink)))
 	mux.HandleFunc("/api/v1/uplinks/{id}/health", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		if r.PathValue("id") != "wan" {
 			http.NotFound(w, r)
@@ -585,16 +597,17 @@ func main() {
 		}
 		wanProbe.HandleHistory(w, r)
 	}))
-	mux.HandleFunc("/api/v1/ports", requireAuth(netAPI.HandlePorts))
-	mux.HandleFunc("/api/v1/networks", requireAuth(netAPI.HandleNetworks))
-	mux.HandleFunc("/api/v1/networks/{id}", requireAuth(netAPI.HandleNetwork))
+	mux.HandleFunc("/api/v1/ports", requireAuth(routerOnly(netAPI.HandlePorts)))
+	mux.HandleFunc("/api/v1/networks", requireAuth(routerOnly(netAPI.HandleNetworks)))
+	mux.HandleFunc("/api/v1/networks/{id}", requireAuth(routerOnly(netAPI.HandleNetwork)))
 
 	// First-run wizard: open only while the router is not set up (docs/setup.md)
 	setupSvc := &setup.Service{Manager: cfgMgr, Ports: network.GetPhysicalInterfaces, Here: setup.HerePorts, DefaultRoute: setup.DefaultRouteDevice,
-		Restore: backupSvc, Console: consoleAccounts, Wireless: wifi.Detect, NewSession: sessionMgr.CreateSession, Hostname: func() string { h, _ := os.Hostname(); return h }}
+		Restore: backupSvc, Console: consoleAccounts, Wireless: wifi.Detect, Scan: wifi.Scan, NewSession: sessionMgr.CreateSession, Hostname: func() string { h, _ := os.Hostname(); return h }}
 	mux.HandleFunc("/api/v1/setup/info", setupSvc.Guard(setupSvc.HandleInfo))
 	mux.HandleFunc("/api/v1/setup/check", setupSvc.Guard(setupSvc.HandleCheck))
 	mux.HandleFunc("/api/v1/setup/apply", setupSvc.Guard(setupSvc.HandleApply))
+	mux.HandleFunc("/api/v1/setup/wifi/scan", setupSvc.Guard(setupSvc.HandleScan))
 	mux.HandleFunc("/api/v1/setup/restore/open", setupSvc.Guard(backupSvc.HandleOpen))
 	mux.HandleFunc("/api/v1/setup/restore/preview", setupSvc.Guard(backupSvc.HandlePreviewChoice))
 	mux.HandleFunc("/api/v1/setup/restore/apply", setupSvc.Guard(setupSvc.HandleRestoreApply))
@@ -663,8 +676,7 @@ func main() {
 		if r.URL.Path == "/" || r.URL.Path == "/dashboard" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-			// what the device is follows the settings in effect: a router, or an access point
-			sysMode := cfgMgr.NetworkConfig().OperationMode()
+			sysMode := dashboardMode()
 
 			data := struct {
 				SystemMode string
@@ -767,6 +779,12 @@ func renderFirstRun(w http.ResponseWriter) {
 	if err := tmpl.ExecuteTemplate(w, "first_run.html", nil); err != nil {
 		log.Printf("[-] Template execution error (first_run.html): %v", err)
 	}
+}
+
+// dashboardMode is what the pages show the device as (config.ShownMode).
+func dashboardMode() string {
+	staged, has := cfgMgr.StagedNetworkConfig()
+	return config.ShownMode(cfgMgr.NetworkConfig(), staged, has)
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net/netip"
+	"sort"
 	"strings"
 )
 
@@ -16,6 +17,10 @@ import (
 const (
 	APDHCP   = "dhcp"
 	APStatic = "static"
+
+	// The VLAN IDs a Wi-Fi network of an access point can be on (1 is the untagged network).
+	MinAPVLAN = 2
+	MaxVLAN   = 4094
 
 	// APRecoveryAddress is kept on the bridge beside the real address.
 	APRecoveryAddress = "192.168.77.1/24"
@@ -59,6 +64,32 @@ func (c NetworkConfig) IsAP() bool { return c.AP != nil && c.AP.Enabled }
 // OperationMode is "AP" or "ROUTER".
 func (c NetworkConfig) OperationMode() string {
 	if c.IsAP() {
+		return "AP"
+	}
+	return "ROUTER"
+}
+
+// APVLANs lists the VLAN IDs the Wi-Fi networks that are switched on use, smallest first (not the untagged network).
+func (c NetworkConfig) APVLANs() []int {
+	seen := map[int]bool{}
+	var out []int
+	for _, n := range c.WifiSettings().Networks {
+		if !n.Disabled && n.VLAN != 0 && !seen[n.VLAN] {
+			seen[n.VLAN] = true
+			out = append(out, n.VLAN)
+		}
+	}
+	sort.Ints(out)
+	return out
+}
+
+// ShownMode is what the pages show the device as, "AP" or "ROUTER": what it is now (the settings in effect), except right after the
+// first-run setup, when nothing has been applied yet: then what it is being set up as (the draft).
+func ShownMode(active, staged NetworkConfig, hasDraft bool) string {
+	if active.IsAP() {
+		return "AP"
+	}
+	if active.WanInterface == "" && len(active.LanInterfaces) == 0 && hasDraft && staged.IsAP() {
 		return "AP"
 	}
 	return "ROUTER"

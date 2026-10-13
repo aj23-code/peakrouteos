@@ -30,13 +30,15 @@ type APSetup struct {
 
 type apResponse struct {
 	// Mode is what the draft says ("router" or "ap"); ActiveMode is what the device is now.
-	Mode       string   `json:"mode"`
-	ActiveMode string   `json:"active_mode"`
-	AP         APSetup  `json:"ap"`
-	Ports      []APPort `json:"ports"` // the cable ports of this machine
-	Recovery   string   `json:"recovery_address"`
-	Pending    bool     `json:"pending"`
-	Editable   bool     `json:"editable"`
+	Mode       string `json:"mode"`
+	ActiveMode string `json:"active_mode"`
+	// ShownMode is what the pages show the device as ("AP" or "ROUTER"): a page that shows another one loads again.
+	ShownMode string   `json:"shown_mode"`
+	AP        APSetup  `json:"ap"`
+	Ports     []APPort `json:"ports"` // the cable ports of this machine
+	Recovery  string   `json:"recovery_address"`
+	Pending   bool     `json:"pending"`
+	Editable  bool     `json:"editable"`
 }
 
 func modeWord(c config.NetworkConfig) string {
@@ -75,7 +77,8 @@ func (a *API) wiredPorts() []config.SystemInterface {
 func (a *API) apView() apResponse {
 	active := a.Manager.NetworkConfig()
 	draft, _ := a.Manager.StagedNetworkConfig()
-	resp := apResponse{Mode: modeWord(draft), ActiveMode: modeWord(active), AP: apSetupOf(draft), Ports: []APPort{},
+	staged, hasDraft := a.Manager.StagedNetworkConfig()
+	resp := apResponse{ShownMode: config.ShownMode(active, staged, hasDraft), Mode: modeWord(draft), ActiveMode: modeWord(active), AP: apSetupOf(draft), Ports: []APPort{},
 		Recovery: config.APRecoveryAddress, Pending: modeWord(draft) != modeWord(active) || apSetupOf(draft).Mode != apSetupOf(active).Mode ||
 			strings.Join(draft.APSettings().Ports, ",") != strings.Join(active.APSettings().Ports, ",") || draft.APSettings().IP != active.APSettings().IP, Editable: a.editable()}
 	for _, p := range a.wiredPorts() {

@@ -42,8 +42,9 @@ type Service struct {
 	NewSession func(username string, w http.ResponseWriter) string
 	// Console makes the administrator the login of the machine's console too (nil: only the web interface).
 	Console console.Accounts
-	// Wireless reads the Wi-Fi adapters (nil: the wizard does not offer Wi-Fi).
+	// Wireless reads the Wi-Fi adapters (nil: the wizard does not offer Wi-Fi). Scan looks for the networks an adapter could join.
 	Wireless func(ctx context.Context) wireless.Report
+	Scan     func(ctx context.Context, adapter string) ([]wireless.Network, bool, error)
 	// Hostname is the machine's own name, suggested for the router.
 	Hostname func() string
 
@@ -209,11 +210,49 @@ func (s *Service) HandleInfo(w http.ResponseWriter, r *http.Request) {
 		SuggestWan: wan, SuggestLan: lan, NTPServers: config.DefaultNTPServers, MinPassword: auth.MinPasswordLength, MaxPassword: auth.MaxPasswordBytes, BackupFormat: backup.SchemaVersion})
 }
 
+// HandleScan: GET /api/v1/setup/wifi/scan?adapter=wlan0 lists the Wi-Fi networks an adapter can see, for an extender or the far end of a
+// link to pick the one to join.
+func (s *Service) HandleScan(w http.ResponseWriter, r *http.Request) {
+	if !methodOnly(w, r, http.MethodGet) {
+		return
+	}
+	name := r.URL.Query().Get("adapter")
+	if !config.IsValidInterfaceName(name) {
+		write(w, http.StatusBadRequest, errBody{Error: "Choose the adapter to scan with."})
+		return
+	}
+	if s.Scan == nil || s.Wireless == nil {
+		write(w, http.StatusServiceUnavailable, errBody{Error: "Wi-Fi networks cannot be scanned for on this device."})
+		return
+	}
+	found := false
+	for _, a := range s.wifiAdapters() {
+		found = found || (a.Name == name && a.Client)
+	}
+	if !found {
+		write(w, http.StatusNotFound, errBody{Error: "There is no Wi-Fi adapter with this name that can join a network."})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	networks, cached, err := s.Scan(ctx, name)
+	if err != nil {
+		write(w, http.StatusBadGateway, errBody{Error: "The adapter could not be scanned."})
+		return
+	}
+	if networks == nil {
+		networks = []wireless.Network{}
+	}
+	write(w, http.StatusOK, map[string]any{"adapter": name, "networks": networks, "cached": cached})
+}
+
 // ---- the form ---------------------------------------------------------------------------------------------------------------------
 
 // Form is everything the wizard collects for a new router.
 type Form struct {
-	// Mode is "router" (the default) or "ap": an access point on a network another router runs.
+	// Mode is "router" (the default), or one of the ways to be an access point on a network another router runs: "ap" (cable ports and
+	// Wi-Fi), "extender" (joins the main Wi-Fi and repeats it), "ptp_host" (the near end of a point-to-point link) or "ptp_client" (the
+	// far end).
 	Mode     string `json:"mode"`
 	Hostname string `json:"hostname"`
 	Country  string `json:"country"`
@@ -247,6 +286,15 @@ type Form struct {
 	WifiOn   bool   `json:"wifi_on"`
 	WifiName string `json:"wifi_ssid"`
 	WifiPass string `json:"wifi_pass"`
+	WifiVLAN int    `json:"wifi_vlan"` // an access point only: the tagged network (0: untagged)
+
+	// A wireless link: for an extender and the far end of a link, the Wi-Fi network joined (name, password, how it is secured); for
+	// the near end, the adapter that hosts the link and the name and password it is given.
+	LinkAdapter  string `json:"link_adapter"`
+	LinkSSID     string `json:"link_ssid"`
+	LinkPass     string `json:"link_pass"`
+	LinkSecurity string `json:"link_security"`
+	LinkHidden   bool   `json:"link_hidden"`
 
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -254,7 +302,7 @@ type Form struct {
 }
 
 // The steps, in order. A check goes through the step it is asked for: the fields of that step and the ones before.
-var stepOrder = []string{"region", "internet", "lan", "ap", "wifi", "admin"}
+var stepOrder = []string{"region", "internet", "lan", "link", "ap", "wifi", "admin"}
 
 func stepIndex(name string) int {
 	for i, s := range stepOrder {
@@ -274,6 +322,8 @@ func stepOf(field string) string {
 		return "internet"
 	case strings.HasPrefix(field, "lan") || strings.HasPrefix(field, "dhcp"):
 		return "lan"
+	case strings.HasPrefix(field, "link_"):
+		return "link"
 	case strings.HasPrefix(field, "ap_") || field == "ap":
 		return "ap"
 	case strings.HasPrefix(field, "wifi"):
@@ -289,7 +339,9 @@ var formField = map[string]string{
 	"wan_interface": "wan_port", "lan_interfaces": "lan_ports",
 	"dhcp_range_start": "dhcp_start", "dhcp_range_end": "dhcp_end",
 	"ap.ports": "ap_ports", "ap.mode": "ap_mode", "ap.ip": "ap_ip", "ap.netmask": "ap_netmask", "ap.gateway": "ap_gateway", "ap.dns": "ap_dns",
-	"wifi.networks[0].ssid": "wifi_ssid", "wifi.networks[0].passphrase": "wifi_pass",
+	"wifi.networks[0].ssid": "wifi_ssid", "wifi.networks[0].passphrase": "wifi_pass", "wifi.networks[0].vlan": "wifi_vlan",
+	"wifi.stations[0].ssid": "link_ssid", "wifi.stations[0].passphrase": "link_pass", "wifi.stations[0].security": "link_ssid",
+	"wifi.stations[0].name": "link_adapter",
 }
 
 // maskOf accepts a netmask the way people write one: 255.255.255.0, /24 or 24.
@@ -331,13 +383,23 @@ func (s *Service) build(f Form, r *http.Request) (config.NetworkConfig, []config
 	if cfg.Country == "" {
 		add("country", "choose the country the device is used in (it sets what the Wi-Fi may do)")
 	}
-	if f.Mode == "ap" {
+	if isAPMode(f.Mode) {
 		s.buildAP(f, r, &cfg, add)
 	} else {
 		s.buildRouter(f, r, &cfg, add)
 	}
+	s.addLink(f, &cfg, add)
 	s.addWifi(f, &cfg, add)
-	return s.finish(cfg, errs)
+	var rename map[string]string
+	if f.Mode == "ptp_host" {
+		rename = map[string]string{"wifi_ssid": "link_ssid", "wifi_pass": "link_pass"}
+	}
+	return s.finish(cfg, errs, rename)
+}
+
+// isAPMode says whether a mode makes the device an access point (a bridge): the plain one, an extender, or either end of a link.
+func isAPMode(m string) bool {
+	return m == "ap" || m == "extender" || m == "ptp_host" || m == "ptp_client"
 }
 
 // buildAP lays the access point's own answers over the settings.
@@ -459,21 +521,110 @@ func (s *Service) buildRouter(f Form, r *http.Request, cfg *config.NetworkConfig
 // addWifi gives every adapter that can be an access point the one Wi-Fi network the person typed (the wizard keeps to the simple case;
 // the Wireless page does the rest).
 func (s *Service) addWifi(f Form, cfg *config.NetworkConfig, add func(field, msg string)) {
-	if !f.WifiOn || s.Wireless == nil {
+	hosting := f.Mode == "" || f.Mode == "router" || f.Mode == "ap" || f.Mode == "extender"
+	if !hosting || !f.WifiOn || s.Wireless == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	wf := wifiFor(s.Wireless(ctx), strings.TrimSpace(f.WifiName), f.WifiPass)
+	// an extender's other adapter is the one that joins the main Wi-Fi
+	wf := wifiFor(s.Wireless(ctx), strings.TrimSpace(f.WifiName), f.WifiPass, strings.TrimSpace(f.LinkAdapter))
 	if len(wf.Radios) == 0 {
-		add("wifi_ssid", "no Wi-Fi adapter in this device can be an access point")
+		add("wifi_ssid", "no Wi-Fi adapter in this device can host a network"+map[bool]string{true: " besides the one that joins the main Wi-Fi", false: ""}[f.Mode == "extender"])
 		return
+	}
+	if isAPMode(f.Mode) {
+		wf.Networks[0].VLAN = f.WifiVLAN
+	} else if f.WifiVLAN != 0 {
+		wf.Networks[0].VLAN = f.WifiVLAN // refused by the checks: a router has Local Networks
+	}
+	if cfg.Wifi != nil {
+		wf.Stations = cfg.Wifi.Stations
 	}
 	cfg.Wifi = &wf
 }
 
+// addLink makes the wireless link of an extender, or either end of a point-to-point link: the far end and the extender join a Wi-Fi
+// network with an adapter (a client that joins the access point's network, in 4-address mode), the near end hosts a network that accepts
+// such links.
+func (s *Service) addLink(f Form, cfg *config.NetworkConfig, add func(field, msg string)) {
+	switch f.Mode {
+	case "extender", "ptp_host", "ptp_client":
+	default:
+		return
+	}
+	name := strings.TrimSpace(f.LinkAdapter)
+	if s.Wireless == nil {
+		add("link_adapter", "this device has no Wi-Fi adapter")
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var adapter *wireless.Adapter
+	rep := s.Wireless(ctx)
+	for i := range rep.Adapters {
+		if rep.Adapters[i].Name == name {
+			adapter = &rep.Adapters[i]
+		}
+	}
+	if adapter == nil || !adapter.CapabilitiesKnown {
+		add("link_adapter", "choose the Wi-Fi adapter for the link")
+		return
+	}
+	if f.Mode != "ptp_host" {
+		if !hasMode(adapter.Modes, "managed") {
+			add("link_adapter", name+" cannot join a Wi-Fi network")
+			return
+		}
+		sec := strings.TrimSpace(f.LinkSecurity)
+		if sec == "" {
+			sec = config.SecurityWPA2WPA3
+			if f.Mode == "ptp_client" {
+				sec = config.SecurityWPA2
+			}
+		}
+		cfg.Wifi = &config.WifiConfig{Stations: []config.WifiStation{{Name: name, SSID: strings.TrimSpace(f.LinkSSID), Security: sec,
+			Passphrase: f.LinkPass, Hidden: f.LinkHidden, Role: config.StationBridge, Network: config.DefaultNetworkID}}}
+		if f.Mode == "ptp_client" && len(cleanList(f.APPorts)) == 0 {
+			add("ap_ports", "choose the cable port that carries the network behind this end of the link")
+		}
+		return
+	}
+	// the near end: one adapter hosts the link, on 5 GHz when it can (the band outdoor links use), and accepts 4-address stations
+	if !adapter.APCapable {
+		add("link_adapter", name+" cannot host a Wi-Fi network")
+		return
+	}
+	var band wireless.Band
+	if b, ok := bandOf(*adapter, config.Band5); ok {
+		band = b
+	} else if b, ok := bandOf(*adapter, config.Band24); ok {
+		band = b
+	} else {
+		add("link_adapter", name+" has no band to host a link on")
+		return
+	}
+	cfg.Wifi = &config.WifiConfig{
+		Radios: []config.WifiRadio{{Name: name, Band: band.Name, Channel: 0, Width: widthFor(band), HT: band.HT, VHT: band.VHT, HE: band.HE}},
+		Networks: []config.WifiNetwork{{ID: "link", SSID: strings.TrimSpace(f.LinkSSID), Network: config.DefaultNetworkID, Security: config.SecurityWPA2,
+			Passphrase: f.LinkPass, Bands: []string{band.Name}, WDS: true}},
+	}
+	if len(cleanList(f.APPorts)) == 0 {
+		add("ap_ports", "choose the cable port that carries the network behind this end of the link")
+	}
+}
+
+func hasMode(modes []string, want string) bool {
+	for _, m := range modes {
+		if m == want {
+			return true
+		}
+	}
+	return false
+}
+
 // finish checks the whole and renames the problems to the form's fields.
-func (s *Service) finish(cfg config.NetworkConfig, errs []config.FieldError) (config.NetworkConfig, []config.FieldError) {
+func (s *Service) finish(cfg config.NetworkConfig, errs []config.FieldError, rename map[string]string) (config.NetworkConfig, []config.FieldError) {
 	add := func(field, msg string) { errs = append(errs, config.FieldError{Field: field, Message: msg}) }
 	// the whole must hold together
 	if err := cfg.Validate(); err != nil {
@@ -482,6 +633,9 @@ func (s *Service) finish(cfg config.NetworkConfig, errs []config.FieldError) (co
 			for _, e := range ve {
 				name := e.Field
 				if m, ok := formField[name]; ok {
+					name = m
+				}
+				if m, ok := rename[name]; ok {
 					name = m
 				}
 				if !isFormField(name) {
@@ -502,7 +656,8 @@ var formFields = map[string]bool{
 	"wan_port": true, "wan_mode": true, "wan_ip": true, "wan_subnet": true, "wan_gateway": true, "wan_dns": true, "pppoe_username": true, "pppoe_password": true,
 	"lan_ports": true, "lan_ip": true, "lan_subnet": true, "dhcp_start": true, "dhcp_end": true,
 	"ap_ports": true, "ap_mode": true, "ap_ip": true, "ap_netmask": true, "ap_gateway": true, "ap_dns": true,
-	"wifi_ssid": true, "wifi_pass": true,
+	"wifi_ssid": true, "wifi_pass": true, "wifi_vlan": true,
+	"link_adapter": true, "link_ssid": true, "link_pass": true,
 	"username": true, "password": true, "confirm": true,
 }
 

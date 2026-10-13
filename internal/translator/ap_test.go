@@ -2,6 +2,7 @@ package translator
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -194,5 +195,105 @@ func TestTheRealNftablesAcceptsTheAccessPointRuleset(t *testing.T) {
 			t.Skipf("nft cannot check rules here: %s", out)
 		}
 		t.Fatalf("%v\n%s", err, out)
+	}
+}
+
+func taggedAP(edit func(*config.NetworkConfig)) config.NetworkConfig {
+	guest, cams, home := ssid("w1", "Guest", config.Band24), ssid("w2", "Cameras", config.Band24), ssid("w3", "Home", config.Band24)
+	guest.VLAN, cams.VLAN = 20, 30
+	return apCfg(func(c *config.NetworkConfig) {
+		c.Wifi = &config.WifiConfig{Radios: []config.WifiRadio{r24()}, Networks: []config.WifiNetwork{home, guest, cams}}
+		if edit != nil {
+			edit(c)
+		}
+	})
+}
+
+func TestATaggedWifiNetworkGetsABridgeOfItsOwnOnTheTrunk(t *testing.T) {
+	c := taggedAP(nil)
+	got := text(t, c, PathInterfaces)
+	for _, w := range []string{
+		"auto eth0.20\niface eth0.20 inet manual\n    vlan-raw-device eth0\n",
+		"auto eth1.20\niface eth1.20 inet manual\n    vlan-raw-device eth1\n",
+		"auto br20\niface br20 inet manual\n    bridge_ports eth0.20 eth1.20\n",
+		"auto br30\niface br30 inet manual\n    bridge_ports eth0.30 eth1.30\n",
+		"auto br0\niface br0 inet dhcp\n",
+		"    bridge_ports eth0 eth1\n", // the untagged network is as it was
+	} {
+		if !strings.Contains(got, w) {
+			t.Errorf("lacks %q:\n%s", w, got)
+		}
+	}
+	if strings.Index(got, "br20") > strings.Index(got, "br30") {
+		t.Errorf("the VLANs are not in order:\n%s", got)
+	}
+	// only the untagged bridge has an address
+	if strings.Count(got, "inet dhcp") != 1 || strings.Contains(got, "br20 inet static") {
+		t.Errorf("%s", got)
+	}
+	h := hostapd(t, c, "wlan0")
+	// the networks are in the order they were made: Home (untagged), Guest, Cameras
+	for _, pair := range [][2]string{{"ssid=Home", "bridge=br0"}, {"ssid=Guest", "bridge=br20"}, {"ssid=Cameras", "bridge=br30"}} {
+		i := strings.Index(h, pair[0]+"\n")
+		if i < 0 || !strings.Contains(h[i:], pair[1]+"\n") || (strings.Contains(h[i:i+60], "bridge=br") && !strings.HasPrefix(h[i+len(pair[0])+1:], pair[1])) {
+			t.Errorf("%s is not on %s:\n%s", pair[0], pair[1], h)
+		}
+	}
+}
+
+func TestNoVLANInterfacesWithoutATaggedNetworkOrWhenItIsSwitchedOff(t *testing.T) {
+	plain := text(t, apCfg(nil), PathInterfaces)
+	if strings.Contains(plain, "vlan-raw-device") || strings.Contains(plain, "br2") {
+		t.Fatalf("%s", plain)
+	}
+	off := taggedAP(func(c *config.NetworkConfig) {
+		c.Wifi.Networks[1].Disabled = true
+		c.Wifi.Networks[2].Disabled = true
+	})
+	if got := text(t, off, PathInterfaces); strings.Contains(got, "vlan-raw-device") {
+		t.Fatalf("%s", got)
+	}
+}
+
+func TestAWirelessExtenderCarriesAVLANWithoutACable(t *testing.T) {
+	c := taggedAP(func(c *config.NetworkConfig) {
+		c.AP.Ports = nil
+		c.Wifi.Stations = []config.WifiStation{{Name: "wlan1", SSID: "Main", Security: config.SecurityWPA2WPA3, Passphrase: "correct horse battery", Role: config.StationBridge, Network: "lan"}}
+	})
+	got := text(t, c, PathInterfaces)
+	if !strings.Contains(got, "auto br20\niface br20 inet manual\n    bridge_ports none\n") || strings.Contains(got, "vlan-raw-device") {
+		t.Fatalf("%s", got)
+	}
+}
+
+func TestTheRealHostapdUnderstandsATaggedNetwork(t *testing.T) {
+	bin, err := exec.LookPath("hostapd")
+	if err != nil {
+		t.Skip("hostapd is not installed here")
+	}
+	checked := 0
+	for _, a := range mustRender(t, taggedAP(nil)).Artifacts {
+		if a.Remove || !strings.HasPrefix(a.Path, PathHostapdDir) {
+			continue
+		}
+		checked++
+		if got := hostapdComplains(t, bin, a.Content); got != "" {
+			t.Errorf("hostapd objects: %s\n%s", got, a.Content)
+		}
+	}
+	if checked != 1 {
+		t.Fatalf("%d files", checked)
+	}
+}
+
+func TestAnUnsafeVLANIsRefusedAtRenderTimeIfValidationIsBypassed(t *testing.T) {
+	orig := validateConfig
+	validateConfig = func(config.NetworkConfig) error { return nil }
+	defer func() { validateConfig = orig }()
+	for _, v := range []int{1, 4095, 99999} {
+		c := taggedAP(func(c *config.NetworkConfig) { c.Wifi.Networks[1].VLAN = v })
+		if _, err := Render(c, "AP"); err == nil {
+			t.Errorf("VLAN %d was rendered", v)
+		}
 	}
 }

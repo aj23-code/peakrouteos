@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 
 	"peakroute/internal/auth"
 	"peakroute/internal/config"
@@ -74,6 +75,19 @@ type API struct {
 	Wireless func(ctx context.Context) wireless.Report
 	// Scan looks for Wi-Fi networks with one adapter (nil: it cannot be done). cached says the list is what the kernel remembered.
 	Scan func(ctx context.Context, adapter string) (networks []wireless.Network, cached bool, err error)
+	// For the access point's home page (nil: not known): the addresses of the bridge and whether it is up, the default gateway, the name
+	// servers, the Wi-Fi devices connected now and the Wi-Fi interfaces with their channels.
+	Bridge    func() (addrs []string, up bool)
+	Gateway   func() string
+	Resolvers func() []string
+	Stations  func(ctx context.Context) wireless.StationReport
+	WifiDev   func(ctx context.Context) ([]wireless.Interface, bool)
+	// How an adapter is doing: the channel's measurements, and a client adapter's link (nil: not known).
+	Survey func(ctx context.Context, iface string) (wireless.Survey, bool)
+	Link   func(ctx context.Context, iface string) (wireless.Link, bool)
+
+	surveyMu   sync.Mutex
+	surveyPrev map[string]surveyPoint
 }
 
 const maxBody = 64 << 10

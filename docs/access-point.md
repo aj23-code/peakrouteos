@@ -22,6 +22,37 @@ mode**, and it is a draft like every other change: review, commit, confirm.
   no cable at all that is a wireless extender.
 - The pages that only a router has (Clients, Traffic, Internet, Local Networks, Ports, Routes, Firewall, Services) are not in the menu.
 
+## The home page
+
+In access point mode the first page is **Access point** (not the router's Overview), and the menu is cut down to what an access point has:
+Access point, Wireless, and System (Settings, Operation mode, Administrators, Certificates, Backup and restore, System logs, Diagnostics).
+The home page shows, refreshed every 5 seconds:
+
+- **The device:** name, how long it has been up, processor, memory, load, software version, and whether changes are waiting.
+- **On the network:** whether it is on the network (the bridge is up and has an address; "waiting for an address" when DHCP has not answered),
+  its address, gateway and name servers, the setup address, and each cable port (cable plugged in, speed) and Wi-Fi link (connected, signal,
+  speed).
+- **Wi-Fi:** for each adapter hosting Wi-Fi: whether it runs, the channel and width in use, transmit power, **channel use** (how much of
+  the time the channel is busy, measured between two looks; above 70% is marked red), the noise, and how many devices are connected with
+  their average signal; and each Wi-Fi network with its bands, VLAN and device count.
+- **Connected devices:** every device on the Wi-Fi: address, network, band and channel, signal (excellent to poor), speed each way, traffic
+  and how long it has been connected.
+
+Right after the first-run setup nothing is applied yet, so the page says so and the menu already shows the access point's (the mode shown
+follows the settings in effect, or, before anything was ever applied, the draft). When a change that switches the mode is applied the
+page loads again by itself. The interface of the pages a router has (Internet, Local Networks, Ports, Routes, Firewall, DNS, Dynamic DNS,
+VPN) answers an access point with "This device is an access point: that belongs to a router" instead of staging settings nothing uses.
+
+## VLANs on Wi-Fi
+
+A Wi-Fi network of an access point can have a **VLAN ID** (2 to 4094; empty is the untagged network, the one the cable ports are on). It
+is set where the Wi-Fi network is made (Wireless page, and the wizard's Wi-Fi page); there is no Local Network to name, because an access
+point has none. How it is built is how the router builds its tagged networks: each VLAN used by a Wi-Fi network that is switched on gets a
+bridge `br<ID>` with no address, holding the VLAN interface of every cable port (`eth0.20`: the cable ports are a trunk for the VLANs
+in use) and the Wi-Fi networks on that VLAN (hostapd `bridge=br20`). The access point's own address stays on the untagged bridge. Several
+Wi-Fi networks can share a VLAN, and an extender with no cable gets the bridge with no ports. A router refuses a VLAN ID on a Wi-Fi network
+(it joins a Local Network, which has its own).
+
 ## What it writes
 
 `/etc/network/interfaces`: `br0` as `inet dhcp` (with the host name as the DHCP name) or `inet static`, `bridge_ports` the cable ports
@@ -39,10 +70,20 @@ wpa_supplicant files are written as on a router.
 
 ## In the wizard
 
-The welcome page offers *Set up as an access point*: region, then the network (cable ports, DHCP or a fixed address), Wi-Fi (if an
-adapter can host a network: one name and password; one adapter serves 2.4 GHz, two adapters cover both bands with band steering), the
-administrator, and the review. The port you are plugged into must be one of the bridge's ports, or the page would be lost when the
-settings are applied.
+The welcome page asks what the device is: **a router**, **an access point**, **a wireless extender**, **a point-to-point link** (it then asks
+which end), or a restore. All but the router are this mode.
+
+- *Access point:* region, the network (cable ports, DHCP or a fixed address), Wi-Fi (if an adapter can host a network: one name and
+  password, and an optional VLAN ID; one adapter serves 2.4 GHz, two adapters cover both bands with band steering), the administrator,
+  and the review.
+- *Wireless extender* (needs two Wi-Fi adapters): **join the main Wi-Fi** (an adapter, a scan to pick the network, the password), the
+  network (cable ports are optional), and **repeat the main Wi-Fi** on the other adapter with the same name and password (so devices
+  move between the two by themselves), then the administrator.
+- *Point-to-point link:* the **near end** hosts the link (an adapter, a link name and password, on 5 GHz where the adapter can, and
+  accepting 4-address stations); the **far end** joins it (an adapter, a scan, the password). Both need the cable port that carries the
+  network behind that end. Set the near end up first.
+
+The port you are plugged into must be one of the bridge's ports, or the page would be lost when the settings are applied.
 
 ## Interface
 
@@ -53,9 +94,9 @@ settings are applied.
 
 ## Not done
 
-- The API endpoints of the router's pages are still there in access point mode (the menu hides them); a change made through one only
-  stages router settings that nothing uses.
-- A VLAN-tagged SSID (several networks on one access point).
+- Which cable ports carry a VLAN: all of them, as a trunk (a port for one tagged network only is not offered).
+- Radio health is read with `iw dev X survey dump`, which the daemon may do as root; on a machine where it is refused the page says
+  nothing about channel use. The first reading is the average since the adapter started, the next ones are since the previous look.
 - Telling the main router apart from a loop: spanning tree is off, so two cables from the access point into the same switch loop.
 - Real hardware has not been tried: bridging a Wi-Fi interface, `post-up` on the bridge and the DHCP name are checked only against
   their syntax.

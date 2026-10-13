@@ -1796,3 +1796,18 @@ a.cfg-btn { text-decoration: none; display: inline-block; }
 .wifi-radio .form-section:first-child, .wifi-station .form-section:first-child { margin-top: 0; }
 .wifi-ptp { margin-top: 1rem; }
 .wifi-ptp summary { cursor: pointer; color: var(--text-muted); font-size: 0.9rem; }
+
+/* ---------- Access point home page ---------- */
+.apx-state { font-size: 1rem; margin: 0.4rem 0 0.8rem; }
+.apx-dot { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%; margin-right: 0.45rem; background: var(--text-muted); vertical-align: baseline; }
+.apx-dot--ok { background: var(--accent-green); }
+.apx-dot--warn { background: var(--accent-amber); }
+.apx-dot--bad { background: var(--error-color); }
+.apx-dot--idle { background: var(--border-color); }
+.apx-list { list-style: none; margin: 0.4rem 0 0; display: grid; gap: 0.5rem; }
+.apx-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; padding: 0.5rem 0.7rem; border: 1px solid var(--border-color); border-radius: 8px; }
+.apx-list .tag { margin-left: auto; }
+.apx-scroll { overflow-x: auto; }
+.apx-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.apx-table th, .apx-table td { padding: 0.5rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
+.apx-table th { color: var(--text-muted); font-weight: 500; }

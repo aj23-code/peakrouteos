@@ -25,9 +25,9 @@ func TestParseDevFindsInterfacesModesNamesAndChannels(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 	want := []Interface{
-		{Name: "wlan1_1", SSID: "Guest", Type: "AP", Channel: 36, MHz: 5180},
-		{Name: "wlan1", SSID: "Home", Type: "AP", Channel: 36, MHz: 5180},
-		{Name: "wlan0", SSID: "Home", Type: "AP", Channel: 6, MHz: 2437},
+		{Name: "wlan1_1", SSID: "Guest", Type: "AP", Channel: 36, MHz: 5180, Width: 80, TxPowerDBM: 23, HaveTxPower: true},
+		{Name: "wlan1", SSID: "Home", Type: "AP", Channel: 36, MHz: 5180, Width: 80, TxPowerDBM: 23, HaveTxPower: true},
+		{Name: "wlan0", SSID: "Home", Type: "AP", Channel: 6, MHz: 2437, Width: 20, TxPowerDBM: 20, HaveTxPower: true},
 		{Name: "wlan9", Type: "managed"},
 	}
 	for i := range want {

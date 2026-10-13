@@ -164,8 +164,8 @@ window.WirelessModule = (function () {
     function stationFormOf(a) {
         const s0 = serverStation(a);
         if (s0) return { enabled: s0.enabled, ssid: s0.ssid || '', passphrase: s0.passphrase || '', security: s0.security || 'wpa2-wpa3', hidden: !!s0.hidden,
-            role: s0.role || 'uplink', network: s0.network || 'lan', show: false };
-        return { enabled: false, ssid: '', passphrase: '', security: 'wpa2-wpa3', hidden: false, role: 'uplink', network: 'lan', show: false };
+            role: wifi && wifi.ap_mode ? 'bridge' : (s0.role || 'uplink'), network: s0.network || 'lan', show: false };
+        return { enabled: false, ssid: '', passphrase: '', security: 'wpa2-wpa3', hidden: false, role: wifi && wifi.ap_mode ? 'bridge' : 'uplink', network: 'lan', show: false };
     }
 
     const stationNorm = (f) => JSON.stringify([f.enabled, f.ssid, f.passphrase, f.security, f.hidden, f.role, f.role === 'bridge' ? f.network : '']);
@@ -228,9 +228,10 @@ window.WirelessModule = (function () {
             </div>
             <h3 class="form-section">Use it as</h3>
             <div class="net-access">
-                ${ROLES.map(r => `<label class="toggle toggle--block"><input type="radio" name="st-role-${key}" data-st="${key}" data-stf="role" value="${r[0]}"${f.role === r[0] ? ' checked' : ''}${off ? ' disabled' : ''}>
+                ${ROLES.filter(r => !(wifi.ap_mode && r[0] === 'uplink')).map(r => `<label class="toggle toggle--block"><input type="radio" name="st-role-${key}" data-st="${key}" data-stf="role" value="${r[0]}"${f.role === r[0] ? ' checked' : ''}${off ? ' disabled' : ''}>
                     <span><strong>${r[1]}</strong><span class="form-hint">${r[2]}</span></span></label>`).join('')}
             </div>
+            ${wifi.ap_mode ? '<p class="form-hint">An access point has no internet connection of its own: a link joins the main Wi-Fi (or the other end of a point-to-point link) and the cable ports and Wi-Fi networks of this device become part of that network.</p>' : ''}
             ${err('role')}
             ${f.role === 'bridge' ? `<div class="form-grid"><div class="form-field"><label for="st-${key}-network">Local Network</label>
                 <select id="st-${key}-network" class="role-select" data-st="${key}" data-stf="network"${off ? ' disabled' : ''}>${netOptions}</select>${err('network')}</div></div>` : ''}
@@ -438,12 +439,12 @@ window.WirelessModule = (function () {
         return {
             ssid: n.ssid || '', passphrase: n.passphrase || '', network: n.network || 'lan', security: n.security || 'wpa2-wpa3',
             b24: (n.bands || []).includes('2.4 GHz'), b5: (n.bands || []).includes('5 GHz'),
-            steering: !!n.band_steering, hidden: !!n.hidden, isolation: !!n.client_isolation, wds: !!n.wds, enabled: n.enabled !== false,
+            steering: !!n.band_steering, hidden: !!n.hidden, isolation: !!n.client_isolation, wds: !!n.wds, vlan: n.vlan ? String(n.vlan) : '', enabled: n.enabled !== false,
             show: false,
         };
     }
 
-    const ssidNorm = (f) => JSON.stringify([f.ssid, f.passphrase, f.network, f.security, f.b24, f.b5, f.steering, f.hidden, f.isolation, f.wds, f.enabled]);
+    const ssidNorm = (f) => JSON.stringify([f.ssid, f.passphrase, f.network, f.security, f.b24, f.b5, f.steering, f.hidden, f.isolation, f.wds, f.vlan, f.enabled]);
     const ssidDirty = (c) => c.isNew || ssidNorm(c.form) !== ssidNorm(ssidFormOf(c.server));
 
     function bandsOf(f) { return BANDS.filter(b => (b === '2.4 GHz' ? f.b24 : f.b5)); }
@@ -520,9 +521,11 @@ window.WirelessModule = (function () {
                 ${ssidInput(c, 'ssid', 'Wi-Fi name', { placeholder: 'Guest Wi-Fi' })}
                 ${ssidInput(c, 'passphrase', 'Password', { placeholder: 'At least 8 characters' })}
                 ${ssidSelect(c, 'security', 'Security', SECURITY.map(s => optionHtml(s[0], s[1], f.security)).join(''))}
-                ${ssidSelect(c, 'network', 'Local Network', netOptions)}
+                ${wifi.ap_mode ? ssidInput(c, 'vlan', 'VLAN ID (optional)', { placeholder: 'untagged' }) : ssidSelect(c, 'network', 'Local Network', netOptions)}
             </div>
-            <p class="form-hint">Devices that join this Wi-Fi network end up on <strong>${escapeHtml(networkName(f.network))}</strong>, with its addresses and rules.</p>
+            ${wifi.ap_mode
+                ? '<p class="form-hint">Devices that join this Wi-Fi network are on the same network as the cable ports. Give it a <strong>VLAN ID</strong> to put them on a tagged network instead: the cable ports then carry that network tagged with the ID (a trunk), and the other router or switch sorts it out. Leave it empty for the untagged network.</p>'
+                : `<p class="form-hint">Devices that join this Wi-Fi network end up on <strong>${escapeHtml(networkName(f.network))}</strong>, with its addresses and rules.</p>`}
 
             <h3 class="form-section">Bands</h3>
             <div class="net-access">
@@ -587,11 +590,11 @@ window.WirelessModule = (function () {
         const bands = bandsOf(f);
         return {
             ssid: f.ssid, passphrase: f.passphrase, network: f.network, security: f.security, bands,
-            band_steering: bands.length === 2 && f.steering, hidden: f.hidden, client_isolation: f.isolation, wds: f.wds, enabled: f.enabled,
+            band_steering: bands.length === 2 && f.steering, hidden: f.hidden, client_isolation: f.isolation, wds: f.wds, vlan: wifi && wifi.ap_mode ? (parseInt(f.vlan, 10) || 0) : 0, enabled: f.enabled,
         };
     }
 
-    const SSID_FIELD = { ssid: 'ssid', passphrase: 'passphrase', network: 'network', security: 'security', bands: 'bands' };
+    const SSID_FIELD = { ssid: 'ssid', passphrase: 'passphrase', network: 'network', security: 'security', bands: 'bands', vlan: 'vlan' };
 
     async function saveSsid(c) {
         c.message = null;
@@ -864,7 +867,7 @@ window.WirelessModule = (function () {
         const key = 'new-' + newCount;
         ssids.push({
             key, isNew: true, server: null, errors: {}, message: null, confirmDelete: false,
-            form: { ssid: '', passphrase: '', network: 'lan', security: 'wpa2-wpa3', b24, b5, steering: b24 && b5, hidden: false, isolation: false, wds: false, enabled: true, show: false },
+            form: { ssid: '', passphrase: '', network: 'lan', security: 'wpa2-wpa3', b24, b5, steering: b24 && b5, hidden: false, isolation: false, wds: false, vlan: '', enabled: true, show: false },
         });
         selected = key;
         renderSsids();

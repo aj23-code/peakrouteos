@@ -229,6 +229,11 @@ function loadView(viewName) {
                 activeViewCleanup = window.DDNSModule.init();
             }
             break;
+        case 'ap-home':
+            if (window.APHomeModule) {
+                activeViewCleanup = window.APHomeModule.init();
+            }
+            break;
         case 'ap':
             if (window.APModule) {
                 activeViewCleanup = window.APModule.init();
@@ -414,5 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initMobileNav();
 
     // Load default initial view
-    loadView('overview');
+    // the home page of the device: the overview of a router, the access point's page for an access point
+    const mode = document.querySelector('meta[name="peakroute-mode"]');
+    loadView(mode && mode.content === 'AP' ? 'ap-home' : 'overview');
 });

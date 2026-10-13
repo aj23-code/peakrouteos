@@ -16,6 +16,10 @@ type Interface struct {
 	Type    string // AP, managed, ...
 	Channel int
 	MHz     int
+	Width   int // channel width in MHz (0: not stated)
+	// TxPowerDBM is the transmit power ("txpower 23.00 dBm"); HaveTxPower is false when it is not stated.
+	TxPowerDBM  float64
+	HaveTxPower bool
 }
 
 // Station is a device connected to one of this machine's access points.
@@ -83,11 +87,22 @@ func ParseDev(out string) []Interface {
 			if cur >= 0 && len(f) >= 2 {
 				list[cur].Type = f[1]
 			}
+		case "txpower":
+			if cur >= 0 && len(f) >= 2 {
+				if v, err := strconv.ParseFloat(f[1], 64); err == nil {
+					list[cur].TxPowerDBM, list[cur].HaveTxPower = v, true
+				}
+			}
 		case "channel":
 			// channel 36 (5180 MHz), width: 80 MHz, center1: 5210 MHz
 			if cur >= 0 && len(f) >= 3 {
 				list[cur].Channel, _ = strconv.Atoi(f[1])
 				list[cur].MHz, _ = strconv.Atoi(strings.TrimPrefix(f[2], "("))
+				for i := 3; i+1 < len(f); i++ {
+					if f[i] == "width:" {
+						list[cur].Width, _ = strconv.Atoi(f[i+1])
+					}
+				}
 			}
 		}
 	}
@@ -164,6 +179,20 @@ func ParseStations(out string) []Station {
 	}
 	flush()
 	return list
+}
+
+// Interfaces lists the wireless interfaces as `iw dev` describes them: which mode each is in and the channel it is on.
+func (d Detector) Interfaces(ctx context.Context) ([]Interface, bool) {
+	if d.Run == nil {
+		return nil, false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	out, err := d.Run(ctx, "iw", "dev")
+	if err != nil {
+		return nil, false
+	}
+	return ParseDev(out), true
 }
 
 // Stations lists the devices connected to this machine's access points: every interface that `iw dev`

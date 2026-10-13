@@ -26,10 +26,11 @@ it take an address, and open `https://192.168.77.1`.
 
 ## The pages
 
-**Welcome.** The choice: *Set up as a new router*, or *Restore from a backup*.
+**Welcome.** The choice: a router, an access point, a wireless extender, a point-to-point link (which end), or a restore from a backup.
 
-**Setting up as an access point** is the same wizard with other pages (docs/access-point.md): region, the network (cable ports, DHCP or
-a fixed address), Wi-Fi, the administrator and the review.
+**Setting up as an access point, an extender or one end of a link** is the same wizard with other pages (docs/access-point.md): region, the
+link to the main Wi-Fi or the other end (extender and link), the network (cable ports, DHCP or a fixed address), Wi-Fi, the administrator and
+the review. A scan for networks to join is `GET /api/v1/setup/wifi/scan`.
 
 **Setting up as a new router**
 

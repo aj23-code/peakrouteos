@@ -38,6 +38,7 @@ type WifiNetwork struct {
 	Hidden          bool     `json:"hidden"`
 	ClientIsolation bool     `json:"client_isolation"`
 	WDS             bool     `json:"wds"`
+	VLAN            int      `json:"vlan"` // an access point's tagged network (0: untagged)
 	Enabled         bool     `json:"enabled"`
 	Pending         bool     `json:"pending"`
 }
@@ -63,6 +64,8 @@ type wifiResponse struct {
 	Radios   []WifiRadio   `json:"radios"`
 	Networks []WifiNetwork `json:"networks"`
 	Stations []WifiStation `json:"stations"`
+	// APMode: the device is an access point in the draft, so a Wi-Fi network is on a VLAN, not a Local Network.
+	APMode bool `json:"ap_mode"`
 	// WanPort is the internet port in the draft: the adapter of an uplink station is it, or it is a cable port.
 	WanPort  string `json:"wan_port"`
 	Editable bool   `json:"editable"`
@@ -73,7 +76,7 @@ func (a *API) wifiView() wifiResponse {
 	staged, _ := a.Manager.StagedNetworkConfig()
 	draft := staged.WifiSettings()
 
-	resp := wifiResponse{Country: staged.Country, WanPort: staged.WanInterface,
+	resp := wifiResponse{Country: staged.Country, WanPort: staged.WanInterface, APMode: staged.IsAP(),
 		Radios: []WifiRadio{}, Networks: []WifiNetwork{}, Stations: []WifiStation{}, Editable: a.editable()}
 
 	oldRadios := map[string]config.WifiRadio{}
@@ -105,7 +108,7 @@ func stationView(c config.NetworkConfig, st config.WifiStation, pending bool) Wi
 func wifiNetworkView(n config.WifiNetwork, pending bool) WifiNetwork {
 	bands := append([]string{}, n.Bands...)
 	return WifiNetwork{ID: n.ID, SSID: n.SSID, Passphrase: n.Passphrase, Network: n.Network, Security: n.Security, Bands: bands,
-		BandSteering: n.BandSteering, Hidden: n.Hidden, ClientIsolation: n.ClientIsolation, WDS: n.WDS, Enabled: !n.Disabled, Pending: pending}
+		BandSteering: n.BandSteering, Hidden: n.Hidden, ClientIsolation: n.ClientIsolation, WDS: n.WDS, VLAN: n.VLAN, Enabled: !n.Disabled, Pending: pending}
 }
 
 // wifiOf returns the draft's Wi-Fi section, creating it if there is none yet.
@@ -281,6 +284,7 @@ type wifiNetworkRequest struct {
 	Hidden          *bool    `json:"hidden"`
 	ClientIsolation *bool    `json:"client_isolation"`
 	WDS             *bool    `json:"wds"`
+	VLAN            *int     `json:"vlan"`
 	Enabled         *bool    `json:"enabled"`
 }
 
@@ -382,6 +386,9 @@ func applyWifiRequest(n *config.WifiNetwork, req wifiNetworkRequest) {
 	}
 	if req.WDS != nil {
 		n.WDS = *req.WDS
+	}
+	if req.VLAN != nil {
+		n.VLAN = *req.VLAN
 	}
 	if req.Enabled != nil {
 		n.Disabled = !*req.Enabled
@@ -628,6 +635,9 @@ func (a *API) HandleWifiStation(w http.ResponseWriter, r *http.Request) {
 			st.Disabled = !*req.Enabled
 		}
 		isUplink := st.Role == config.StationUplink && !st.Disabled
+		if isUplink && c.IsAP() {
+			return config.ValidationError{{Field: "role", Message: "an access point has no internet connection of its own: choose \"A link into a local network\" to join the main Wi-Fi"}}
+		}
 
 		switch {
 		case isUplink:

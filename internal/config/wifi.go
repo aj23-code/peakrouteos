@@ -57,6 +57,9 @@ type WifiNetwork struct {
 	BandSteering    bool `json:"band_steering"`
 	Hidden          bool `json:"hidden,omitempty"`           // not announced in beacons
 	ClientIsolation bool `json:"client_isolation,omitempty"` // devices on the SSID cannot talk to each other
+	// VLAN is the tag of the network this Wi-Fi network is on, for an access point (a router chooses a Local Network instead, which has its
+	// own VLAN): 0 is the untagged network, the one the cable ports are on.
+	VLAN int `json:"vlan,omitempty"`
 	// WDS lets another PeakRoute box link to this network in 4-address mode (the far end of a point-to-point link).
 	WDS      bool `json:"wds,omitempty"`
 	Disabled bool `json:"disabled,omitempty"`
@@ -411,10 +414,16 @@ func (c NetworkConfig) validateWifi(add func(field, format string, args ...any))
 			ssids[n.SSID] = i
 		}
 
-		if n.Network != DefaultNetworkID {
+		if n.Network != DefaultNetworkID && !c.IsAP() {
 			if _, ok := c.FindNetwork(n.Network); !ok {
 				add(field("network"), "choose the local network this Wi-Fi network belongs to")
 			}
+		}
+		switch {
+		case c.IsAP() && n.VLAN != 0 && (n.VLAN < MinAPVLAN || n.VLAN > MaxVLAN):
+			add(field("vlan"), "use a VLAN ID from %d to %d, or leave it empty for the untagged network", MinAPVLAN, MaxVLAN)
+		case !c.IsAP() && n.VLAN != 0:
+			add(field("vlan"), "a VLAN ID is for an access point: on a router a Wi-Fi network joins a Local Network, which has its own")
 		}
 
 		if !validSecurity(n.Security) {

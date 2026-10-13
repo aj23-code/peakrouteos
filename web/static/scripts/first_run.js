@@ -9,10 +9,18 @@
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
     // the pages of each way of setting up; the Wi-Fi page is there only where an adapter can host a network
-    const LABELS = { region: 'Region', internet: 'Internet', lan: 'Local network', ap: 'Network', wifi: 'Wi-Fi', admin: 'Administrator', review: 'Finish' };
+    const LABELS = { region: 'Region', internet: 'Internet', lan: 'Local network', link: 'Link', ap: 'Network', wifi: 'Wi-Fi', admin: 'Administrator', review: 'Finish' };
+    const hosts = () => ((info && info.wifi) || []).filter((a) => a.host);
+    const clients = () => ((info && info.wifi) || []).filter((a) => a.client);
+    // the adapters that can host the Wi-Fi network of this flow (an extender's link adapter is busy joining the main Wi-Fi)
+    const hostsLeft = () => hosts().filter((a) => !(flow === 'extender' && a.name === F.link_adapter));
+    // how the device is set up: a router, or one of the ways of being an access point
+    const modeOf = () => ({ new: 'router', ap: 'ap', extender: 'extender' }[flow] || (flow === 'ptp' ? (F.ptp_end === 'host' ? 'ptp_host' : 'ptp_client') : 'router'));
+    const isAP = () => flow === 'ap' || flow === 'extender' || flow === 'ptp';
     function newSteps() {
-        const order = flow === 'ap' ? ['region', 'ap', 'wifi', 'admin', 'review'] : ['region', 'internet', 'lan', 'wifi', 'admin', 'review'];
-        return order.filter((n) => n !== 'wifi' || (info && info.wifi && info.wifi.length)).map((n) => [n, LABELS[n]]);
+        const order = { new: ['region', 'internet', 'lan', 'wifi', 'admin', 'review'], ap: ['region', 'ap', 'wifi', 'admin', 'review'],
+            extender: ['region', 'link', 'ap', 'wifi', 'admin', 'review'], ptp: ['region', 'link', 'ap', 'admin', 'review'] }[flow] || [];
+        return order.filter((n) => n !== 'wifi' || hostsLeft().length > 0).map((n) => [n, LABELS[n]]);
     }
     const prevStep = (name) => { const o = newSteps().map((x) => x[0]); const i = o.indexOf(name); return i > 0 ? o[i - 1] : 'welcome'; };
     const RESTORE_STEPS = [['restore', 'Backup'], ['restore-review', 'Restore']];
@@ -23,13 +31,15 @@
     let errs = {};                   // field -> message, for the step on screen
     let general = null;
     let busy = false;
-    let touched = { lan: false, dhcp: false, ap: false };
+    let touched = { lan: false, dhcp: false, ap: false, wifi: false };
+    let scan = null;                 // the networks found for the link: { busy, networks, error, cached }
     const F = {
         hostname: '', country: '', timezone: '',
         wan_port: '', wan_mode: 'dhcp', wan_ip: '', wan_subnet: '255.255.255.0', wan_gateway: '', wan_dns: '', pppoe_username: '', pppoe_password: '',
         lan_ports: [], lan_ip: '', lan_subnet: '255.255.255.0', dhcp: true, dhcp_start: '', dhcp_end: '',
         ap_ports: [], ap_mode: 'dhcp', ap_ip: '', ap_netmask: '255.255.255.0', ap_gateway: '', ap_dns: '',
-        wifi_on: false, wifi_ssid: '', wifi_pass: '',
+        wifi_on: false, wifi_ssid: '', wifi_pass: '', wifi_vlan: '',
+        link_adapter: '', link_ssid: '', link_pass: '', link_security: '', link_hidden: false, ptp_end: 'client',
         username: 'admin', password: '', confirm: ''
     };
     const R = { file: null, fileName: '', pass: '', report: null, own: false, wan: '', lan: [], history: false };
@@ -50,10 +60,12 @@
     function payload() {
         const split = (s) => String(s || '').split(/[\s,]+/).filter(Boolean);
         const p = Object.assign({}, F);
-        p.mode = flow === 'ap' ? 'ap' : 'router';
+        p.mode = modeOf();
+        delete p.ptp_end; // only this page's own choice
+        p.wifi_vlan = isAP() ? (parseInt(F.wifi_vlan, 10) || 0) : 0;
         p.wan_dns = F.wan_mode === 'static' ? split(F.wan_dns) : [];
         p.ap_dns = F.ap_mode === 'static' ? split(F.ap_dns) : [];
-        p.wifi_on = !!(F.wifi_on && info && info.wifi && info.wifi.length);
+        p.wifi_on = !!(F.wifi_on && hostsLeft().length && flow !== 'ptp');
         return p;
     }
 
@@ -88,12 +100,18 @@
     // ---------------------------------------------------------------- the pages
 
     function welcome() {
+        const nClient = clients().length, nHost = hosts().length;
+        const canExtend = nClient >= 1 && (nHost >= 2 || (nHost >= 1 && nClient >= 2));
+        const canLink = nClient >= 1 || nHost >= 1;
+        const choice = (flowName, title, text, ok, why) => `<button type="button" class="wiz-choice" data-flow="${flowName}"${ok ? '' : ' disabled'}><strong>${title}</strong><span>${ok ? text : why}</span></button>`;
         return `<div class="wiz-body"><h2>Welcome</h2>
-            <p class="form-hint">This router has not been set up yet. It takes a few minutes: where it is, how it reaches the internet, the network it makes at home, and who may run it. Nothing changes until the last page.</p>
+            <p class="form-hint">This device has not been set up yet. It takes a few minutes. Nothing changes until the last page. What should it be?</p>
             <div class="wiz-choices">
-                <button type="button" class="wiz-choice" data-flow="new"><strong>Set up as a new router</strong><span>Connects to the internet and runs your network. Answer a few questions.</span></button>
-                <button type="button" class="wiz-choice" data-flow="ap"><strong>Set up as an access point</strong><span>Joins a network that another router runs, with cable ports and Wi-Fi.</span></button>
-                <button type="button" class="wiz-choice" data-flow="restore"><strong>Restore from a backup</strong><span>Use a backup file from another PeakRoute router (or this one before it was reinstalled).</span></button>
+                ${choice('new', 'A router', 'Connects to the internet and runs your network: addresses, firewall, Wi-Fi. The usual way.', true)}
+                ${choice('ap', 'An access point', 'Joins a network that another router runs, and adds cable ports and Wi-Fi to it.', true)}
+                ${choice('extender', 'A wireless extender', 'Joins the main Wi-Fi by Wi-Fi and repeats it, where a cable does not reach.', canExtend, 'Needs two Wi-Fi adapters: one to join the main Wi-Fi and one to repeat it.')}
+                ${choice('ptp', 'A point-to-point link', 'One end of a wireless link between two buildings or sites. You choose which end.', canLink, 'Needs a Wi-Fi adapter.')}
+                ${choice('restore', 'Restore from a backup', 'Use a backup file from another PeakRoute device (or this one before it was reinstalled).', true)}
             </div></div>`;
     }
 
@@ -155,6 +173,42 @@
             ${dhcp}${actions(prevStep('lan'))}</form>`;
     }
 
+    // ---- a wireless link: an extender, and either end of a point-to-point link
+
+    const isHostEnd = () => flow === 'ptp' && F.ptp_end === 'host';
+    const linkAdapters = () => (isHostEnd() ? hosts() : clients());
+
+    function ensureLinkAdapter() {
+        const list = linkAdapters();
+        if (!list.some((a) => a.name === F.link_adapter)) F.link_adapter = list.length ? list[0].name : '';
+    }
+
+    function linkPage() {
+        ensureLinkAdapter();
+        const list = linkAdapters();
+        const adapterSel = field('Wi-Fi adapter', 'link_adapter', `<select id="f-link_adapter" data-f="link_adapter" data-rerender="1">${list.map((a) => `<option value="${esc(a.name)}"${F.link_adapter === a.name ? ' selected' : ''}>${esc(a.name)} (${esc(a.bands.join(', '))})</option>`).join('')}</select>`, '', true);
+        let body;
+        if (isHostEnd()) {
+            body = `<p class="form-hint">This end <strong>hosts</strong> the link: it makes a Wi-Fi network (on 5 GHz where the adapter can) that only the other end should know. Give it a name and a password, and use the same on the other end.</p>
+                ${banner()}<div class="form-grid">${adapterSel}${field('Link name', 'link_ssid', text('link_ssid', { placeholder: 'Roof link' }))}${field('Link password', 'link_pass', text('link_pass', { type: 'password', auto: 'new-password' }), 'At least 8 characters.')}</div>`;
+        } else {
+            const sc = scan;
+            const list2 = sc && sc.networks ? sc.networks : null;
+            const results = `<div class="wifi-scan"><button type="button" class="cfg-btn" id="wiz-scan"${sc && sc.busy ? ' disabled' : ''}>${sc && sc.busy ? 'Scanning…' : 'Scan for networks'}</button>
+                ${sc && sc.error ? `<p class="field-error">${esc(sc.error)}</p>` : ''}
+                ${list2 ? (sc.cached ? '<p class="form-hint">A new scan is not allowed here: this is what the adapter remembers.</p>' : '') + (list2.length ? `<ul class="scan-list">${list2.map((n, i) => `<li><button type="button" class="scan-pick${n.supported ? '' : ' is-unsupported'}" data-pick="${i}"${n.supported ? '' : ' disabled'}><strong>${esc(n.ssid)}</strong><span class="form-hint">${esc(n.band)}, ${n.signal_dbm} dBm</span><span class="tag${n.supported ? '' : ' tag-warn'}">${esc(({ wpa2: 'WPA2', wpa3: 'WPA3', 'wpa2-wpa3': 'WPA2/WPA3', open: 'Open', wep: 'WEP', enterprise: 'Enterprise' })[n.security] || n.security)}${n.supported ? '' : ' (cannot be joined)'}</span></button></li>`).join('')}</ul>` : '<p class="form-hint">No network was found.</p>') : ''}</div>`;
+            body = `<p class="form-hint">${flow === 'extender' ? 'The extender joins the main Wi-Fi as a client, and its cable ports and its own Wi-Fi become part of that network.' : 'This end <strong>joins</strong> a link that the other end hosts. The devices behind this end become part of the other end\'s network.'} Pick the network, or type its name.</p>
+                ${banner()}<div class="form-grid">${adapterSel}</div>${results}
+                <div class="form-grid">${field('Network name', 'link_ssid', text('link_ssid', { placeholder: 'Name of the Wi-Fi network' }))}${field('Password', 'link_pass', text('link_pass', { type: 'password', auto: 'new-password' }))}</div>
+                <div class="net-access"><label class="toggle"><input type="checkbox" data-f="link_hidden"${F.link_hidden ? ' checked' : ''}> <span>The network's name is hidden</span></label></div>`;
+        }
+        const ends = flow !== 'ptp' ? '' : `<div class="net-access">
+            <label class="toggle toggle--block"><input type="radio" name="ptp_end" data-f="ptp_end" data-rerender="1" value="host"${F.ptp_end === 'host' ? ' checked' : ''}><span><strong>The near end: host the link</strong><span class="form-hint">Makes the Wi-Fi network of the link. Set this end up first.</span></span></label>
+            <label class="toggle toggle--block"><input type="radio" name="ptp_end" data-f="ptp_end" data-rerender="1" value="client"${F.ptp_end !== 'host' ? ' checked' : ''}><span><strong>The far end: join the link</strong><span class="form-hint">Joins the network the other end hosts.</span></span></label></div>`;
+        const title = flow === 'extender' ? 'Join the main Wi-Fi' : (isHostEnd() ? 'Host the link' : 'Join the link');
+        return `<form id="wiz-form" class="wiz-body" novalidate><h2>${title}</h2>${ends}${body}${actions(prevStep('link'))}</form>`;
+    }
+
     function accessPoint() {
         const ports = portList();
         const here = herePorts();
@@ -167,8 +221,8 @@
             ${field('Netmask', 'ap_netmask', text('ap_netmask'), '255.255.255.0 or /24')}
             ${field('Gateway (the other router)', 'ap_gateway', text('ap_gateway', { placeholder: '192.168.1.1' }))}
             ${field('DNS servers', 'ap_dns', text('ap_dns', { placeholder: '192.168.1.1' }), 'Separate with commas.')}</div>` : '';
-        return `<form id="wiz-form" class="wiz-body" novalidate><h2>The access point's network</h2>
-            <p class="form-hint">An access point is part of a network that another router runs: its cable ports and Wi-Fi are all one network with that router's. Plug the other router (or a switch that leads to it) into any of the ports below.</p>
+        return `<form id="wiz-form" class="wiz-body" novalidate><h2>${flow === 'ptp' ? 'The network behind this end' : "The access point's network"}</h2>
+            <p class="form-hint">${flow === 'ptp' ? 'Choose the cable port that this end of the link is plugged into: what is behind it is on the same network as the other end.' : flow === 'extender' ? 'The extender is part of the main network. Cable ports are optional: any you choose become part of that network too, so a wired device can use the main network through the extender.' : 'An access point is part of a network that another router runs: its cable ports and Wi-Fi are all one network with that router\'s. Plug the other router (or a switch that leads to it) into any of the ports below.'}</p>
             ${banner()}
             <table class="wiz-ports"><thead><tr><th>Cable ports</th><th>Address</th></tr></thead><tbody>${rows || '<tr><td colspan="2">No cable port was found. Wi-Fi can still join the network, set up later on the Wireless page.</td></tr>'}</tbody></table>
             ${errs.ap_ports ? `<p class="field-error">${esc(cap(errs.ap_ports))}</p>` : ''}
@@ -180,20 +234,21 @@
     }
 
     function wifiPage() {
-        const names = info.wifi.map((a) => a.name).join(', ');
-        const both = info.wifi.length > 1;
+        const names = hostsLeft().map((a) => a.name).join(', ');
+        const both = hostsLeft().length > 1;
         const fields = F.wifi_on ? `<div class="form-grid">${field('Wi-Fi name', 'wifi_ssid', text('wifi_ssid', { placeholder: 'Home' }))}
-            ${field('Password', 'wifi_pass', text('wifi_pass', { type: 'password', auto: 'new-password' }), 'At least 8 characters.')}</div>
+            ${field('Password', 'wifi_pass', text('wifi_pass', { type: 'password', auto: 'new-password' }), 'At least 8 characters.')}
+            ${isAP() ? field('VLAN ID (optional)', 'wifi_vlan', text('wifi_vlan', { placeholder: 'untagged' }), 'Devices on this Wi-Fi are on a tagged network: the cable ports carry it with this VLAN ID. Leave it empty to use the untagged network.') : ''}</div>
             <p class="form-hint">${both ? 'The first adapter serves 5 GHz and the next 2.4 GHz, so every device finds one it can use.' : 'The adapter serves 2.4 GHz, which every device can use: move it to 5 GHz on the Wireless page for more speed.'} Everything else can be changed on the Wireless page.</p>` : '';
         return `<form id="wiz-form" class="wiz-body" novalidate><h2>Wi-Fi</h2>
             <p class="form-hint">This device has a Wi-Fi adapter that can host a network (${esc(names)}). You can make one now, or leave it for later.</p>
             ${banner()}
-            <div class="net-access"><label class="toggle toggle--block"><input type="checkbox" data-f="wifi_on" data-rerender="1"${F.wifi_on ? ' checked' : ''}><span><strong>Make a Wi-Fi network</strong><span class="form-hint">Devices that join it are on ${flow === 'ap' ? 'the same network as the cable ports' : 'the local network'}.</span></span></label></div>
+            <div class="net-access"><label class="toggle toggle--block"><input type="checkbox" data-f="wifi_on" data-rerender="1"${F.wifi_on ? ' checked' : ''}><span><strong>${flow === 'extender' ? 'Repeat the main Wi-Fi' : 'Make a Wi-Fi network'}</strong><span class="form-hint">${flow === 'extender' ? 'The same name and password as the main Wi-Fi, so devices move between the two by themselves.' : `Devices that join it are on ${isAP() ? 'the same network as the cable ports (or the VLAN below)' : 'the local network'}.`}</span></span></label></div>
             ${fields}${actions(prevStep('wifi'))}</form>`;
     }
 
     function admin() {
-        return `<form id="wiz-form" class="wiz-body" novalidate><h2>Who runs this ${flow === 'ap' ? 'access point' : 'router'}?</h2>
+        return `<form id="wiz-form" class="wiz-body" novalidate><h2>Who runs this ${isAP() ? 'device' : 'router'}?</h2>
             <p class="form-hint">This account can change everything, in the web interface and on the router's own console (a screen and keyboard, or a serial cable). More accounts can be added later.</p>
             ${banner()}<div class="form-grid">
             ${field('Username', 'username', text('username', { auto: 'username' }), '3 to 32 lower-case letters, numbers, dashes or underscores, starting with a letter.', true)}
@@ -202,7 +257,7 @@
             </div>${actions(prevStep('admin'))}</form>`;
     }
 
-    const wifiOn = () => !!(F.wifi_on && info && info.wifi && info.wifi.length);
+    const wifiOn = () => !!(F.wifi_on && hostsLeft().length && flow !== 'ptp');
 
     function review() {
         const country = (info.countries.find((c) => c.code === F.country) || {}).name || F.country;
@@ -213,16 +268,17 @@
             ${banner()}
             <table class="config-review-table"><tbody>
             ${row('Name', F.hostname)}${row('Country', country)}${row('Time zone', F.timezone)}
-            ${flow === 'ap'
-                ? `${row('Cable ports', F.ap_ports.join(', ') || '(none)')}${row('Own address', F.ap_mode === 'static' ? `${F.ap_ip} / ${F.ap_netmask}, gateway ${F.ap_gateway}` : 'From the other router (DHCP)')}`
+            ${isAP()
+                ? `${flow === 'extender' ? row('Joins the main Wi-Fi', `${F.link_ssid} (adapter ${F.link_adapter})`) : ''}${flow === 'ptp' ? row(isHostEnd() ? 'Hosts the link' : 'Joins the link', `${F.link_ssid} (adapter ${F.link_adapter})`) : ''}
+                ${row('Cable ports', F.ap_ports.join(', ') || '(none)')}${row('Own address', F.ap_mode === 'static' ? `${F.ap_ip} / ${F.ap_netmask}, gateway ${F.ap_gateway}` : 'From the other router (DHCP)')}`
                 : `${row('Internet port', F.wan_port)}${row('Internet connection', mode)}
             ${row('Local network ports', F.lan_ports.join(', '))}${row('Router address', `${F.lan_ip} / ${F.lan_subnet}`)}
             ${row('Addresses for devices', F.dhcp ? `${F.dhcp_start} to ${F.dhcp_end}` : 'Not given out by this router')}`}
-            ${wifiOn() ? row('Wi-Fi', F.wifi_ssid) : ''}
+            ${wifiOn() ? row('Wi-Fi', F.wifi_ssid + (isAP() && parseInt(F.wifi_vlan, 10) ? ` (VLAN ${parseInt(F.wifi_vlan, 10)})` : '')) : ''}
             ${row('Administrator', F.username)}
             </tbody></table>
             <div class="wiz-note">The network settings are saved as a <strong>draft</strong>, not applied yet. After you are signed in the router shows what will change and applies it when you say so. If the router's address changes, the page follows it, and goes back by itself if you cannot reach it.</div>
-            ${actions(prevStep('review'), busy ? 'Setting up…' : (flow === 'ap' ? 'Set up this access point' : 'Set up this router'), 'wiz-finish')}</form>`;
+            ${actions(prevStep('review'), busy ? 'Setting up…' : (isAP() ? 'Set up this device' : 'Set up this router'), 'wiz-finish')}</form>`;
     }
 
     // ---- restoring
@@ -293,14 +349,14 @@
     // ---------------------------------------------------------------- showing
 
     function render() {
-        const sub = { welcome: 'Set up this device', done: 'Restored' }[step] || (flow === 'restore' ? 'Restore from a backup' : flow === 'ap' ? 'Set up as an access point' : 'Set up as a new router');
+        const sub = { welcome: 'Set up this device', done: 'Restored' }[step] || (flow === 'restore' ? 'Restore from a backup' : ({ ap: 'Set up as an access point', extender: 'Set up as a wireless extender', ptp: 'Set up a point-to-point link' })[flow] || 'Set up as a new router');
         $('wiz-sub').textContent = sub;
-        const steps = flow === 'restore' ? RESTORE_STEPS : (flow === 'new' || flow === 'ap') ? newSteps() : [];
+        const steps = flow === 'restore' ? RESTORE_STEPS : flow ? newSteps() : [];
         const idx = steps.findIndex((s) => s[0] === step);
         const bar = $('wiz-steps');
         bar.classList.toggle('hidden', idx < 0);
         bar.innerHTML = steps.map((s, i) => `<li class="${i < idx ? 'done' : i === idx ? 'now' : ''}">${s[1]}</li>`).join('');
-        const page = { welcome, region, internet, lan, ap: accessPoint, wifi: wifiPage, admin, review, restore: restoreFile, 'restore-review': restoreReview, done }[step];
+        const page = { welcome, region, internet, lan, link: linkPage, ap: accessPoint, wifi: wifiPage, admin, review, restore: restoreFile, 'restore-review': restoreReview, done }[step];
         $('wiz-body').innerHTML = page();
         bind();
         const first = $('wiz-body').querySelector('[aria-invalid="true"]') || $('wiz-body').querySelector('input:not([type=radio]):not([type=checkbox]):not([type=file]), select');
@@ -324,8 +380,17 @@
             herePorts().forEach((h) => { if (F.lan_ports.indexOf(h) < 0 && h !== F.wan_port) F.lan_ports.push(h); });
             F.lan_ports = F.lan_ports.filter((n) => n !== F.wan_port);
         }
+        if (name === 'link') {
+            ensureLinkAdapter();
+        }
+        if (name === 'wifi' && flow === 'extender' && !touched.wifi) {
+            // repeating the main Wi-Fi: the same name and password, so that devices move between the two
+            F.wifi_on = true;
+            F.wifi_ssid = F.link_ssid;
+            F.wifi_pass = F.link_pass;
+        }
         if (name === 'ap') {
-            if (!touched.ap) F.ap_ports = portList().map((p) => p.name);
+            if (!touched.ap) F.ap_ports = flow === 'extender' ? [] : portList().map((p) => p.name);
             herePorts().forEach((h) => { if (F.ap_ports.indexOf(h) < 0) F.ap_ports.push(h); });
         }
         go(name);
@@ -342,11 +407,14 @@
                 if (el.type === 'radio' && !el.checked) return;
                 F[name] = read();
                 if (name === 'country') suggestZone();
+                if (name === 'link_adapter' || name === 'ptp_end') scan = null;
                 if (name === 'wan_port') touched.lan = false;
                 if (el.dataset.rerender) { errs = {}; general = null; render(); }
             };
             el.addEventListener(el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'radio' ? 'change' : 'input', apply);
             if (name === 'dhcp_start' || name === 'dhcp_end') el.addEventListener('input', () => { touched.dhcp = true; });
+            if (name === 'link_ssid') el.addEventListener('input', () => { F.link_security = ''; });
+            if (name === 'wifi_ssid' || name === 'wifi_pass' || name === 'wifi_on') el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => { touched.wifi = true; });
             if (name === 'lan_ip') el.addEventListener('change', followAddress);
         });
         root.querySelectorAll('[data-apport]').forEach((el) => el.addEventListener('change', () => {
@@ -363,6 +431,11 @@
         }));
         const form = $('wiz-form');
         if (form) form.addEventListener('submit', (e) => { e.preventDefault(); next(); });
+
+        // the link: scan for networks, pick one
+        const scanBtn = $('wiz-scan');
+        if (scanBtn) scanBtn.addEventListener('click', scanNetworks);
+        root.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => pickNetwork(parseInt(b.dataset.pick, 10))));
 
         // restoring
         const file = $('r-file');
@@ -406,6 +479,29 @@
             if (a) a.value = F.dhcp_start;
             if (b) b.value = F.dhcp_end;
         }
+    }
+
+    async function scanNetworks() {
+        ensureLinkAdapter();
+        scan = { busy: true, networks: null, error: null, cached: false };
+        render();
+        const res = await fetch('/api/v1/setup/wifi/scan?adapter=' + encodeURIComponent(F.link_adapter), { cache: 'no-store' }).catch(() => null);
+        let data = {};
+        try { data = res ? await res.json() : {}; } catch (e) { data = {}; }
+        scan = res && res.ok ? { busy: false, networks: data.networks || [], error: null, cached: !!data.cached } : { busy: false, networks: null, error: data.error || 'The scan failed.', cached: false };
+        render();
+    }
+
+    function pickNetwork(i) {
+        const n = scan && scan.networks && scan.networks[i];
+        if (!n || !n.supported) return;
+        F.link_ssid = n.ssid;
+        F.link_security = n.security;
+        F.link_hidden = false;
+        errs = {}; general = null;
+        render();
+        const f = $('f-link_pass');
+        if (f) f.focus();
     }
 
     async function next() {

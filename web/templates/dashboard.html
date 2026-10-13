@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{.CSRFToken}}">
+  <meta name="peakroute-mode" content="{{.SystemMode}}">
   <title>PeakRoute — Dashboard</title>
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
@@ -25,29 +26,33 @@
           </div>
           <div id="nav-empty" class="nav-empty hidden">No matches</div>
 
+          {{if eq .SystemMode "AP"}}
+          <a href="#" class="nav-item nav-top active" data-view="ap-home"><span class="banner-icon">📡</span> Access point</a>
+          <a href="#" class="nav-item nav-top" data-view="wireless"><span class="banner-icon">📶</span> Wireless</a>
+          {{else}}
           <a href="#" class="nav-item nav-top active" data-view="overview"><span class="banner-icon">📊</span> Overview</a>
+          {{end}}
           {{if eq .SystemMode "ROUTER"}}
           <a href="#" class="nav-item nav-top" data-view="dhcp"><span class="banner-icon">💻</span> Clients</a>
           <a href="#" class="nav-item nav-top" data-view="traffic"><span class="banner-icon">📈</span> Traffic</a>
           {{end}}
 
+          {{if eq .SystemMode "ROUTER"}}
           <details class="nav-banner-group">
             <summary class="nav-banner">
               <span class="banner-title"><span class="banner-icon">🌐</span> Network</span>
               <span class="chevron">▸</span>
             </summary>
             <div class="folder-content">
-              {{if eq .SystemMode "ROUTER"}}
               <a href="#" class="nav-item" data-view="internet">Internet</a>
               <a href="#" class="nav-item" data-view="networks">Local Networks</a>
               <a href="#" class="nav-item" data-view="network-physical">Ports</a>
-              {{end}}
               <a href="#" class="nav-item" data-view="wireless">Wireless</a>
-              {{if eq .SystemMode "ROUTER"}}
               <a href="#" class="nav-item" data-view="routes">Routes</a>
-              {{end}}
             </div>
           </details>
+
+          {{end}}
 
           {{if eq .SystemMode "ROUTER"}}
           <details class="nav-banner-group">
@@ -848,6 +853,17 @@
         <div id="ddns-body" class="card-stack"></div>
       </div>
 
+      <!-- View: the access point's home page -->
+      <div id="view-ap-home" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Access point</h1>
+            <p class="subtitle">How this access point is doing: its place on the network, its Wi-Fi and the devices connected to it.</p>
+          </div>
+        </header>
+        <div id="ap-home-body" class="card-stack"></div>
+      </div>
+
       <!-- View: Operation mode -->
       <div id="view-ap" class="view-section hidden">
         <header class="dash-header">
@@ -967,6 +983,7 @@
   <script src="/static/scripts/dns.js"></script>
   <script src="/static/scripts/diagnostics.js"></script>
   <script src="/static/scripts/ap.js"></script>
+  <script src="/static/scripts/ap_home.js"></script>
   <script src="/static/scripts/ddns.js"></script>
   <script src="/static/scripts/certificates.js"></script>
   <script src="/static/scripts/backup.js"></script>

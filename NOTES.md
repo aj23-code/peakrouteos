@@ -635,6 +635,26 @@ forwarded). The real tools caught one mistake while writing it: the BIOS boot pa
 `buildImage.sh` (it needs root, which the development machine does not give without a password), so the boot, the grow and the setup network on a
 real disk are untested.
 
+### Access point mode, the second round (2026-10-12)
+
+- **Home page** (`netapi/apstatus.go`, `GET /api/v1/ap/status`, `ap_home.js`): address, gateway and resolvers from the system (`hostinfo.go`: `/proc/net/route`,
+  resolv.conf, the bridge's addresses), ports from sysfs, Wi-Fi from `iw`: `iw dev` (channel, width, `txpower`), `survey dump` (noise and the
+  time busy: `busyPercent` is the change since the previous look, kept per adapter, or the total for the first look and after a channel
+  change), `iw dev X link` for a Wi-Fi link (connected, signal, rates), the station list per adapter (its first network is on the adapter's name,
+  the others on `name_1`...). The menu and the first page follow `config.ShownMode` (the settings in effect, or the draft while nothing has
+  ever been applied); the config banner loads the page again when `/api/v1/ap` says the shown mode changed. A loop found on the way: comparing the
+  *active* mode with the page's reloaded forever right after setup, because nothing had been applied yet.
+- **`netapi.RouterOnly`** wraps the router pages' endpoints in `main.go` (Internet, Local Networks, Ports, Routes, Firewall, DNS, Dynamic DNS, VPN):
+  409 for an access point.
+- **VLAN on a Wi-Fi network** (`WifiNetwork.VLAN`, 2-4094, access point only; a router refuses it): `renderInterfacesAP` writes `<port>.<id>` VLAN
+  interfaces and a `br<id>` bridge for each VLAN in use, `wifiBridge` points hostapd's `bridge=` at it. Checked with the real hostapd.
+- **Wizard:** the welcome page offers router, access point, extender (needs two adapters), point-to-point link (near end hosts a WDS network on
+  5 GHz where possible, far end joins) and restore. `Form.Mode` is `router`, `ap`, `extender`, `ptp_host` or `ptp_client`; `addLink` builds the
+  station or the hosting radio; `wifiFor` leaves out an extender's link adapter; `GET /api/v1/setup/wifi/scan` lists networks to join. A mistake found
+  with the browser: a client-only field (`ptp_end`) in the payload was refused by the strict decoder.
+- **The whole Wireless page is there in access point mode**; only the Local Network picker is a VLAN ID, and the *internet connection* role of a
+  Wi-Fi client is not offered (the API refuses it too: an access point has no internet connection; the link role joins the main Wi-Fi).
+
 ## 7e. Static routes (built 2026-10-08)
 
 **Model.** `NetworkConfig.Routes` is a list of `{name, destination, gateway, metric, disabled}` (JSON keys

@@ -195,9 +195,26 @@ window.ConfigBanner = (function () {
                 ? Date.now() + status.confirm.seconds_left * 1000
                 : null;
             if (status.state === 'idle') forget('pendingUrl');
+            await checkMode();
         }
         render();
         schedule();
+    }
+
+    // What the device is (router or access point) decides the menu: when a change that switches it has been applied, load the page again
+    // so that the menu and the home page are those of the new mode.
+    let modeChecked = '';
+    async function checkMode() {
+        if (!status || status.state !== 'idle') return;
+        const stamp = status.last ? status.last.at : 'never';
+        if (stamp === modeChecked) return;
+        modeChecked = stamp;
+        const meta = document.querySelector('meta[name="peakroute-mode"]');
+        if (!meta) return;
+        const res = await apiFetch('/api/v1/ap');
+        if (!res || !res.ok) return;
+        const d = await res.json();
+        if (d.shown_mode && d.shown_mode !== meta.content) window.location.reload();
     }
 
     function schedule() {

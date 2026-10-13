@@ -85,7 +85,7 @@ func wifiCarries(cfg config.NetworkConfig, id string) bool {
 // bridgeOf is the interface of a local network that an access point joins.
 func bridgeOf(cfg config.NetworkConfig, id string) string {
 	if cfg.IsAP() {
-		return apBridge // an access point has one network
+		return apBridge // an access point's untagged network
 	}
 	if id == config.DefaultNetworkID {
 		return LanTarget(cfg)
@@ -94,6 +94,15 @@ func bridgeOf(cfg config.NetworkConfig, id string) string {
 		return networkIface(n)
 	}
 	return ""
+}
+
+// wifiBridge is the bridge a Wi-Fi network's access point joins: its local network's on a router, and on an access point the untagged
+// bridge or the one of its VLAN.
+func wifiBridge(cfg config.NetworkConfig, n config.WifiNetwork) string {
+	if cfg.IsAP() && n.VLAN != 0 {
+		return apVLANBridge(n.VLAN)
+	}
+	return bridgeOf(cfg, n.Network)
 }
 
 // safeWifiText is the render-time twin of the config checks for the two free-text values that end up in a
@@ -127,7 +136,7 @@ func ensureSafeWifi(cfg config.NetworkConfig) error {
 		if !safeWifiText(n.SSID) || !safeWifiText(n.Passphrase) {
 			return fmt.Errorf("refusing to render an unsafe Wi-Fi name or password")
 		}
-		if bridgeOf(cfg, n.Network) == "" {
+		if wifiBridge(cfg, n) == "" {
 			return fmt.Errorf("Wi-Fi network %q joins a network that does not exist", n.SSID)
 		}
 	}
@@ -199,7 +208,7 @@ func renderHostapd(cfg config.NetworkConfig, p radioPlan, firstOn map[string]str
 			line("bss=%s", x.iface)
 		}
 		line("ssid=%s", n.SSID)
-		line("bridge=%s", bridgeOf(cfg, n.Network))
+		line("bridge=%s", wifiBridge(cfg, n))
 		line("auth_algs=1")
 		line("wpa=2")
 		switch n.Security {

@@ -16,6 +16,10 @@ import (
 // apBridge is the interface the access point's network is on.
 const apBridge = "br0"
 
+// apVLANBridge is the bridge of a tagged network on an access point: it holds the cable ports' VLAN interfaces and the Wi-Fi networks
+// on that VLAN, and no address (the access point is only a wire for them).
+func apVLANBridge(vlan int) string { return fmt.Sprintf("br%d", vlan) }
+
 // ensureSafeAP is the render-time twin of the AP validation.
 func ensureSafeAP(cfg config.NetworkConfig) error {
 	ap := cfg.APSettings()
@@ -30,6 +34,11 @@ func ensureSafeAP(cfg config.NetworkConfig) error {
 		tokens = append(tokens, ap.DNS...)
 		if err := ensureSafe(tokens...); err != nil {
 			return err
+		}
+	}
+	for _, v := range cfg.APVLANs() {
+		if v < config.MinAPVLAN || v > config.MaxVLAN {
+			return fmt.Errorf("refusing to render an unsafe VLAN %d", v)
 		}
 	}
 	if cfg.Hostname != "" {
@@ -63,6 +72,19 @@ func renderInterfacesAP(cfg config.NetworkConfig) string {
 	}
 	fmt.Fprintf(&b, "    bridge_ports %s\n", portList(members))
 	fmt.Fprintf(&b, "    post-up ip addr add %s dev %s label %s:setup || true\n", config.APRecoveryAddress, apBridge, apBridge)
+
+	// A tagged network for each VLAN a Wi-Fi network uses: the cable ports carry it tagged (a trunk, VLAN interface eth0.20), and its own
+	// bridge, without an address, joins them with the Wi-Fi networks on it.
+	ports := ap.Ports
+	for _, v := range cfg.APVLANs() {
+		var members []string
+		for _, p := range ports {
+			name := fmt.Sprintf("%s.%d", p, v)
+			fmt.Fprintf(&b, "\nauto %s\niface %s inet manual\n    vlan-raw-device %s\n", name, name, p)
+			members = append(members, name)
+		}
+		fmt.Fprintf(&b, "\nauto %s\niface %s inet manual\n    bridge_ports %s\n", apVLANBridge(v), apVLANBridge(v), portList(members))
+	}
 	return b.String()
 }
 

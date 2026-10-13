@@ -782,3 +782,214 @@ func TestWifiProblemsAreShownOnTheWifiPage(t *testing.T) {
 		t.Fatalf("%+v", cfg.Wifi)
 	}
 }
+
+// ---- extender, point-to-point links and VLANs
+
+func twoAdapters() wireless.Report {
+	rep := wifiReport() // wlan0: 2.4 and 5 GHz, can host and join
+	rep.Adapters[0].Modes = []string{"managed", "AP"}
+	rep.Adapters = append(rep.Adapters, wireless.Adapter{Name: "wlan1", CapabilitiesKnown: true, APCapable: true, MaxAP: 1, Modes: []string{"managed", "AP"},
+		Bands: []wireless.Band{{Name: config.Band24, Widths: []int{20, 40}, HT: true}}})
+	return rep
+}
+
+func goodExtender() Form {
+	f := goodAP()
+	f.Mode = "extender"
+	f.APPorts = nil
+	f.LinkAdapter, f.LinkSSID, f.LinkPass = "wlan0", "Main House", "correct horse battery"
+	f.WifiOn, f.WifiName, f.WifiPass = true, "Main House", "correct horse battery"
+	return f
+}
+
+func TestAWirelessExtender(t *testing.T) {
+	e := newEnv(t)
+	e.withWifi(twoAdapters())
+	f := goodExtender()
+	if r := e.apply(f); r.Status != 200 {
+		t.Fatalf("%d %v %v", r.Status, r.Body, r.Errors)
+	}
+	cfg, _ := e.mgr.StagedNetworkConfig()
+	w := cfg.WifiSettings()
+	if !cfg.IsAP() || len(cfg.AP.Ports) != 0 {
+		t.Fatalf("%+v", cfg.AP)
+	}
+	// wlan0 joins the main Wi-Fi as a link into the network; the other adapter hosts it again
+	if len(w.Stations) != 1 || w.Stations[0].Name != "wlan0" || w.Stations[0].Role != config.StationBridge || w.Stations[0].SSID != "Main House" || w.Stations[0].Security != config.SecurityWPA2WPA3 {
+		t.Fatalf("%+v", w.Stations)
+	}
+	if len(w.Radios) != 1 || w.Radios[0].Name != "wlan1" || len(w.Networks) != 1 || w.Networks[0].SSID != "Main House" {
+		t.Fatalf("%+v %+v", w.Radios, w.Networks)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAnExtenderNeedsASecondAdapterToRepeatTheNetwork(t *testing.T) {
+	e := newEnv(t)
+	e.withWifi(wifiReport()) // one adapter
+	r := e.apply(goodExtender())
+	if r.Status != 400 || r.Errors["wifi_ssid"] == "" {
+		t.Fatalf("%d %v", r.Status, r.Errors)
+	}
+	e.nothingSaved()
+	// without repeating it, one adapter is enough to join
+	f := goodExtender()
+	f.WifiOn = false
+	if r := e.apply(f); r.Status != 200 {
+		t.Fatalf("%d %v", r.Status, r.Errors)
+	}
+}
+
+func TestTheFarEndOfALinkJoinsAndTheNearEndHosts(t *testing.T) {
+	e := newEnv(t)
+	e.withWifi(twoAdapters())
+	far := goodAP()
+	far.Mode = "ptp_client"
+	far.APPorts = []string{"enp1s0"}
+	far.LinkAdapter, far.LinkSSID, far.LinkPass = "wlan0", "Roof Link", "correct horse battery"
+	far.WifiOn, far.WifiName, far.WifiPass = true, "ignored", "ignored pass 1"
+	if r := e.apply(far); r.Status != 200 {
+		t.Fatalf("%d %v %v", r.Status, r.Body, r.Errors)
+	}
+	cfg, _ := e.mgr.StagedNetworkConfig()
+	if st := cfg.WifiSettings().Stations; len(st) != 1 || st[0].SSID != "Roof Link" || st[0].Security != config.SecurityWPA2 || len(cfg.WifiSettings().Networks) != 0 {
+		t.Fatalf("the far end hosts nothing: %+v", cfg.Wifi)
+	}
+
+	e2 := newEnv(t)
+	e2.withWifi(twoAdapters())
+	near := goodAP()
+	near.Mode = "ptp_host"
+	near.APPorts = []string{"enp1s0"}
+	near.LinkAdapter, near.LinkSSID, near.LinkPass = "wlan0", "Roof Link", "correct horse battery"
+	if r := e2.apply(near); r.Status != 200 {
+		t.Fatalf("%d %v %v", r.Status, r.Body, r.Errors)
+	}
+	cfg, _ = e2.mgr.StagedNetworkConfig()
+	w := cfg.WifiSettings()
+	if len(w.Radios) != 1 || w.Radios[0].Name != "wlan0" || w.Radios[0].Band != config.Band5 || len(w.Networks) != 1 || !w.Networks[0].WDS || w.Networks[0].SSID != "Roof Link" || w.Networks[0].Security != config.SecurityWPA2 || len(w.Stations) != 0 {
+		t.Fatalf("%+v", w)
+	}
+}
+
+func TestALinkNeedsAnAdapterThatCanDoIt(t *testing.T) {
+	e := newEnv(t)
+	rep := twoAdapters()
+	rep.Adapters[1].Modes = []string{"AP"} // wlan1 cannot join
+	rep.Adapters = append(rep.Adapters, wireless.Adapter{Name: "wlan2", CapabilitiesKnown: true, APCapable: false, Modes: []string{"managed"}, Bands: []wireless.Band{{Name: config.Band24}}})
+	e.withWifi(rep)
+	for name, c := range map[string]struct {
+		mode, adapter string
+	}{
+		"far end on an adapter that cannot join":  {"ptp_client", "wlan1"},
+		"near end on an adapter that cannot host": {"ptp_host", "wlan2"},
+		"an adapter that is not there":            {"ptp_host", "wlan9"},
+		"no adapter":                              {"ptp_client", ""},
+	} {
+		f := goodAP()
+		f.Mode, f.LinkAdapter, f.LinkSSID, f.LinkPass, f.APPorts = c.mode, c.adapter, "Roof Link", "correct horse battery", []string{"enp1s0"}
+		if r := e.check("link", f); r.Status != 400 || r.Errors["link_adapter"] == "" {
+			t.Errorf("%s: %d %v", name, r.Status, r.Errors)
+		}
+		if r := e.apply(f); r.Status != 400 {
+			t.Errorf("%s: applied", name)
+		}
+	}
+	// a link has a name and a password, and the far end needs a cable port for the network behind it
+	f := goodAP()
+	f.Mode, f.LinkAdapter, f.LinkSSID, f.LinkPass, f.APPorts = "ptp_client", "wlan0", "", "short", []string{"enp1s0"}
+	e.withWifi(twoAdapters())
+	r := e.check("link", f)
+	if r.Errors["link_ssid"] == "" || r.Errors["link_pass"] == "" {
+		t.Fatalf("%v", r.Errors)
+	}
+	f.LinkSSID, f.LinkPass, f.APPorts = "Roof Link", "correct horse battery", nil
+	if r := e.check("ap", f); r.Errors["ap_ports"] == "" {
+		t.Fatalf("%v", r.Errors)
+	}
+	e.nothingSaved()
+}
+
+func TestTheNameAndPasswordOfTheNearEndAreShownOnTheLinkPage(t *testing.T) {
+	e := newEnv(t)
+	e.withWifi(twoAdapters())
+	f := goodAP()
+	f.Mode, f.APPorts, f.LinkAdapter, f.LinkSSID, f.LinkPass = "ptp_host", []string{"enp1s0"}, "wlan0", "", "short"
+	r := e.check("link", f)
+	if r.Errors["link_ssid"] == "" || r.Errors["link_pass"] == "" || r.Errors["wifi_ssid"] != "" {
+		t.Fatalf("%v", r.Errors)
+	}
+}
+
+func TestAWifiNetworkOfTheWizardCanBeOnAVLANOnAnAccessPoint(t *testing.T) {
+	e := newEnv(t)
+	e.withWifi(wifiReport())
+	f := goodAP()
+	f.WifiOn, f.WifiName, f.WifiPass, f.WifiVLAN = true, "Guest", "correct horse battery", 20
+	if r := e.apply(f); r.Status != 200 {
+		t.Fatalf("%d %v", r.Status, r.Errors)
+	}
+	cfg, _ := e.mgr.StagedNetworkConfig()
+	if n := cfg.WifiSettings().Networks; len(n) != 1 || n[0].VLAN != 20 {
+		t.Fatalf("%+v", n)
+	}
+	// a bad VLAN is shown on the Wi-Fi page; a router has no VLAN here
+	g := goodAP()
+	g.WifiOn, g.WifiName, g.WifiPass, g.WifiVLAN = true, "Guest", "correct horse battery", 1
+	if r := newEnvWith(t, wifiReport()).check("wifi", g); r.Errors["wifi_vlan"] == "" {
+		t.Fatalf("%v", r.Errors)
+	}
+	h := good()
+	h.WifiOn, h.WifiName, h.WifiPass, h.WifiVLAN = true, "Guest", "correct horse battery", 20
+	if r := newEnvWith(t, wifiReport()).check("wifi", h); r.Errors["wifi_vlan"] == "" {
+		t.Fatalf("a router took a VLAN: %v", r.Errors)
+	}
+}
+
+func newEnvWith(t *testing.T, rep wireless.Report) *env {
+	e := newEnv(t)
+	e.withWifi(rep)
+	return e
+}
+
+func TestScanningFromTheWizard(t *testing.T) {
+	e := newEnv(t)
+	e.withWifi(twoAdapters())
+	get := func(query string) reply {
+		req := httptest.NewRequest(http.MethodGet, "/x"+query, nil)
+		w := httptest.NewRecorder()
+		e.svc.Guard(e.svc.HandleScan)(w, req)
+		out := reply{Status: w.Code}
+		_ = json.Unmarshal(w.Body.Bytes(), &out.Body)
+		return out
+	}
+	if r := get("?adapter=wlan0"); r.Status != 503 {
+		t.Fatalf("scanning without a scanner: %d", r.Status)
+	}
+	e.svc.Scan = func(_ context.Context, adapter string) ([]wireless.Network, bool, error) {
+		return []wireless.Network{{SSID: "Main House", Signal: -50, Band: "5 GHz", Security: "wpa2-wpa3", Supported: true}}, false, nil
+	}
+	r := get("?adapter=wlan0")
+	if r.Status != 200 || len(r.Body["networks"].([]any)) != 1 {
+		t.Fatalf("%d %v", r.Status, r.Body)
+	}
+	for q, want := range map[string]int{"": 400, "?adapter=bad;name": 400, "?adapter=wlan9": 404} {
+		if r := get(q); r.Status != want {
+			t.Errorf("%q: %d", q, r.Status)
+		}
+	}
+	// an adapter that cannot join is not scanned with
+	rep := twoAdapters()
+	rep.Adapters[1].Modes = []string{"AP"}
+	e.withWifi(rep)
+	if r := get("?adapter=wlan1"); r.Status != 404 {
+		t.Fatalf("%d", r.Status)
+	}
+	// and once the router is set up it is closed like the rest
+	e.apply(good())
+	if r := get("?adapter=wlan0"); r.Status != 409 {
+		t.Fatalf("%d", r.Status)
+	}
+}
