@@ -617,7 +617,7 @@ config (validation, review), translator (every rendered shape, router to AP and 
 setup (the flow, checks per page, the connected port protected, Wi-Fi making), bootstrap. Checked in the browser (wizard end to end, the
 page, commit of the mode in the sandbox: files written, menu cut down). Not possible here: a real bridge with a Wi-Fi member.
 
-## 7t. The disk image (built 2026-10-12, first build still to run)
+## 7t. The disk image (built 2026-10-12; first real boot reached the welcome page)
 
 Rules and how to use it: **`docs/image.md`**. `buildImage.sh` replaces `buildISO.sh`, `first_boot.sh` and the installer (all removed; the
 tests that compared the translator with `first_boot.sh`'s heredocs went with them, the scenarios stayed as ordinary render tests).
@@ -631,9 +631,10 @@ the image), nothing is signed in on the console, `systemd-firstboot` is masked, 
 start: `peakroute-growroot.service` (`/usr/lib/peakroute/growroot`: move the backup GPT with `sgdisk -e`, stretch partition 3 into the free
 space with `sfdisk -N`, `partx -u`, `resize2fs`; once, marker `/var/lib/peakroute/rootgrown`; tested here against a disk image in a file with
 the real `sfdisk` and `sgdisk`). `image/run-qemu.sh` boots the image in QEMU (UEFI or BIOS, on a bigger virtual disk, the web interface
-forwarded). The real tools caught one mistake while writing it: the BIOS boot partition's type GUID. Not yet done: the first real run of
-`buildImage.sh` (it needs root, which the development machine does not give without a password), so the boot, the grow and the setup network on a
-real disk are untested.
+forwarded). The real tools caught one mistake while writing it: the BIOS boot partition's type GUID. The first real run (the user's, with `sudo`) hit two faults that are fixed: the project drive was mounted `nodev` (debootstrap cannot work there: the build folder
+moves to `/var/tmp` then) and a `set +e` inside `cleanup` disabled the script's stop-at-first-error. The rebuilt image was written to an NVMe disk in a real
+machine and **booted to the welcome page** (the setup network works on real hardware). Still to check on it: the grow of the root partition (the partition showed
+its image size, about 1.3 GB, before the first start), the rest of the wizard flows, and Wi-Fi.
 
 ### Access point mode, the second round (2026-10-12)
 
