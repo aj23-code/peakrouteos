@@ -199,6 +199,15 @@ window.WirelessModule = (function () {
         const netOptions = (localNets.length ? localNets : [{ id: 'lan', default: true }])
             .map(n => optionHtml(n.id, n.default ? 'LAN' : `${n.name} (VLAN ${n.vlan})`, f.network)).join('');
         const notUsed = server && server.enabled && !server.in_use && server.role === 'uplink';
+        const SECNAME = { wpa2: 'WPA2', wpa3: 'WPA3', 'wpa2-wpa3': 'WPA2/WPA3', open: 'Open', wep: 'WEP', enterprise: 'Enterprise' };
+        const scan = st.scan;
+        const scanHtml = !f.enabled ? '' : `<div class="wifi-scan">
+            <button type="button" class="cfg-btn st-scan" data-st="${key}"${lock || (scan && scan.busy) ? ' disabled' : ''}>${scan && scan.busy ? 'Scanning…' : 'Scan for networks'}</button>
+            ${scan && scan.error ? `<p class="field-error">${escapeHtml(scan.error)}</p>` : ''}
+            ${scan && scan.networks ? (scan.cached ? '<p class="form-hint">A new scan is not allowed here: this is what the adapter remembers from an earlier one.</p>' : '') +
+                (scan.networks.length ? `<ul class="scan-list">${scan.networks.map((n, i) => `<li><button type="button" class="scan-pick st-pick${n.supported ? '' : ' is-unsupported'}" data-st="${key}" data-pick="${i}"${n.supported ? '' : ' disabled'}>
+                    <strong>${escapeHtml(n.ssid)}</strong><span class="form-hint">${escapeHtml(n.band)}, ${n.signal_dbm} dBm</span><span class="tag${n.supported ? '' : ' tag-warn'}">${escapeHtml(SECNAME[n.security] || n.security)}${n.connected ? ', connected' : ''}${n.supported ? '' : ' (cannot be joined)'}</span></button></li>`).join('')}</ul>` : '<p class="form-hint">No network was found.</p>') : ''}
+        </div>`;
         const input = (field, label, type, extra) => `<div class="form-field"><label for="st-${key}-${field}">${label}</label>
             ${field === 'passphrase'
                 ? `<div class="pass-row"><input type="${f.show ? 'text' : 'password'}" id="st-${key}-${field}" data-st="${key}" data-stf="${field}" value="${escapeHtml(f[field])}" autocomplete="off" spellcheck="false" autocapitalize="off"${st.errors[field] ? ' aria-invalid="true"' : ''}${off ? ' disabled' : ''}><button type="button" class="cfg-btn cfg-btn--ghost st-reveal" data-st="${key}" aria-pressed="${f.show}">${f.show ? 'Hide' : 'Show'}</button></div>`
@@ -209,6 +218,7 @@ window.WirelessModule = (function () {
             <div class="net-card-head"><h3 class="form-section">Wi-Fi client</h3>${server && server.pending ? '<span class="tag tag-draft">Draft</span>' : ''}</div>
             <label class="toggle toggle--block"><input type="checkbox" data-st="${key}" data-stf="enabled"${f.enabled ? ' checked' : ''}${lock ? ' disabled' : ''}>
                 <span><strong>Connect this adapter to another Wi-Fi network</strong><span class="form-hint">The adapter joins a network as a client, the way a phone does.</span></span></label>
+            ${scanHtml}
             <div class="form-grid${f.enabled ? '' : ' is-off'}">
                 ${input('ssid', 'Network name', 'text', 'placeholder="Name of the Wi-Fi network"')}
                 ${input('passphrase', 'Password')}
@@ -237,6 +247,35 @@ window.WirelessModule = (function () {
     }
 
     const ST_FIELDS = ['ssid', 'passphrase', 'security', 'role', 'network', 'name'];
+
+    async function scanFor(a) {
+        const st = stationState(a);
+        st.scan = { busy: true, networks: null, error: null, cached: false };
+        renderAdapters();
+        const res = await apiFetch('/api/v1/wifi/scan?adapter=' + encodeURIComponent(a.name));
+        if (!res || !res.ok) {
+            const e = await errorOf(res, 'The scan failed.');
+            st.scan = { busy: false, networks: null, error: e.general, cached: false };
+        } else {
+            const d = await res.json();
+            st.scan = { busy: false, networks: d.networks, error: null, cached: d.cached };
+        }
+        renderAdapters();
+    }
+
+    function pickNetwork(a, i) {
+        const st = stationState(a);
+        const n = st.scan && st.scan.networks && st.scan.networks[i];
+        if (!n || !n.supported) return;
+        st.form.ssid = n.ssid;
+        st.form.security = n.security;
+        st.form.hidden = false;
+        delete st.errors.ssid; delete st.errors.security;
+        st.message = null;
+        renderAdapters();
+        const f = document.getElementById(`st-${a.name}-passphrase`);
+        if (f) f.focus();
+    }
 
     async function saveStation(a) {
         const st = stationState(a);
@@ -744,6 +783,8 @@ window.WirelessModule = (function () {
                 const a = report.adapters.find(x => x.name === btn.dataset.st);
                 if (!a) return;
                 if (btn.classList.contains('st-save')) saveStation(a);
+                else if (btn.classList.contains('st-scan')) scanFor(a);
+                else if (btn.classList.contains('st-pick')) pickNetwork(a, parseInt(btn.dataset.pick, 10));
                 else if (btn.classList.contains('st-remove')) removeStation(a);
                 else if (btn.classList.contains('st-reset')) { stations[a.name] = { form: stationFormOf(a), errors: {}, message: null, confirmRemove: false }; renderAdapters(); }
                 else if (btn.classList.contains('st-reveal')) {

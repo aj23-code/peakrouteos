@@ -419,6 +419,7 @@ func main() {
 	presenceTracker.Load()
 	go presenceTracker.Run(pollerCtx)
 	netAPI.Wireless = wifi.Detect
+	netAPI.Scan = wifi.Scan
 	mux.HandleFunc("/api/v1/wifi", requireAuth(netAPI.HandleWifi))
 	// Backup and restore: one encrypted file with the settings, the administrators, the certificates and (if asked) the history;
 	// restoring shows what is in it first and puts the settings in the draft (docs/backup.md)
@@ -565,6 +566,7 @@ func main() {
 	mux.HandleFunc("/api/v1/dns/forwards/{id}", requireAuth(netAPI.HandleDNSForward))
 	mux.HandleFunc("/api/v1/wifi/radios/{name}", requireAuth(netAPI.HandleWifiRadio))
 	mux.HandleFunc("/api/v1/wifi/stations/{name}", requireAuth(netAPI.HandleWifiStation))
+	mux.HandleFunc("/api/v1/wifi/scan", requireAuth(netAPI.HandleWifiScan))
 	mux.HandleFunc("/api/v1/ap", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			netAPI.HandleAPSet(w, r)

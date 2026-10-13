@@ -1,11 +1,14 @@
 package netapi
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"peakroute/internal/config"
+	"peakroute/internal/wireless"
 )
 
 func (e *env) station(method, name, body string) (code int, view WifiStation, raw string) {
@@ -205,5 +208,80 @@ func TestAnAccessPointCanAcceptPointToPointLinks(t *testing.T) {
 	rec = e.ssid(http.MethodPut, "wifi1", `{"wds":false}`)
 	if v := decodeInto[WifiNetwork](t, rec); v.WDS {
 		t.Fatalf("%+v", v)
+	}
+}
+
+func (e *env) scan(query string) (int, scanResponse, string) {
+	e.t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/wifi/scan"+query, nil)
+	rec := httptest.NewRecorder()
+	e.api.HandleWifiScan(rec, req)
+	var v scanResponse
+	if rec.Code == http.StatusOK {
+		v = decodeInto[scanResponse](e.t, rec)
+	}
+	return rec.Code, v, rec.Body.String()
+}
+
+func TestScanningForNetworksToJoin(t *testing.T) {
+	e := wifiEnv(t)
+	var asked []string
+	e.api.Scan = func(_ context.Context, adapter string) ([]wireless.Network, bool, error) {
+		asked = append(asked, adapter)
+		return []wireless.Network{{SSID: "Cafe", Signal: -50, Band: "2.4 GHz", Security: "wpa2", Supported: true}}, true, nil
+	}
+	code, v, raw := e.scan("?adapter=wlan2")
+	if code != 200 || v.Adapter != "wlan2" || !v.Cached || len(v.Networks) != 1 || v.Networks[0].SSID != "Cafe" || len(asked) != 1 || asked[0] != "wlan2" {
+		t.Fatalf("%d %s %v", code, raw, asked)
+	}
+	// an empty result is an empty list, not null
+	e.api.Scan = func(context.Context, string) ([]wireless.Network, bool, error) { return nil, false, nil }
+	if code, _, raw := e.scan("?adapter=wlan2"); code != 200 || !strings.Contains(raw, `"networks":[]`) {
+		t.Fatalf("%d %s", code, raw)
+	}
+}
+
+func TestAnAdapterIsNotScannedWhenItShouldNotBe(t *testing.T) {
+	e := wifiEnv(t)
+	called := false
+	e.api.Scan = func(context.Context, string) ([]wireless.Network, bool, error) { called = true; return nil, false, nil }
+	for name, c := range map[string]struct {
+		query string
+		code  int
+	}{
+		"no adapter":           {"", 400},
+		"a bad name":           {"?adapter=wlan0;reboot", 400},
+		"an adapter not there": {"?adapter=wlan9", 404},
+	} {
+		if code, _, raw := e.scan(c.query); code != c.code {
+			t.Errorf("%s: %d %s", name, code, raw)
+		}
+	}
+	// an access point that is running (committed and switched on) is left alone
+	b := baseline()
+	b.Country = "US"
+	b.Wifi = &config.WifiConfig{Radios: []config.WifiRadio{{Name: "wlan0", Band: config.Band24, Channel: 6, Width: 20, HT: true}}}
+	e2 := newEnv(t, &b)
+	e2.api.Wireless = wifiEnv(t).api.Wireless
+	e2.api.Scan = func(context.Context, string) ([]wireless.Network, bool, error) { called = true; return nil, false, nil }
+	if code, _, raw := e2.scan("?adapter=wlan0"); code != http.StatusConflict || !strings.Contains(raw, "access point") {
+		t.Fatalf("%d %s", code, raw)
+	}
+	if called {
+		t.Fatal("scanned an adapter that serves an access point")
+	}
+	// a failing scan, and no scanner at all
+	e.api.Scan = func(context.Context, string) ([]wireless.Network, bool, error) {
+		return nil, false, wireless.ErrScanUnavailable
+	}
+	if code, _, _ := e.scan("?adapter=wlan2"); code != http.StatusBadGateway {
+		t.Fatalf("%d", code)
+	}
+	e.api.Scan = nil
+	if code, _, _ := e.scan("?adapter=wlan2"); code != http.StatusServiceUnavailable {
+		t.Fatalf("%d", code)
+	}
+	if rec := e.wifiCall(e.api.HandleWifiScan, http.MethodPost, "", "", ""); rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("%d", rec.Code)
 	}
 }

@@ -1,0 +1,87 @@
+BSS 02:00:00:00:00:01(on wlan0) -- associated
+	last seen: 603095.258s [boottime]
+	TSF: 2326680227651 usec (26d, 22:18:00)
+	freq: 5180.0
+	beacon interval: 100 TUs
+	capability: ESS Privacy (0x0011)
+	signal: -45.00 dBm
+	last seen: 103588 ms ago
+	Information elements from Probe Response frame:
+	SSID: Home Network
+	Supported rates: 6.0* 9.0 12.0* 18.0 24.0* 36.0 48.0 54.0 
+	RSN:	 * Version: 1
+		 * Group cipher: CCMP
+		 * Pairwise ciphers: CCMP
+		 * Authentication suites: PSK PSK/SHA-256 SAE
+		 * Capabilities: 16-PTKSA-RC 1-GTKSA-RC MFP-capable (0x008c)
+	HT capabilities:
+		Capabilities: 0x9ef
+BSS 02:00:00:00:00:02(on wlan0)
+	freq: 2437.0
+	capability: ESS Privacy (0x0011)
+	signal: -61.00 dBm
+	SSID: Home Network
+	RSN:	 * Version: 1
+		 * Pairwise ciphers: CCMP
+		 * Authentication suites: PSK
+BSS 02:00:00:00:00:03(on wlan0)
+	freq: 2412.0
+	capability: ESS Privacy (0x0011)
+	signal: -70.00 dBm
+	SSID: Strict WPA3
+	RSN:	 * Version: 1
+		 * Authentication suites: SAE
+BSS 02:00:00:00:00:04(on wlan0)
+	freq: 2462.0
+	capability: ESS Privacy (0x0011)
+	signal: -80.00 dBm
+	SSID: Old Neighbour
+	WPA:	 * Version: 1
+		 * Group cipher: TKIP
+		 * Pairwise ciphers: TKIP CCMP
+		 * Authentication suites: PSK
+BSS 02:00:00:00:00:05(on wlan0)
+	freq: 5745.0
+	capability: ESS (0x0001)
+	signal: -55.00 dBm
+	SSID: Cafe Guest
+BSS 02:00:00:00:00:06(on wlan0)
+	freq: 2437.0
+	capability: ESS Privacy (0x0011)
+	signal: -58.00 dBm
+	SSID: Office
+	RSN:	 * Version: 1
+		 * Authentication suites: IEEE 802.1X
+BSS 02:00:00:00:00:07(on wlan0)
+	freq: 2437.0
+	capability: ESS Privacy (0x0011)
+	signal: -66.00 dBm
+	SSID: Ancient WEP
+BSS 02:00:00:00:00:08(on wlan0)
+	freq: 5200.0
+	capability: ESS Privacy (0x0011)
+	signal: -50.00 dBm
+	SSID: 
+	RSN:	 * Version: 1
+		 * Authentication suites: PSK
+BSS 02:00:00:00:00:09(on wlan0)
+	freq: 5200.0
+	capability: ESS Privacy (0x0011)
+	signal: -52.00 dBm
+	SSID: \x00\x00\x00
+	RSN:	 * Version: 1
+		 * Authentication suites: PSK
+BSS 02:00:00:00:00:0a(on wlan0)
+	freq: 6115.0
+	capability: ESS Privacy (0x0011)
+	signal: -49.00 dBm
+	SSID: Six Gig
+	RSN:	 * Version: 1
+		 * Authentication suites: SAE
+BSS 02:00:00:00:00:0b(on wlan0)
+	freq: 2452.0
+	capability: ESS Privacy (0x0011)
+	signal: -90.00 dBm
+	SSID: Caf\xc3\xa9 Bar
+	RSN:	 * Version: 1
+		 * Authentication suites: PSK

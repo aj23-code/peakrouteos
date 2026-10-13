@@ -1769,3 +1769,9 @@ a.cfg-btn { text-decoration: none; display: inline-block; }
 @media (max-width: 520px) { .login-card.wiz-card { padding: 20px; } }
 .wiz-details { margin: 0.2rem 0 0.8rem; font-size: 0.88rem; }
 .wiz-details summary { cursor: pointer; color: var(--accent-blue); margin-bottom: 0.4rem; }
+.wifi-scan { margin: 0.4rem 0 0.8rem; }
+.scan-list { list-style: none; margin: 0.5rem 0 0; display: grid; gap: 0.3rem; max-height: 14rem; overflow-y: auto; }
+.scan-pick { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; width: 100%; text-align: left; padding: 0.45rem 0.7rem; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); cursor: pointer; font-size: 0.9rem; }
+.scan-pick:hover:not(:disabled), .scan-pick:focus-visible { border-color: var(--accent-green); outline: none; }
+.scan-pick.is-unsupported { opacity: 0.55; cursor: not-allowed; }
+.scan-pick .tag { margin-left: auto; }

@@ -72,6 +72,8 @@ type API struct {
 	Connections func() ([]network.Connection, int, int, bool)
 	// Wireless reports the Wi-Fi adapters and what they can do. Nil means they cannot be read.
 	Wireless func(ctx context.Context) wireless.Report
+	// Scan looks for Wi-Fi networks with one adapter (nil: it cannot be done). cached says the list is what the kernel remembered.
+	Scan func(ctx context.Context, adapter string) (networks []wireless.Network, cached bool, err error)
 }
 
 const maxBody = 64 << 10

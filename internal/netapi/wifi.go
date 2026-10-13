@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"time"
 
 	"peakroute/internal/config"
 	"peakroute/internal/wireless"
@@ -670,4 +671,56 @@ func hasMode(modes []string, want string) bool {
 		}
 	}
 	return false
+}
+
+type scanResponse struct {
+	Adapter  string             `json:"adapter"`
+	Networks []wireless.Network `json:"networks"`
+	// Cached: the list is what the kernel remembered from an earlier scan (a new one was not allowed).
+	Cached bool `json:"cached"`
+}
+
+// HandleWifiScan: GET /api/v1/wifi/scan?adapter=wlan0 looks for Wi-Fi networks a client adapter could join. An adapter that is serving
+// an access point right now is not scanned: it would drop the devices connected to it.
+func (a *API) HandleWifiScan(w http.ResponseWriter, r *http.Request) {
+	if !allowMethods(w, r, http.MethodGet) {
+		return
+	}
+	name := r.URL.Query().Get("adapter")
+	if !config.IsValidInterfaceName(name) {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "choose the adapter to scan with"})
+		return
+	}
+	if a.Scan == nil {
+		writeJSON(w, http.StatusServiceUnavailable, errorBody{Error: "Wi-Fi networks cannot be scanned for on this system"})
+		return
+	}
+	if report, ok := a.hardware(r.Context()); ok {
+		found := false
+		for _, ad := range report.Adapters {
+			found = found || ad.Name == name
+		}
+		if !found {
+			writeJSON(w, http.StatusNotFound, errorBody{Error: "there is no Wi-Fi adapter with this name"})
+			return
+		}
+	}
+	radios, _ := a.Manager.NetworkConfig().WifiSettings().Active()
+	for _, rd := range radios {
+		if rd.Name == name {
+			writeJSON(w, http.StatusConflict, errorBody{Error: "this adapter is serving an access point right now: scanning with it would drop the devices connected to it"})
+			return
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	networks, cached, err := a.Scan(ctx, name)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, errorBody{Error: "The adapter could not be scanned. Is it switched on?"})
+		return
+	}
+	if networks == nil {
+		networks = []wireless.Network{}
+	}
+	writeJSON(w, http.StatusOK, scanResponse{Adapter: name, Networks: networks, Cached: cached})
 }

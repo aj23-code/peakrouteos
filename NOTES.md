@@ -956,7 +956,8 @@ security, passphrase, hidden, role, network, disabled}`), at most 2; WPA2, WPA3 
 - **Checked** with the real `wpa_supplicant` (v2.10; reads the whole file before it looks for the adapter, with a control that proves it
   can see a bad setting) and the real `hostapd` for the WDS setting, both skipped where not installed. Not possible without hardware:
   whether a given adapter does 4-address mode, WPA3 as a client or a link at all.
-- **Not built:** a scan for networks to pick from, choosing a particular access point (BSSID) or band, using the radio as client and
+- **Scan for networks** (`wireless/scan.go`, `GET /api/v1/wifi/scan?adapter=`): `iw dev X scan` (the adapter is switched up first if it is down), falling back to `scan dump` (the kernel's remembered results, said so on the page) where a scan is not allowed; the strongest access point per name and security, strongest first; open, WEP and enterprise networks are listed but cannot be picked; names that are empty or hidden and 6 GHz are left out; \xNN escapes are read. An adapter that serves an access point in the settings in effect is refused (409). The parser is tested against a hand-made file of every kind and the real `iw` format on the machine, when there is one.
+- **Not built:** choosing a particular access point (BSSID) or band, using the radio as client and
   access point at once (needs the driver's combinations), roaming between several access points of one name.
 
 ### Clients: wired or wireless, and online or offline (added 2026-10-10)
