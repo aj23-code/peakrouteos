@@ -111,7 +111,8 @@
     // what the new device is: a router, or one of the ways of being an access point
     function modePage() {
         const nClient = clients().length, nHost = hosts().length;
-        const canExtend = nClient >= 1 && (nHost >= 2 || (nHost >= 1 && nClient >= 2));
+        // two different adapters: one that can join the main Wi-Fi and one that can repeat it
+        const canExtend = clients().some((c) => hosts().some((h) => h.name !== c.name));
         const canLink = nClient >= 1 || nHost >= 1;
         const choice = (flowName, title, text, ok, why) => `<button type="button" class="wiz-choice" data-flow="${flowName}"${ok ? '' : ' disabled'}><strong>${title}</strong><span>${ok ? text : why}</span></button>`;
         return `<div class="wiz-body"><h2>What is this device?</h2>
@@ -119,7 +120,7 @@
             <div class="wiz-choices">
                 ${choice('new', 'A router', 'Connects to the internet and runs your network: addresses, firewall, Wi-Fi. The usual way.', true)}
                 ${choice('ap', 'An access point', 'Joins a network that another router runs, and adds cable ports and Wi-Fi to it.', true)}
-                ${choice('extender', 'A wireless extender', 'Joins the main Wi-Fi by Wi-Fi and repeats it, where a cable does not reach.', canExtend, 'Needs two Wi-Fi adapters: one to join the main Wi-Fi and one to repeat it.')}
+                ${choice('extender', 'A wireless extender', 'Joins the main Wi-Fi by Wi-Fi and repeats it, where a cable does not reach.', canExtend, `Needs two Wi-Fi adapters: one joins the main Wi-Fi and the other repeats it. This device has ${((info && info.wifi) || []).length}.`)}
                 ${choice('ptp', 'A point-to-point link', 'One end of a wireless link between two buildings or sites. You choose which end.', canLink, 'Needs a Wi-Fi adapter.')}
             </div>
             <div class="wiz-actions"><button type="button" class="cfg-btn cfg-btn--ghost" data-go="welcome">Back</button><span></span></div></div>`;
