@@ -123,6 +123,9 @@ func isHostAddr(p netip.Prefix, a netip.Addr) bool {
 // every problem, or nil if it is safe to render and apply. It checks structure only; whether
 // the named interfaces exist on this machine is checked where the hardware is known.
 func (c NetworkConfig) Validate() error {
+	if c.IsAP() {
+		return c.validateAP()
+	}
 	var errs ValidationError
 	add := func(field, format string, args ...any) {
 		errs = append(errs, FieldError{Field: field, Message: fmt.Sprintf(format, args...)})

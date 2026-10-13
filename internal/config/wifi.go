@@ -166,6 +166,9 @@ func (w WifiConfig) ActiveStations() []WifiStation {
 // UplinkStation returns the station that is the internet connection: switched on, with the uplink role, and the adapter that is the
 // internet port. (One that is not the internet port is not in use.)
 func (c NetworkConfig) UplinkStation() (WifiStation, bool) {
+	if c.IsAP() {
+		return WifiStation{}, false // an access point has no internet connection of its own to make
+	}
 	for _, st := range c.WifiSettings().ActiveStations() {
 		if st.Role == StationUplink && st.Name == c.WanInterface {
 			return st, true
@@ -478,17 +481,19 @@ func (c NetworkConfig) validateWifi(add func(field, format string, args ...any))
 				uplinks++
 			}
 		case StationBridge:
-			if st.Network != DefaultNetworkID {
+			if st.Network != DefaultNetworkID && !c.IsAP() {
 				if _, ok := c.FindNetwork(st.Network); !ok {
 					add(field("network"), "choose the local network this link joins")
 				}
 			}
-			if st.Name == c.WanInterface {
+			if !c.IsAP() && st.Name == c.WanInterface {
 				add(field("role"), "this adapter is the internet port: it cannot also join a local network")
 			}
-			for _, lan := range c.LanInterfaces {
-				if lan == st.Name {
-					add(field("role"), "this adapter is also a LAN port")
+			if !c.IsAP() {
+				for _, lan := range c.LanInterfaces {
+					if lan == st.Name {
+						add(field("role"), "this adapter is also a LAN port")
+					}
 				}
 			}
 		default:

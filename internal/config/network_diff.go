@@ -181,6 +181,7 @@ func DiffNetwork(active, candidate NetworkConfig) []Change {
 		}
 	}
 	changes = append(changes, diffWanSecret(active, candidate)...)
+	changes = append(changes, diffAP(active, candidate)...)
 	changes = append(changes, diffWifi(active, candidate)...)
 	changes = append(changes, diffStations(active, candidate)...)
 	changes = append(changes, diffFirewall(active, candidate)...)

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -248,5 +249,90 @@ func TestTheRealWpaSupplicantUnderstandsEverySettingWeWrite(t *testing.T) {
 	}
 	if checked != 6 {
 		t.Fatal(checked)
+	}
+}
+
+func TestTheKernelsRegulatoryCountryIsTheRouters(t *testing.T) {
+	cfg := routerCfg()
+	cfg.Country = "DE"
+	a, ok := hasArtifact(mustRender(t, cfg), PathRegdom)
+	if !ok || a.Remove || a.Service != SvcRegdom || string(a.Content) != "options cfg80211 ieee80211_regdom=DE\n" || a.Mode != 0644 {
+		t.Fatalf("%+v", a)
+	}
+	// no country: the file goes
+	cfg.Country = ""
+	if a, ok := hasArtifact(mustRender(t, cfg), PathRegdom); !ok || !a.Remove {
+		t.Fatalf("%+v", a)
+	}
+	// an access point has one too
+	ap := apCfg(nil)
+	if a, ok := hasArtifact(mustRender(t, ap), PathRegdom); !ok || a.Remove || !strings.Contains(string(a.Content), "=US") {
+		t.Fatalf("%+v", a)
+	}
+}
+
+func TestChangingTheCountryAloneTellsTheKernelAndNothingElse(t *testing.T) {
+	root := RootFS(t.TempDir())
+	cfg := routerCfg()
+	install(t, string(root), mustRender(t, cfg))
+	cfg.Country = "US"
+	plan, _ := PlanChanges(root, mustRender(t, cfg))
+	if got := actionSummary(plan); got != "apply regdomain" {
+		t.Fatalf("%q", got)
+	}
+	install(t, string(root), mustRender(t, cfg))
+	if p, _ := PlanChanges(root, mustRender(t, cfg)); !p.Empty() {
+		t.Fatalf("%+v", p)
+	}
+	// and it comes before Wi-Fi starts, which needs it
+	order := map[string]int{}
+	for i, s := range serviceOrder {
+		order[s] = i
+	}
+	if order[SvcRegdom] >= order[SvcWifi] || order[SvcRegdom] <= order[SvcNetworking] {
+		t.Fatalf("%v", serviceOrder)
+	}
+}
+
+func TestTheCountryCommandUsesTheFileAndNeedsNoWifiTools(t *testing.T) {
+	c := serviceCommands[SvcRegdom]
+	script := c.args[1]
+	for _, want := range []string{"command -v iw", "ieee80211_regdom=", PathRegdom, `iw reg set "${cc:-00}"`} {
+		if !strings.Contains(script, want) {
+			t.Errorf("the command lacks %q: %s", want, script)
+		}
+	}
+	// run for real with a fake iw: the country of the file, or the world setting without one
+	dir := t.TempDir()
+	rec := filepath.Join(dir, "calls")
+	os.WriteFile(filepath.Join(dir, "iw"), []byte("#!/bin/sh\necho \"$@\" >> "+rec+"\n"), 0755)
+	file := filepath.Join(dir, "regdom.conf")
+	run := func() string {
+		os.Remove(rec)
+		cmd := exec.Command("sh", "-c", strings.ReplaceAll(script, PathRegdom, file))
+		cmd.Env = []string{"PATH=" + dir + ":/usr/bin:/bin"}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v %s", err, out)
+		}
+		b, _ := os.ReadFile(rec)
+		return strings.TrimSpace(string(b))
+	}
+	os.WriteFile(file, []byte("options cfg80211 ieee80211_regdom=JP\n"), 0644)
+	if got := run(); got != "reg set JP" {
+		t.Fatalf("%q", got)
+	}
+	os.Remove(file)
+	if got := run(); got != "reg set 00" {
+		t.Fatalf("%q", got)
+	}
+	// without iw there is nothing to do and nothing fails
+	os.Remove(filepath.Join(dir, "iw"))
+	cmd := exec.Command("sh", "-c", strings.ReplaceAll(script, PathRegdom, file))
+	cmd.Env = []string{"PATH=/usr/bin:/bin"}
+	if _, err := exec.LookPath("iw"); err == nil {
+		t.Skip("a real iw is on this machine's PATH directories")
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
 	}
 }

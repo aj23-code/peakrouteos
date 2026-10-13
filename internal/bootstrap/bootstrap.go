@@ -32,9 +32,10 @@ const (
 	LeaseTime  = "1h"
 )
 
-// Needed says whether the setup network is wanted for these (committed) settings: there is no local network yet.
+// Needed says whether the setup network is wanted for these (committed) settings: there is no local network yet (an access point has
+// its own bridge, and keeps the same address as a recovery address).
 func Needed(cfg config.NetworkConfig) bool {
-	return len(cfg.LanInterfaces) == 0
+	return len(cfg.LanInterfaces) == 0 && !cfg.IsAP()
 }
 
 // Service runs the setup network.

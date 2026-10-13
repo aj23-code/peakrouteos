@@ -599,6 +599,25 @@ unknown fields refused, restore choices that cut the browser off) and `internal/
 ports chosen; saved on disk; token single use). Checked in the browser against an empty data directory, with a stand-in list of ports (the
 laptop has one): new router end to end, errors per field, the review opening, and a restore with missing ports.
 
+## 7s. Access point mode (built 2026-10-12)
+
+Behaviour and rules are in **`docs/access-point.md`**. What the device *is* follows the configuration: `network.json` `ap` (`APConfig{enabled,
+ports, mode, ip, netmask, gateway, dns}`); `NetworkConfig.IsAP()` / `OperationMode()` replace the `operation_mode` of `sys.json` (now
+display-only history); the dashboard's mode and menu come from the committed settings. `Validate` branches at the top (`validateAP`: ports,
+address, country, Wi-Fi, settings, syslog; the router's own fields are not looked at, so leftovers cannot block it). `translator/ap.go`
+(`renderAccessPoint`, chosen in `Render` by `cfg.IsAP()`): br0 with dhcp or static, `bridge_ports` = `APBridgeMembers()` (cable ports then
+Wi-Fi links), the recovery address as a `post-up`, a short nftables input policy (checked with the real `nft`: it caught `udp sport 67
+dport 68`, which needs `udp dport`), `ip_forward=0`, removals of every router-only file, the VPN renderers run with no VPN to remove their
+files, hostapd and wpa_supplicant as on a router with `bridgeOf` returning br0 for everything. `UplinkStation` is false for an access
+point. `bootstrap.Needed` is false for one (the bridge keeps the setup address). API: `GET/PUT /api/v1/ap` (`netapi/ap.go`): becoming an
+access point puts every cable port in the bridge; going back fills what a never-router lacks (`routerFill`); a switch there and back leaves no
+draft (the diff is empty). UI: System, Operation mode (`ap.js`); the router-only menu entries are inside `{{if eq .SystemMode "ROUTER"}}`.
+The wizard has the third choice, an `ap` page and an optional Wi-Fi page for both (`internal/setup`: `buildAP`, `addWifi`, `wifiFor` picks the
+bands from the adapters' reports); the Wi-Fi network joins the default network and a dual-band single adapter serves 2.4 GHz. Tests:
+config (validation, review), translator (every rendered shape, router to AP and back as plans, the real `nft`), netapi (the endpoint),
+setup (the flow, checks per page, the connected port protected, Wi-Fi making), bootstrap. Checked in the browser (wizard end to end, the
+page, commit of the mode in the sandbox: files written, menu cut down). Not possible here: a real bridge with a Wi-Fi member.
+
 ## 7e. Static routes (built 2026-10-08)
 
 **Model.** `NetworkConfig.Routes` is a list of `{name, destination, gateway, metric, disabled}` (JSON keys
@@ -894,10 +913,12 @@ setting, then AP mode (the limited GUI and a translator that bridges everything 
   top-level `country` (so it still goes through review and commit) and edited on **System, Settings**
   (`settings.js`; `GET /api/v1/settings`, `PUT /api/v1/settings/country`). Wi-Fi only *uses* it: `country_code` in
   the hostapd files, and the commit is refused (error on `country`) when Wi-Fi is on without one. The review shows it
-  as "Country", not as a Wi-Fi line. A change of country alone touches no file and restarts nothing: the review
-  says the system already matches. Anything else that needs a regulatory country later can read the same setting.
-  Not done: setting the kernel's regulatory domain (`iw reg set`) when no Wi-Fi is running, so the channels listed
-  on the Wireless page only open up once Wi-Fi has started with the country.
+  as "Country", not as a Wi-Fi line. The country is also the **kernel's regulatory domain** (2026-10-12):
+  `/etc/modprobe.d/peakroute-regdom.conf` (`options cfg80211 ieee80211_regdom=US`, read when the module loads at every start) and the
+  action `apply regdomain` (`iw reg set US`; `00` when the file is gone; nothing if `iw` is missing), placed after networking and before
+  Wi-Fi in the apply order. So a change of country alone runs that one command and restarts nothing else, and the channels on the Wireless
+  page open up as soon as it is committed, not only once Wi-Fi has started. Access points write it too. `translator.Render` now takes the
+  mode only as a check ("" or the same as the configuration says: `cfg.OperationMode()`); the pipeline passes "".
 - One adapter serves **one band at a time** (the stored radio has a single band); a dual-band adapter is used for
   2.4 GHz *or* 5 GHz. Serving both bands needs two adapters. A Wi-Fi network that ticks a band no adapter is
   switched on for shows a warning, and the commit refuses it (`wifi.coverage`).

@@ -110,6 +110,15 @@ func TestTheSetupNetworkIsNeededUntilThereIsALocalNetwork(t *testing.T) {
 	if Needed(mgr.NetworkConfig()) {
 		t.Fatal("still needed with a local network")
 	}
+	// an access point has its own bridge
+	ap := config.NetworkConfig{AP: &config.APConfig{Enabled: true, Ports: []string{"enp1s0"}}}
+	if Needed(ap) {
+		t.Fatal("an access point does not need the setup network")
+	}
+	ap.AP.Enabled = false
+	if !Needed(ap) {
+		t.Fatal("a router with no local network does")
+	}
 }
 
 func TestStartingJoinsTheWiredPortsAndServesAddresses(t *testing.T) {

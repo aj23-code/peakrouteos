@@ -29,7 +29,7 @@ func install(t *testing.T, root string, d Desired) {
 
 func mustRender(t *testing.T, cfg config.NetworkConfig) Desired {
 	t.Helper()
-	d, err := Render(cfg, "ROUTER")
+	d, err := Render(cfg, cfg.OperationMode())
 	if err != nil {
 		t.Fatal(err)
 	}

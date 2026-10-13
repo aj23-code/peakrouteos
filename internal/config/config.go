@@ -137,7 +137,9 @@ type NetworkConfig struct {
 	DNS           *DNSConfig `json:"dns,omitempty"`
 	LanDNSServers []string   `json:"lan_dns_servers,omitempty"`
 	// Wi-Fi: which adapters serve as access points and the Wi-Fi networks (SSIDs)
-	Wifi            *WifiConfig           `json:"wifi,omitempty"`
+	Wifi *WifiConfig `json:"wifi,omitempty"`
+	// Access point mode: when enabled the device is a bridge, not a router (ap.go)
+	AP              *APConfig             `json:"ap,omitempty"`
 	Firewall        *FirewallConfig       `json:"firewall,omitempty"` // the rules and port forwards (docs/firewall.md)
 	Interfaces      []SystemInterface     `json:"interfaces,omitempty"`
 	ManagedSwitches []ManagedSwitchConfig `json:"managed_switches,omitempty"`
@@ -254,6 +256,10 @@ func (c NetworkConfig) clone() NetworkConfig {
 	if c.Wifi != nil {
 		w := c.Wifi.clone()
 		c.Wifi = &w
+	}
+	if c.AP != nil {
+		a := c.AP.clone()
+		c.AP = &a
 	}
 	if c.Firewall != nil {
 		f := c.Firewall.clone()

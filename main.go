@@ -126,7 +126,7 @@ func main() {
 	// import an existing DHCP range from dnsmasq so a wizard-configured box keeps it. This changes
 	// network.json only; nothing is applied to the system.
 	if err := cfgMgr.AdoptNetwork(func(cfg *config.NetworkConfig) bool {
-		return translator.AdoptExisting(cfg, translator.RootFS(systemRoot), cfgMgr.SysConfig().OperationMode)
+		return translator.AdoptExisting(cfg, translator.RootFS(systemRoot), cfg.OperationMode())
 	}); err != nil {
 		log.Printf("Warning: could not adopt existing network settings: %v", err)
 	}
@@ -134,7 +134,7 @@ func main() {
 	// A crash between writing a file and putting it in place leaves a ".name.123.tmp" next to it: clear the old ones out of the
 	// directories the daemon writes to (its own, the certificates', and those of the files the configuration makes).
 	sweepDirs := map[string]bool{configDir: true, filepath.Dir(cert.CertPath): true}
-	if d, err := translator.Render(cfgMgr.NetworkConfig(), cfgMgr.SysConfig().OperationMode); err == nil {
+	if d, err := translator.Render(cfgMgr.NetworkConfig(), ""); err == nil {
 		for _, a := range d.Artifacts {
 			sweepDirs[filepath.Join(systemRoot, filepath.Dir(a.Path))] = true
 		}
@@ -565,6 +565,13 @@ func main() {
 	mux.HandleFunc("/api/v1/dns/forwards/{id}", requireAuth(netAPI.HandleDNSForward))
 	mux.HandleFunc("/api/v1/wifi/radios/{name}", requireAuth(netAPI.HandleWifiRadio))
 	mux.HandleFunc("/api/v1/wifi/stations/{name}", requireAuth(netAPI.HandleWifiStation))
+	mux.HandleFunc("/api/v1/ap", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			netAPI.HandleAPSet(w, r)
+			return
+		}
+		netAPI.HandleAP(w, r)
+	}))
 	mux.HandleFunc("/api/v1/wifi/networks", requireAuth(netAPI.HandleWifiNetworks))
 	mux.HandleFunc("/api/v1/wifi/networks/{id}", requireAuth(netAPI.HandleWifiNetwork))
 	mux.HandleFunc("/api/v1/uplinks", requireAuth(netAPI.HandleUplinks))
@@ -582,7 +589,7 @@ func main() {
 
 	// First-run wizard: open only while the router is not set up (docs/setup.md)
 	setupSvc := &setup.Service{Manager: cfgMgr, Ports: network.GetPhysicalInterfaces, Here: setup.HerePorts, DefaultRoute: setup.DefaultRouteDevice,
-		Restore: backupSvc, Console: consoleAccounts, NewSession: sessionMgr.CreateSession, Hostname: func() string { h, _ := os.Hostname(); return h }}
+		Restore: backupSvc, Console: consoleAccounts, Wireless: wifi.Detect, NewSession: sessionMgr.CreateSession, Hostname: func() string { h, _ := os.Hostname(); return h }}
 	mux.HandleFunc("/api/v1/setup/info", setupSvc.Guard(setupSvc.HandleInfo))
 	mux.HandleFunc("/api/v1/setup/check", setupSvc.Guard(setupSvc.HandleCheck))
 	mux.HandleFunc("/api/v1/setup/apply", setupSvc.Guard(setupSvc.HandleApply))
@@ -654,10 +661,8 @@ func main() {
 		if r.URL.Path == "/" || r.URL.Path == "/dashboard" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-			sysMode := cfgMgr.SysConfig().OperationMode
-			if sysMode == "" {
-				sysMode = "ROUTER"
-			}
+			// what the device is follows the settings in effect: a router, or an access point
+			sysMode := cfgMgr.NetworkConfig().OperationMode()
 
 			data := struct {
 				SystemMode string

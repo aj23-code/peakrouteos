@@ -26,8 +26,10 @@
           <div id="nav-empty" class="nav-empty hidden">No matches</div>
 
           <a href="#" class="nav-item nav-top active" data-view="overview"><span class="banner-icon">📊</span> Overview</a>
+          {{if eq .SystemMode "ROUTER"}}
           <a href="#" class="nav-item nav-top" data-view="dhcp"><span class="banner-icon">💻</span> Clients</a>
           <a href="#" class="nav-item nav-top" data-view="traffic"><span class="banner-icon">📈</span> Traffic</a>
+          {{end}}
 
           <details class="nav-banner-group">
             <summary class="nav-banner">
@@ -35,14 +37,19 @@
               <span class="chevron">▸</span>
             </summary>
             <div class="folder-content">
+              {{if eq .SystemMode "ROUTER"}}
               <a href="#" class="nav-item" data-view="internet">Internet</a>
               <a href="#" class="nav-item" data-view="networks">Local Networks</a>
               <a href="#" class="nav-item" data-view="network-physical">Ports</a>
+              {{end}}
               <a href="#" class="nav-item" data-view="wireless">Wireless</a>
+              {{if eq .SystemMode "ROUTER"}}
               <a href="#" class="nav-item" data-view="routes">Routes</a>
+              {{end}}
             </div>
           </details>
 
+          {{if eq .SystemMode "ROUTER"}}
           <details class="nav-banner-group">
             <summary class="nav-banner">
               <span class="banner-title"><span class="banner-icon">🛡️</span> Firewall</span>
@@ -68,6 +75,8 @@
             </div>
           </details>
 
+          {{end}}
+
           <details class="nav-banner-group">
             <summary class="nav-banner">
               <span class="banner-title"><span class="banner-icon">⚙️</span> System</span>
@@ -75,6 +84,7 @@
             </summary>
             <div class="folder-content">
               <a href="#" class="nav-item" data-view="settings">Settings</a>
+              <a href="#" class="nav-item" data-view="ap">Operation mode</a>
               <a href="#" class="nav-item" data-view="admins">Administrators</a>
               <a href="#" class="nav-item" data-view="certificates">Certificates</a>
               <a href="#" class="nav-item" data-view="backup">Backup and restore</a>
@@ -808,6 +818,18 @@
         <div id="ddns-body" class="card-stack"></div>
       </div>
 
+      <!-- View: Operation mode -->
+      <div id="view-ap" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Operation mode</h1>
+            <p class="subtitle">Whether this device is a router or an access point on a network that another router runs. Changes are saved as a draft until you commit them.</p>
+          </div>
+        </header>
+
+        <div id="ap-body" class="card-stack"></div>
+      </div>
+
       <!-- View: Diagnostics -->
       <div id="view-diagnostics" class="view-section hidden">
         <header class="dash-header">
@@ -914,6 +936,7 @@
   <script src="/static/scripts/firewall_log.js"></script>
   <script src="/static/scripts/dns.js"></script>
   <script src="/static/scripts/diagnostics.js"></script>
+  <script src="/static/scripts/ap.js"></script>
   <script src="/static/scripts/ddns.js"></script>
   <script src="/static/scripts/certificates.js"></script>
   <script src="/static/scripts/backup.js"></script>

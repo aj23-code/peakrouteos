@@ -2,10 +2,12 @@ package setup
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -13,6 +15,7 @@ import (
 	"peakroute/internal/backup"
 	"peakroute/internal/config"
 	"peakroute/internal/console"
+	"peakroute/internal/wireless"
 )
 
 type env struct {
@@ -592,5 +595,190 @@ func TestTheBridgeMemberIsFoundFromItsForwardingTable(t *testing.T) {
 	// a port that is not a member of this bridge, an address that is not there
 	if parseFDB(fdbTable, "aa:bb:cc:00:11:44", members) != "" || parseFDB(fdbTable, "de:ad:be:ef:00:00", members) != "" || parseFDB("", "x", members) != "" {
 		t.Fatal("found a port that is not there")
+	}
+}
+
+// ---- access point mode and Wi-Fi
+
+func goodAP() Form {
+	f := good()
+	f.Mode = "ap"
+	f.WanPort, f.WanMode = "", ""
+	f.LanPorts, f.LanIP, f.LanSubnet, f.DHCP, f.DHCPStart, f.DHCPEnd = nil, "", "", false, "", ""
+	f.APPorts = []string{"enp1s0", "enp2s0", "enp3s0"}
+	return f
+}
+
+func wifiReport() wireless.Report {
+	return wireless.Report{IWAvailable: true, Adapters: []wireless.Adapter{
+		{Name: "wlan0", CapabilitiesKnown: true, APCapable: true, MaxAP: 2, Modes: []string{"managed", "AP"}, Bands: []wireless.Band{
+			{Name: config.Band24, Widths: []int{20, 40}, HT: true}, {Name: config.Band5, Widths: []int{20, 40, 80}, HT: true, VHT: true}}},
+	}}
+}
+
+func (e *env) withWifi(rep wireless.Report) {
+	e.svc.Wireless = func(context.Context) wireless.Report { return rep }
+}
+
+func TestSettingUpAnAccessPoint(t *testing.T) {
+	e := newEnv(t)
+	f := goodAP()
+	f.APMode, f.APIP, f.APNetmask, f.APGateway, f.APDNS = "static", "192.168.1.2", "/24", "192.168.1.1", []string{"192.168.1.1"}
+	if r := e.apply(f); r.Status != 200 {
+		t.Fatalf("%d %v %v", r.Status, r.Body, r.Errors)
+	}
+	m, _ := config.NewManager(e.dir)
+	cfg, draft := m.StagedNetworkConfig()
+	if !draft || !cfg.IsAP() || strings.Join(cfg.AP.Ports, ",") != "enp1s0,enp2s0,enp3s0" || cfg.AP.IP != "192.168.1.2" || cfg.AP.Netmask != "255.255.255.0" || cfg.AP.Gateway != "192.168.1.1" {
+		t.Fatalf("%+v", cfg.AP)
+	}
+	if cfg.Hostname != "home-router" || cfg.Country != "US" || cfg.Timezone != "America/Chicago" {
+		t.Fatalf("%+v", cfg)
+	}
+	if !m.IsConfigured() || len(m.Users()) != 1 {
+		t.Fatal("the account and the flag are not saved")
+	}
+	// the router's own questions are not asked of an access point
+	e2 := newEnv(t)
+	g := goodAP()
+	g.WanPort, g.LanIP = "nonsense", "nonsense"
+	if r := e2.apply(g); r.Status != 200 {
+		t.Fatalf("an access point was asked router questions: %d %v", r.Status, r.Errors)
+	}
+}
+
+func TestAnAccessPointIsCheckedStepByStep(t *testing.T) {
+	e := newEnv(t)
+	f := goodAP()
+	f.APPorts = nil
+	if r := e.check("ap", f); r.Status != 400 || r.Errors["ap_ports"] == "" {
+		t.Fatalf("%d %v", r.Status, r.Errors)
+	}
+	// nothing about the router's pages
+	if r := e.check("lan", f); r.Errors["ap_ports"] != "" {
+		t.Fatalf("a later page's problem shown early: %v", r.Errors)
+	}
+	f = goodAP()
+	f.APMode, f.APIP, f.APNetmask = "static", "nope", "255.255.255.0"
+	if r := e.check("ap", f); r.Errors["ap_ip"] == "" {
+		t.Fatalf("%v", r.Errors)
+	}
+	f = goodAP()
+	f.APPorts = []string{"enp9s0"}
+	if r := e.check("ap", f); r.Errors["ap_ports"] == "" {
+		t.Fatalf("%v", r.Errors)
+	}
+	if r := e.check("ap", goodAP()); r.Status != 200 {
+		t.Fatalf("%v", r.Errors)
+	}
+	e.nothingSaved()
+}
+
+func TestTheAccessPointKeepsThePortTheBrowserIsConnectedThrough(t *testing.T) {
+	e := newEnv(t)
+	e.here = []string{"enp2s0"}
+	f := goodAP()
+	f.APPorts = []string{"enp1s0", "enp3s0"}
+	if r := e.check("ap", f); r.Errors["ap_ports"] == "" {
+		t.Fatalf("%v", r.Errors)
+	}
+	if r := e.apply(f); r.Status != 400 {
+		t.Fatalf("%d", r.Status)
+	}
+	e.nothingSaved()
+}
+
+func TestWifiIsOfferedWhereAnAdapterCanHostIt(t *testing.T) {
+	e := newEnv(t)
+	r := e.do(e.svc.HandleInfo, http.MethodGet, nil)
+	if w := r.Body["wifi"].([]any); len(w) != 0 {
+		t.Fatalf("Wi-Fi offered without a detector: %v", w)
+	}
+	e.withWifi(wifiReport())
+	r = e.do(e.svc.HandleInfo, http.MethodGet, nil)
+	w := r.Body["wifi"].([]any)
+	if len(w) != 1 || w[0].(map[string]any)["name"] != "wlan0" {
+		t.Fatalf("%v", w)
+	}
+	// an adapter that cannot host, or whose abilities are unknown, is not offered
+	rep := wifiReport()
+	rep.Adapters = append(rep.Adapters, wireless.Adapter{Name: "wlan1", CapabilitiesKnown: true, APCapable: false, Bands: []wireless.Band{{Name: config.Band24}}},
+		wireless.Adapter{Name: "wlan2", CapabilitiesKnown: false})
+	e.withWifi(rep)
+	if w := e.do(e.svc.HandleInfo, http.MethodGet, nil).Body["wifi"].([]any); len(w) != 1 {
+		t.Fatalf("%v", w)
+	}
+}
+
+func TestTheWifiTheWizardMakes(t *testing.T) {
+	e := newEnv(t)
+	e.withWifi(wifiReport())
+	f := good()
+	f.WifiOn, f.WifiName, f.WifiPass = true, "Home Wi-Fi", "correct horse battery"
+	if r := e.apply(f); r.Status != 200 {
+		t.Fatalf("%d %v %v", r.Status, r.Body, r.Errors)
+	}
+	cfg, _ := e.mgr.StagedNetworkConfig()
+	w := cfg.WifiSettings()
+	if len(w.Radios) != 1 || w.Radios[0].Name != "wlan0" || w.Radios[0].Band != config.Band24 || w.Radios[0].Width != 20 || w.Radios[0].Channel != 0 || !w.Radios[0].HT {
+		t.Fatalf("one adapter serves 2.4 GHz, automatic channel: %+v", w.Radios)
+	}
+	if len(w.Networks) != 1 || w.Networks[0].SSID != "Home Wi-Fi" || w.Networks[0].Network != "lan" || w.Networks[0].Security != config.SecurityWPA2WPA3 || w.Networks[0].BandSteering {
+		t.Fatalf("%+v", w.Networks)
+	}
+}
+
+func TestTwoAdaptersCoverBothBandsWithSteering(t *testing.T) {
+	rep := wifiReport()
+	rep.Adapters = append(rep.Adapters, wireless.Adapter{Name: "wlan1", CapabilitiesKnown: true, APCapable: true, MaxAP: 1, Bands: []wireless.Band{
+		{Name: config.Band24, Widths: []int{20, 40}, HT: true}}})
+	wf := wifiFor(rep, "Home", "correct horse battery")
+	if len(wf.Radios) != 2 || wf.Radios[0].Name != "wlan0" || wf.Radios[0].Band != config.Band5 || wf.Radios[0].Width != 80 || wf.Radios[1].Name != "wlan1" || wf.Radios[1].Band != config.Band24 {
+		t.Fatalf("%+v", wf.Radios)
+	}
+	if n := wf.Networks[0]; !n.BandSteering || len(n.Bands) != 2 {
+		t.Fatalf("%+v", n)
+	}
+	// an adapter with only 5 GHz serves that
+	only5 := wireless.Report{Adapters: []wireless.Adapter{{Name: "wlan0", CapabilitiesKnown: true, APCapable: true, Bands: []wireless.Band{{Name: config.Band5, Widths: []int{20, 40, 80}, HT: true, VHT: true}}}}}
+	if wf := wifiFor(only5, "Home", "correct horse battery"); len(wf.Radios) != 1 || wf.Radios[0].Band != config.Band5 {
+		t.Fatalf("%+v", wf.Radios)
+	}
+	if wf := wifiFor(wireless.Report{}, "Home", "correct horse battery"); len(wf.Radios) != 0 || len(wf.Networks) != 0 {
+		t.Fatalf("%+v", wf)
+	}
+	// 5 GHz without 802.11ac gets 40 MHz at most
+	n := wireless.Report{Adapters: []wireless.Adapter{{Name: "wlan0", CapabilitiesKnown: true, APCapable: true, Bands: []wireless.Band{{Name: config.Band5, Widths: []int{20, 40, 80}, HT: true}}}}}
+	if wf := wifiFor(n, "Home", "correct horse battery"); wf.Radios[0].Width != 40 {
+		t.Fatalf("%+v", wf.Radios)
+	}
+}
+
+func TestWifiProblemsAreShownOnTheWifiPage(t *testing.T) {
+	e := newEnv(t)
+	e.withWifi(wifiReport())
+	f := good()
+	f.WifiOn, f.WifiName, f.WifiPass = true, "", "short"
+	r := e.check("wifi", f)
+	if r.Status != 400 || r.Errors["wifi_ssid"] == "" || r.Errors["wifi_pass"] == "" {
+		t.Fatalf("%d %v", r.Status, r.Errors)
+	}
+	if r := e.check("lan", f); r.Errors["wifi_ssid"] != "" {
+		t.Fatalf("a later page's problem shown early: %v", r.Errors)
+	}
+	// no adapter: a message, not a broken configuration
+	e.withWifi(wireless.Report{})
+	f.WifiName, f.WifiPass = "Home", "correct horse battery"
+	if r := e.apply(f); r.Status != 400 || r.Errors["wifi_ssid"] == "" {
+		t.Fatalf("%d %v", r.Status, r.Errors)
+	}
+	e.nothingSaved()
+	// off means nothing is asked or made
+	f.WifiOn = false
+	if r := e.apply(f); r.Status != 200 {
+		t.Fatalf("%d %v", r.Status, r.Errors)
+	}
+	if cfg, _ := e.mgr.StagedNetworkConfig(); cfg.Wifi != nil {
+		t.Fatalf("%+v", cfg.Wifi)
 	}
 }

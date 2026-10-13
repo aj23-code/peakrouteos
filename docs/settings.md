@@ -32,7 +32,7 @@ became the machine's name.
 
 ### Country
 
-Where the router is used. Wi-Fi follows it (the channels and power the country allows), and Wi-Fi cannot be switched on without it.
+Where the router is used. Wi-Fi follows it (the channels and power the country allows), and Wi-Fi cannot be switched on without it. It is also the kernel's regulatory country: a commit writes `/etc/modprobe.d/peakroute-regdom.conf` (read at every start) and runs `iw reg set`, so the channels the Wireless page lists follow it at once.
 
 ### Local domain
 

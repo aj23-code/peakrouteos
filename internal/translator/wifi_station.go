@@ -121,3 +121,18 @@ func stationArtifacts(cfg config.NetworkConfig) ([]Artifact, error) {
 	}
 	return out, nil
 }
+
+// PathRegdom makes the kernel's regulatory country (which channels and powers Wi-Fi may use) the router's, now and at every start: the
+// cfg80211 module reads it when it loads, and the commit tells the running kernel with `iw reg set`.
+const PathRegdom = "/etc/modprobe.d/peakroute-regdom.conf"
+
+// regdomArtifact writes the country for the kernel, or removes the file when there is none.
+func regdomArtifact(cfg config.NetworkConfig) (Artifact, error) {
+	if cfg.Country == "" {
+		return Artifact{Path: PathRegdom, Remove: true, Service: SvcRegdom}, nil
+	}
+	if len(cfg.Country) != 2 || cfg.Country[0] < 'A' || cfg.Country[0] > 'Z' || cfg.Country[1] < 'A' || cfg.Country[1] > 'Z' {
+		return Artifact{}, fmt.Errorf("refusing to render unsafe country %q", cfg.Country)
+	}
+	return Artifact{Path: PathRegdom, Content: []byte("options cfg80211 ieee80211_regdom=" + cfg.Country + "\n"), Mode: 0644, Service: SvcRegdom}, nil
+}

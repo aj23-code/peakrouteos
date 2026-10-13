@@ -142,8 +142,8 @@ func New(o Options) *Service {
 		o.AfterFunc = func(d time.Duration, f func()) Timer { return time.AfterFunc(d, f) }
 	}
 	if o.Mode == nil {
-		mgr := o.Manager
-		o.Mode = func() string { return mgr.SysConfig().OperationMode }
+		// the configuration says what the device is
+		o.Mode = func() string { return "" }
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

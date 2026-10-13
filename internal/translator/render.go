@@ -44,6 +44,7 @@ const (
 	SvcHostname   = "hostname"
 	SvcTimezone   = "timezone"
 	SvcNTP        = "ntp"
+	SvcRegdom     = "regdomain"
 	SvcSysctl     = "sysctl"
 	SvcNetworking = "networking"
 	SvcRoutes     = "routes"
@@ -113,11 +114,16 @@ var validateConfig = func(c config.NetworkConfig) error { return c.Validate() }
 
 // Render produces the files for a router-mode configuration.
 func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
-	if m := strings.ToUpper(strings.TrimSpace(mode)); m != "" && m != "ROUTER" {
+	// the configuration says what the device is; a mode that is asked for must agree with it ("" asks for whatever it is)
+	if m := strings.ToUpper(strings.TrimSpace(mode)); m != "" && m != cfg.OperationMode() {
 		return Desired{}, fmt.Errorf("%w: %q", ErrUnsupportedMode, mode)
 	}
 	if err := validateConfig(cfg); err != nil {
 		return Desired{}, fmt.Errorf("invalid network configuration: %w", err)
+	}
+	// the configuration says what the device is: a router, or an access point
+	if cfg.IsAP() {
+		return renderAccessPoint(cfg)
 	}
 
 	tokens := append([]string{cfg.WanInterface, cfg.LanIP, cfg.LanSubnet}, cfg.LanInterfaces...)
@@ -182,11 +188,18 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 		pppArtifact = Artifact{Path: PathPPPPeer, Content: []byte(renderPPPPeer(cfg)), Mode: 0600, Service: SvcNetworking}
 	}
 
+	// the kernel's regulatory country
+	regdom, err := regdomArtifact(cfg)
+	if err != nil {
+		return Desired{}, err
+	}
+
 	d.Artifacts = append(d.Artifacts,
 		Artifact{Path: PathSysctl, Content: []byte("net.ipv4.ip_forward=1\n"), Mode: 0644, Service: SvcSysctl},
 		Artifact{Path: PathInterfaces, Content: []byte(renderInterfaces(cfg, lan)), Mode: 0644, Service: SvcNetworking},
 		pppArtifact,
 		routesArtifact,
+		regdom,
 		// Debian ships nftables.conf as an executable script (it has a shebang)
 		Artifact{Path: PathNftables, Content: []byte(renderNftables(cfg, lan)), Mode: 0755, Service: SvcNftables},
 	)

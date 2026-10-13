@@ -84,6 +84,9 @@ func wifiCarries(cfg config.NetworkConfig, id string) bool {
 
 // bridgeOf is the interface of a local network that an access point joins.
 func bridgeOf(cfg config.NetworkConfig, id string) string {
+	if cfg.IsAP() {
+		return apBridge // an access point has one network
+	}
 	if id == config.DefaultNetworkID {
 		return LanTarget(cfg)
 	}

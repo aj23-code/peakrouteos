@@ -26,6 +26,7 @@ import (
 	"peakroute/internal/backup"
 	"peakroute/internal/config"
 	"peakroute/internal/console"
+	"peakroute/internal/wireless"
 )
 
 // Service is the wizard.
@@ -41,6 +42,8 @@ type Service struct {
 	NewSession func(username string, w http.ResponseWriter) string
 	// Console makes the administrator the login of the machine's console too (nil: only the web interface).
 	Console console.Accounts
+	// Wireless reads the Wi-Fi adapters (nil: the wizard does not offer Wi-Fi).
+	Wireless func(ctx context.Context) wireless.Report
 	// Hostname is the machine's own name, suggested for the router.
 	Hostname func() string
 
@@ -101,8 +104,16 @@ type Defaults struct {
 	DHCPEnd   string `json:"dhcp_end"`
 }
 
+func (s *Service) wirelessReport() wireless.Report {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return s.Wireless(ctx)
+}
+
 // InfoResponse is what the page needs to build the wizard.
 type InfoResponse struct {
+	Wifi []WifiAdapter `json:"wifi"` // adapters that can host a Wi-Fi network
+
 	Ports        []PortInfo        `json:"ports"` // wired ports only
 	Countries    []config.Country  `json:"countries"`
 	Timezones    []config.Timezone `json:"timezones"`
@@ -193,7 +204,7 @@ func (s *Service) HandleInfo(w http.ResponseWriter, r *http.Request) {
 	if lan == nil {
 		lan = []string{}
 	}
-	write(w, http.StatusOK, InfoResponse{Ports: ports, Countries: config.Countries, Timezones: config.Timezones, Hostname: host, Country: base.Country, Timezone: base.Timezone,
+	write(w, http.StatusOK, InfoResponse{Wifi: s.wifiAdapters(), Ports: ports, Countries: config.Countries, Timezones: config.Timezones, Hostname: host, Country: base.Country, Timezone: base.Timezone,
 		Defaults:   Defaults{LanIP: "192.168.1.1", LanSubnet: "255.255.255.0", DHCPStart: "192.168.1.100", DHCPEnd: "192.168.1.200"},
 		SuggestWan: wan, SuggestLan: lan, NTPServers: config.DefaultNTPServers, MinPassword: auth.MinPasswordLength, MaxPassword: auth.MaxPasswordBytes, BackupFormat: backup.SchemaVersion})
 }
@@ -202,6 +213,8 @@ func (s *Service) HandleInfo(w http.ResponseWriter, r *http.Request) {
 
 // Form is everything the wizard collects for a new router.
 type Form struct {
+	// Mode is "router" (the default) or "ap": an access point on a network another router runs.
+	Mode     string `json:"mode"`
 	Hostname string `json:"hostname"`
 	Country  string `json:"country"`
 	Timezone string `json:"timezone"`
@@ -222,13 +235,26 @@ type Form struct {
 	DHCPStart string   `json:"dhcp_start"`
 	DHCPEnd   string   `json:"dhcp_end"`
 
+	// an access point: the cable ports in its bridge, and how it gets its own address
+	APPorts   []string `json:"ap_ports"`
+	APMode    string   `json:"ap_mode"` // dhcp or static
+	APIP      string   `json:"ap_ip"`
+	APNetmask string   `json:"ap_netmask"`
+	APGateway string   `json:"ap_gateway"`
+	APDNS     []string `json:"ap_dns"`
+
+	// Wi-Fi: one network (name and password) on every adapter that can be an access point
+	WifiOn   bool   `json:"wifi_on"`
+	WifiName string `json:"wifi_ssid"`
+	WifiPass string `json:"wifi_pass"`
+
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Confirm  string `json:"confirm"`
 }
 
 // The steps, in order. A check goes through the step it is asked for: the fields of that step and the ones before.
-var stepOrder = []string{"region", "internet", "lan", "admin"}
+var stepOrder = []string{"region", "internet", "lan", "ap", "wifi", "admin"}
 
 func stepIndex(name string) int {
 	for i, s := range stepOrder {
@@ -248,6 +274,10 @@ func stepOf(field string) string {
 		return "internet"
 	case strings.HasPrefix(field, "lan") || strings.HasPrefix(field, "dhcp"):
 		return "lan"
+	case strings.HasPrefix(field, "ap_") || field == "ap":
+		return "ap"
+	case strings.HasPrefix(field, "wifi"):
+		return "wifi"
 	case field == "username" || field == "password" || field == "confirm":
 		return "admin"
 	}
@@ -258,6 +288,8 @@ func stepOf(field string) string {
 var formField = map[string]string{
 	"wan_interface": "wan_port", "lan_interfaces": "lan_ports",
 	"dhcp_range_start": "dhcp_start", "dhcp_range_end": "dhcp_end",
+	"ap.ports": "ap_ports", "ap.mode": "ap_mode", "ap.ip": "ap_ip", "ap.netmask": "ap_netmask", "ap.gateway": "ap_gateway", "ap.dns": "ap_dns",
+	"wifi.networks[0].ssid": "wifi_ssid", "wifi.networks[0].passphrase": "wifi_pass",
 }
 
 // maskOf accepts a netmask the way people write one: 255.255.255.0, /24 or 24.
@@ -297,8 +329,59 @@ func (s *Service) build(f Form, r *http.Request) (config.NetworkConfig, []config
 		add("timezone", "choose a time zone from the list")
 	}
 	if cfg.Country == "" {
-		add("country", "choose the country the router is used in (it sets what the Wi-Fi may do)")
+		add("country", "choose the country the device is used in (it sets what the Wi-Fi may do)")
 	}
+	if f.Mode == "ap" {
+		s.buildAP(f, r, &cfg, add)
+	} else {
+		s.buildRouter(f, r, &cfg, add)
+	}
+	s.addWifi(f, &cfg, add)
+	return s.finish(cfg, errs)
+}
+
+// buildAP lays the access point's own answers over the settings.
+func (s *Service) buildAP(f Form, r *http.Request, cfg *config.NetworkConfig, add func(field, msg string)) {
+	ports := cleanList(f.APPorts)
+	ap := &config.APConfig{Enabled: true, Ports: ports, Mode: strings.ToLower(strings.TrimSpace(f.APMode))}
+	if ap.Mode == "" {
+		ap.Mode = config.APDHCP
+	}
+	if ap.Mode == config.APStatic {
+		ap.IP, ap.Netmask, ap.Gateway = strings.TrimSpace(f.APIP), maskOf(f.APNetmask), strings.TrimSpace(f.APGateway)
+		ap.DNS = cleanList(f.APDNS)
+	}
+	cfg.AP = ap
+	have := map[string]bool{}
+	var here []string
+	if s.Ports != nil {
+		for _, p := range s.wiredPorts(r) {
+			have[p.Name] = true
+			if p.Here {
+				here = append(here, p.Name)
+			}
+		}
+	}
+	for _, p := range ports {
+		if len(have) > 0 && !have[p] {
+			add("ap_ports", fmt.Sprintf("this device has no wired port %q", p))
+		}
+	}
+	for _, h := range here {
+		in := false
+		for _, p := range ports {
+			if p == h {
+				in = true
+			}
+		}
+		if !in {
+			add("ap_ports", "include the port you are connected through ("+h+"), or you will lose the connection when the settings are applied")
+		}
+	}
+}
+
+// buildRouter lays the router's answers (ports, internet connection, local network) over the settings.
+func (s *Service) buildRouter(f Form, r *http.Request, cfg *config.NetworkConfig, add func(field, msg string)) {
 
 	// ports
 	wan := strings.TrimSpace(f.WanPort)
@@ -371,7 +454,27 @@ func (s *Service) build(f Form, r *http.Request) (config.NetworkConfig, []config
 	} else {
 		cfg.DHCP = &config.DHCPConfig{Enabled: false}
 	}
+}
 
+// addWifi gives every adapter that can be an access point the one Wi-Fi network the person typed (the wizard keeps to the simple case;
+// the Wireless page does the rest).
+func (s *Service) addWifi(f Form, cfg *config.NetworkConfig, add func(field, msg string)) {
+	if !f.WifiOn || s.Wireless == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	wf := wifiFor(s.Wireless(ctx), strings.TrimSpace(f.WifiName), f.WifiPass)
+	if len(wf.Radios) == 0 {
+		add("wifi_ssid", "no Wi-Fi adapter in this device can be an access point")
+		return
+	}
+	cfg.Wifi = &wf
+}
+
+// finish checks the whole and renames the problems to the form's fields.
+func (s *Service) finish(cfg config.NetworkConfig, errs []config.FieldError) (config.NetworkConfig, []config.FieldError) {
+	add := func(field, msg string) { errs = append(errs, config.FieldError{Field: field, Message: msg}) }
 	// the whole must hold together
 	if err := cfg.Validate(); err != nil {
 		var ve config.ValidationError
@@ -381,6 +484,9 @@ func (s *Service) build(f Form, r *http.Request) (config.NetworkConfig, []config
 				if m, ok := formField[name]; ok {
 					name = m
 				}
+				if !isFormField(name) {
+					name = "" // not something the form has a box for: it is shown as a whole
+				}
 				errs = append(errs, config.FieldError{Field: name, Message: e.Message})
 			}
 		} else {
@@ -389,6 +495,18 @@ func (s *Service) build(f Form, r *http.Request) (config.NetworkConfig, []config
 	}
 	return cfg, dedupe(errs)
 }
+
+// the fields the wizard has boxes for
+var formFields = map[string]bool{
+	"hostname": true, "country": true, "timezone": true,
+	"wan_port": true, "wan_mode": true, "wan_ip": true, "wan_subnet": true, "wan_gateway": true, "wan_dns": true, "pppoe_username": true, "pppoe_password": true,
+	"lan_ports": true, "lan_ip": true, "lan_subnet": true, "dhcp_start": true, "dhcp_end": true,
+	"ap_ports": true, "ap_mode": true, "ap_ip": true, "ap_netmask": true, "ap_gateway": true, "ap_dns": true,
+	"wifi_ssid": true, "wifi_pass": true,
+	"username": true, "password": true, "confirm": true,
+}
+
+func isFormField(name string) bool { return name == "" || formFields[name] }
 
 func dedupe(in []config.FieldError) []config.FieldError {
 	seen := map[string]bool{}

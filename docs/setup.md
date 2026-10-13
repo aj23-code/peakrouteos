@@ -28,6 +28,9 @@ it take an address, and open `https://192.168.77.1`.
 
 **Welcome.** The choice: *Set up as a new router*, or *Restore from a backup*.
 
+**Setting up as an access point** is the same wizard with other pages (docs/access-point.md): region, the network (cable ports, DHCP or
+a fixed address), Wi-Fi, the administrator and the review.
+
 **Setting up as a new router**
 
 1. **Region.** Country (sets what the Wi-Fi may do), time zone (the browser's own zone is suggested, and the zones of the chosen
@@ -37,8 +40,11 @@ it take an address, and open `https://192.168.77.1`.
    `255.255.255.0` or `/24`, gateway, DNS servers) or PPPoE.
 3. **Local network.** The ports of the local network (all the others are ticked), the router's address and netmask, and whether the
    router hands out addresses (DHCP), with the range (it follows the address until typed by hand).
-4. **Administrator.** User name and password (the rules of `docs/administrators.md`).
-5. **Finish.** All the answers on one page; the button does everything.
+4. **Wi-Fi** (only where an adapter can host a network). One name and password; every adapter that can be an access point serves it: one
+   adapter on 2.4 GHz (every device can use it), two or more with the first on 5 GHz and the next on 2.4 GHz and band steering. Channels
+   are automatic. The Wireless page does the rest.
+5. **Administrator.** User name and password (the rules of `docs/administrators.md`).
+6. **Finish.** All the answers on one page; the button does everything.
 
 Every page is checked by the server before the next one opens (`POST /api/v1/setup/check`, which changes nothing), including the
 pages before it, so an answer that stops being valid because of a later one is caught. The last button checks everything again.
@@ -112,7 +118,6 @@ letter, and refuses a name the system already uses (an account or a group). The 
 
 - `peakroute.local` (mDNS) and a captive-portal style redirect, so the address need not be typed.
 - Wired ports plugged in after the daemon started (a USB network adapter) are not joined to the setup network until it restarts.
-- Wi-Fi in the wizard (a name and password for a first access point).
 - Choosing the update channel and an automatic update window (when Updates exist).
 - The image (no installer, no console wizard: it is flashed and the first thing seen is this page): the `sudo` package, root's password
   locked and no autologin, so that this account is the only way in. Verify on a real image that a bcrypt hash in `/etc/shadow` logs in on

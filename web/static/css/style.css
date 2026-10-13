@@ -1753,7 +1753,7 @@ a.cfg-btn { text-decoration: none; display: inline-block; }
 .wiz-body input[type="text"], .wiz-body input[type="password"] { width: 100%; }
 .wiz-actions { display: flex; gap: 0.6rem; justify-content: space-between; margin-top: 1.2rem; }
 .wiz-actions .cfg-btn { min-width: 6.5rem; }
-.wiz-choices { display: grid; gap: 0.8rem; grid-template-columns: 1fr 1fr; margin: 1.2rem 0; }
+.wiz-choices { display: grid; gap: 0.8rem; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin: 1.2rem 0; }
 .wiz-choice { display: flex; flex-direction: column; gap: 0.35rem; text-align: left; padding: 1rem; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 10px; color: var(--text-main); cursor: pointer; font-size: 0.9rem; }
 .wiz-choice:hover, .wiz-choice:focus-visible { border-color: var(--accent-green); outline: none; }
 .wiz-choice strong { font-size: 1rem; }
@@ -1766,6 +1766,6 @@ a.cfg-btn { text-decoration: none; display: inline-block; }
 .wiz-note { border-left: 3px solid var(--accent-amber); padding: 0.5rem 0.8rem; margin: 0.8rem 0; color: var(--text-main); font-size: 0.88rem; background: rgba(245, 158, 11, 0.08); border-radius: 0 6px 6px 0; }
 .wiz-list { margin: 0.4rem 0 0.8rem 1.1rem; font-size: 0.9rem; }
 .wiz-list li { margin-bottom: 0.2rem; }
-@media (max-width: 520px) { .wiz-choices { grid-template-columns: 1fr; } .login-card.wiz-card { padding: 20px; } }
+@media (max-width: 520px) { .login-card.wiz-card { padding: 20px; } }
 .wiz-details { margin: 0.2rem 0 0.8rem; font-size: 0.88rem; }
 .wiz-details summary { cursor: pointer; color: var(--accent-blue); margin-bottom: 0.4rem; }
