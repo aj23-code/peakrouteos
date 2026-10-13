@@ -3,7 +3,7 @@
 
 # Package import path where 'var BuildVersion' is declared
 PKG="peakroute/internal/config"
-VERSION="v0.7.0-alpha"
+VERSION="v0.9.5-alpha"
 
 set -e
 cd "$(dirname "$0")"

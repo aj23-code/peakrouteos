@@ -17,8 +17,18 @@ set -euo pipefail
 # ==========================================
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Override with e.g. BUILD_DIR=/tmp/peakroute-build if the project drive is mounted noexec/nodev
-BUILD_DIR="${BUILD_DIR:-${PROJECT_DIR}/build}"
+# Where Debian is unpacked and the image is put together. debootstrap needs device nodes and programs to work there, so it must not be
+# on a drive mounted nodev or noexec (external and data drives often are): by default the project's own folder is used when it is fine,
+# else /var/tmp/peakroute-build. Override with BUILD_DIR=/some/folder.
+default_build_dir() {
+    local opts
+    opts="$(findmnt -n -o OPTIONS -T "${PROJECT_DIR}" 2>/dev/null || true)"
+    case ",${opts}," in
+        *,nodev,*|*,noexec,*) echo "/var/tmp/peakroute-build" ;;
+        *) echo "${PROJECT_DIR}/build" ;;
+    esac
+}
+BUILD_DIR="${BUILD_DIR:-$(default_build_dir)}"
 ROOTFS_DIR="${BUILD_DIR}/rootfs"
 MOUNT_DIR="${BUILD_DIR}/mnt"
 OUTPUT_IMG="${OUTPUT_IMG:-${PROJECT_DIR}/peakroute-os.img}"
@@ -54,6 +64,9 @@ fi
 
 LOOP_DEV=""
 cleanup() {
+    # (this must not leave "stop at the first error" switched off for the rest of the script)
+    local was_e=0
+    case $- in *e*) was_e=1 ;; esac
     set +e
     for m in boot/efi sys/firmware/efi/efivars dev/pts dev proc sys ""; do
         mountpoint -q "${MOUNT_DIR}/${m}" 2>/dev/null && umount -l "${MOUNT_DIR}/${m}" 2>/dev/null
@@ -62,11 +75,31 @@ cleanup() {
         mountpoint -q "${ROOTFS_DIR}/${m}" 2>/dev/null && umount -l "${ROOTFS_DIR}/${m}" 2>/dev/null
     done
     [ -n "${LOOP_DEV}" ] && losetup -d "${LOOP_DEV}" 2>/dev/null
+    [ "${was_e}" = 1 ] && set -e
+    return 0
 }
 trap cleanup EXIT
 
+# the folder must allow device nodes and programs, and have room (Debian is about 2.5 GB unpacked)
+mkdir -p "${BUILD_DIR}"
+opts="$(findmnt -n -o OPTIONS -T "${BUILD_DIR}" 2>/dev/null || true)"
+case ",${opts}," in
+    *,nodev,*|*,noexec,*)
+        echo "Error: ${BUILD_DIR} is on a drive mounted nodev or noexec, where debootstrap cannot work."
+        echo "Use another folder: BUILD_DIR=/var/tmp/peakroute-build ./buildImage.sh"
+        exit 1 ;;
+esac
+avail_kb="$(df --output=avail -k "${BUILD_DIR}" | tail -n 1 | tr -d ' ')"
+if [ "${avail_kb:-0}" -lt 4000000 ]; then
+    echo "Error: ${BUILD_DIR} has less than 4 GB free."
+    exit 1
+fi
+echo "Building in ${BUILD_DIR}"
+
 echo "[1/5] Cleaning workspace..."
 cleanup
+# an earlier version built inside the project folder
+[ "${BUILD_DIR}" != "${PROJECT_DIR}/build" ] && rm -rf "${PROJECT_DIR}/build"
 if [ "${REUSE_ROOTFS}" = "1" ] && [ -f "${ROOTFS_DIR}/.peakroute-debootstrapped" ]; then
     echo "      reusing the root file system of the last run"
     rm -rf "${MOUNT_DIR}"
@@ -118,6 +151,12 @@ if [ "${REUSE_ROOTFS}" != "1" ]; then
 else
     echo "[2/5] (skipped: reusing the root file system)"
 fi
+
+# What the next steps need, checked now rather than found missing one command at a time
+for f in usr/bin/passwd usr/bin/systemctl usr/sbin/update-initramfs usr/sbin/grub-install usr/sbin/update-grub usr/bin/apt-get; do
+    [ -e "${ROOTFS_DIR}/${f}" ] || { echo "Error: the root file system has no /${f}: the Debian install did not finish"; exit 1; }
+done
+ls "${ROOTFS_DIR}"/boot/vmlinuz-* > /dev/null 2>&1 || { echo "Error: the root file system has no kernel"; exit 1; }
 
 echo "[3/5] Configuring the root file system..."
 
