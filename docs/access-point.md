@@ -70,8 +70,8 @@ wpa_supplicant files are written as on a router.
 
 ## In the wizard
 
-The welcome page asks what the device is: **a router**, **an access point**, **a wireless extender**, **a point-to-point link** (it then asks
-which end), or a restore. All but the router are this mode.
+The welcome page offers *Set up as new* (or a restore); the next page asks what the device is: **a router**, **an access point**,
+**a wireless extender** or **a point-to-point link** (it then asks which end). All but the router are this mode.
 
 - *Access point:* region, the network (cable ports, DHCP or a fixed address), Wi-Fi (if an adapter can host a network: one name and
   password, and an optional VLAN ID; one adapter serves 2.4 GHz, two adapters cover both bands with band steering), the administrator,

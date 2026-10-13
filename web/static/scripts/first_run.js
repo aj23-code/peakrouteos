@@ -22,7 +22,7 @@
             extender: ['region', 'link', 'ap', 'wifi', 'admin', 'review'], ptp: ['region', 'link', 'ap', 'admin', 'review'] }[flow] || [];
         return order.filter((n) => n !== 'wifi' || hostsLeft().length > 0).map((n) => [n, LABELS[n]]);
     }
-    const prevStep = (name) => { const o = newSteps().map((x) => x[0]); const i = o.indexOf(name); return i > 0 ? o[i - 1] : 'welcome'; };
+    const prevStep = (name) => { const o = newSteps().map((x) => x[0]); const i = o.indexOf(name); return i > 0 ? o[i - 1] : 'mode'; };
     const RESTORE_STEPS = [['restore', 'Backup'], ['restore-review', 'Restore']];
 
     let info = null;
@@ -100,19 +100,29 @@
     // ---------------------------------------------------------------- the pages
 
     function welcome() {
+        return `<div class="wiz-body"><h2>Welcome</h2>
+            <p class="form-hint">This device has not been set up yet. It takes a few minutes, and nothing changes until the last page.</p>
+            <div class="wiz-choices">
+                <button type="button" class="wiz-choice" data-start="setup"><strong>Set up as new</strong><span>Answer a few questions: what the device is, where it is, its network and who runs it.</span></button>
+                <button type="button" class="wiz-choice" data-flow="restore"><strong>Restore from a backup</strong><span>Use a backup file from another PeakRoute device (or this one before it was reinstalled).</span></button>
+            </div></div>`;
+    }
+
+    // what the new device is: a router, or one of the ways of being an access point
+    function modePage() {
         const nClient = clients().length, nHost = hosts().length;
         const canExtend = nClient >= 1 && (nHost >= 2 || (nHost >= 1 && nClient >= 2));
         const canLink = nClient >= 1 || nHost >= 1;
         const choice = (flowName, title, text, ok, why) => `<button type="button" class="wiz-choice" data-flow="${flowName}"${ok ? '' : ' disabled'}><strong>${title}</strong><span>${ok ? text : why}</span></button>`;
-        return `<div class="wiz-body"><h2>Welcome</h2>
-            <p class="form-hint">This device has not been set up yet. It takes a few minutes. Nothing changes until the last page. What should it be?</p>
+        return `<div class="wiz-body"><h2>What is this device?</h2>
+            <p class="form-hint">Choose how it is used. Everything except a router becomes part of a network that another router runs.</p>
             <div class="wiz-choices">
                 ${choice('new', 'A router', 'Connects to the internet and runs your network: addresses, firewall, Wi-Fi. The usual way.', true)}
                 ${choice('ap', 'An access point', 'Joins a network that another router runs, and adds cable ports and Wi-Fi to it.', true)}
                 ${choice('extender', 'A wireless extender', 'Joins the main Wi-Fi by Wi-Fi and repeats it, where a cable does not reach.', canExtend, 'Needs two Wi-Fi adapters: one to join the main Wi-Fi and one to repeat it.')}
                 ${choice('ptp', 'A point-to-point link', 'One end of a wireless link between two buildings or sites. You choose which end.', canLink, 'Needs a Wi-Fi adapter.')}
-                ${choice('restore', 'Restore from a backup', 'Use a backup file from another PeakRoute device (or this one before it was reinstalled).', true)}
-            </div></div>`;
+            </div>
+            <div class="wiz-actions"><button type="button" class="cfg-btn cfg-btn--ghost" data-go="welcome">Back</button><span></span></div></div>`;
     }
 
     function region() {
@@ -126,7 +136,7 @@
             ${field('Country', 'country', `<select id="f-country" data-f="country" data-rerender="1"><option value="">Choose…</option>${countries}</select>`)}
             ${field('Time zone', 'timezone', `<select id="f-timezone" data-f="timezone"><option value="">Choose…</option>${zones}</select>`)}
             ${field('Name of this device', 'hostname', text('hostname', { placeholder: 'peakroute' }), 'Letters, numbers and hyphens. It is how the router is named on the network.', true)}
-            </div>${actions('welcome')}</form>`;
+            </div>${actions('mode')}</form>`;
     }
 
     function internet() {
@@ -349,14 +359,14 @@
     // ---------------------------------------------------------------- showing
 
     function render() {
-        const sub = { welcome: 'Set up this device', done: 'Restored' }[step] || (flow === 'restore' ? 'Restore from a backup' : ({ ap: 'Set up as an access point', extender: 'Set up as a wireless extender', ptp: 'Set up a point-to-point link' })[flow] || 'Set up as a new router');
+        const sub = { welcome: 'Set up this device', mode: 'Set up as new', done: 'Restored' }[step] || (flow === 'restore' ? 'Restore from a backup' : ({ ap: 'Set up as an access point', extender: 'Set up as a wireless extender', ptp: 'Set up a point-to-point link' })[flow] || 'Set up as a new router');
         $('wiz-sub').textContent = sub;
         const steps = flow === 'restore' ? RESTORE_STEPS : flow ? newSteps() : [];
         const idx = steps.findIndex((s) => s[0] === step);
         const bar = $('wiz-steps');
         bar.classList.toggle('hidden', idx < 0);
         bar.innerHTML = steps.map((s, i) => `<li class="${i < idx ? 'done' : i === idx ? 'now' : ''}">${s[1]}</li>`).join('');
-        const page = { welcome, region, internet, lan, link: linkPage, ap: accessPoint, wifi: wifiPage, admin, review, restore: restoreFile, 'restore-review': restoreReview, done }[step];
+        const page = { welcome, mode: modePage, region, internet, lan, link: linkPage, ap: accessPoint, wifi: wifiPage, admin, review, restore: restoreFile, 'restore-review': restoreReview, done }[step];
         $('wiz-body').innerHTML = page();
         bind();
         const first = $('wiz-body').querySelector('[aria-invalid="true"]') || $('wiz-body').querySelector('input:not([type=radio]):not([type=checkbox]):not([type=file]), select');
@@ -398,8 +408,9 @@
 
     function bind() {
         const root = $('wiz-body');
+        root.querySelectorAll('[data-start]').forEach((b) => b.addEventListener('click', () => { flow = null; go('mode'); }));
         root.querySelectorAll('[data-flow]').forEach((b) => b.addEventListener('click', () => { flow = b.dataset.flow; enterStep(flow === 'restore' ? 'restore' : 'region'); }));
-        root.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => { if (b.dataset.go === 'welcome') flow = null; go(b.dataset.go); }));
+        root.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => { if (b.dataset.go === 'welcome' || b.dataset.go === 'mode') flow = null; go(b.dataset.go); }));
         root.querySelectorAll('[data-f]').forEach((el) => {
             const name = el.dataset.f;
             const read = () => (el.type === 'checkbox' ? el.checked : el.value);

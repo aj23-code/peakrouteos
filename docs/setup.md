@@ -26,7 +26,9 @@ it take an address, and open `https://192.168.77.1`.
 
 ## The pages
 
-**Welcome.** The choice: a router, an access point, a wireless extender, a point-to-point link (which end), or a restore from a backup.
+**Welcome.** Two choices: *Set up as new* or *Restore from a backup*. *Set up as new* leads to **What is this device?**: a router, an access point,
+a wireless extender or a point-to-point link (which end is asked on the link page); each is a flow of its own with a step bar, and Back
+returns to this page.
 
 **Setting up as an access point, an extender or one end of a link** is the same wizard with other pages (docs/access-point.md): region, the
 link to the main Wi-Fi or the other end (extender and link), the network (cable ports, DHCP or a fixed address), Wi-Fi, the administrator and
