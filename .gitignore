@@ -1,7 +1,10 @@
-# Build outputs (the ISO is built manually with full_build.sh and published via Releases)
+# Build outputs (the disk image is built manually with full_build.sh and published via Releases)
 /build/
 /peakroute
 *.iso
+*.img
+*.img.sha256
+*.img.zst
 
 # Runtime state written by the daemon in -dev mode (lives in /etc/peakroute in production)
 /auth.json

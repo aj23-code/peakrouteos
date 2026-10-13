@@ -65,7 +65,7 @@ func TestValidConfigurationsPass(t *testing.T) {
 	}
 }
 
-// The first-boot wizard writes exactly this shape. Existing installs must stay committable.
+// A configuration with only the basics (what older setups wrote). Existing installs must stay committable.
 func TestConfigWrittenByTheFirstBootWizardIsValid(t *testing.T) {
 	const wizardJSON = `{
     "wan_interface": "enp1s0",

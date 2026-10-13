@@ -6,9 +6,7 @@ Effort: S = under an hour, M = one session, L = multi-session.
 ## What's here today
 
 **Image and install**
-- Debian 13 (Trixie) minimal live ISO built by `buildISO.sh` (debootstrap in a container, squashfs, GRUB).
-- Built-in disk installer, `peakroute-install` (UEFI only).
-- Console first-boot wizard (`first_boot.sh`): Router or AP mode, WAN and LAN port selection, LAN IP, DHCP range. Writes `/etc/network/interfaces`, the dnsmasq config, `nftables.conf` and the JSON configs.
+- Debian 13 (Trixie) disk image built by `buildImage.sh` (`docs/image.md`); no installer, no console wizard: setup is the web welcome page.
 
 **Router base (Router mode)**
 - nftables: default-drop input and forward, LAN to WAN allowed, stateful tracking, IPv4 masquerade.
@@ -37,7 +35,7 @@ Effort: S = under an hour, M = one session, L = multi-session.
 - [x] 1. **Authenticate `/api/v1/cert/upload`.** Done 2026-10-05: behind `requireAuth`, POST-only, validates that the cert and key parse, match and are unexpired, and installs both via temp files and rename. (Expired-cert rejection not exercised in testing.)
 - [x] 2. **Escape DHCP hostnames in `innerHTML`.** Done 2026-10-05: one shared `escapeHtml` in `app.js` is used by the leases, top-clients, interface-table, traffic-card and devices renderers. The inline `onclick` in the devices table was replaced with a data attribute and a delegated listener. Verified in a browser: a lease named `<img/src="x"/onerror=...>` ran script before the fix and renders as plain text after.
 - [x] 3. **Harden first-run.** Done 2026-10-05 for the web setup page: username must be 3-32 chars (letters, numbers, `.`, `_`, `-`, starting with a letter or number), password 8-72 bytes, and a confirm-password field must match. Enforced on the server (400 with the form re-shown) and mirrored client-side. First unit tests added (`internal/auth/validate_test.go`). Still to do: print the web UI URL/IP at the end of the console wizard (deferred with the console wording pass).
-- [ ] 4. **Remove the baked-in root password and tty1 root autologin.** The installer should prompt for a root password. Make sure autologin is removed even if the wizard exits early. (M) `buildISO.sh`
+- [x] 4. **Remove the baked-in root password and tty1 root autologin.** Done 2026-10-12 with the image (`buildImage.sh`): root is locked, there is no autologin, and the administrator made on the welcome page is the console login (`docs/setup.md`).
 
 ## Tier 1: Structure (unblocks the rest)
 
@@ -63,7 +61,7 @@ Effort: S = under an hour, M = one session, L = multi-session.
   - [x] 9w. Access point mode (`docs/access-point.md`). Done 2026-10-12: the device is a bridge (cable ports, Wi-Fi networks and links in one network, its address by DHCP or fixed, the setup address kept as a recovery address), with a short firewall and no routing, DHCP, VPN or extra networks; chosen in the wizard or on System, Operation mode; the router's settings are kept. Wi-Fi in the wizard (one network on the adapters that can host it) done with it. To do: try it on real hardware; VLAN-tagged SSIDs; spanning tree.
   - [x] 9v. Setup network (`docs/setup.md`). Done 2026-10-12: until a local network is committed the wired ports are joined in a temporary bridge at 192.168.77.1/24 with a DHCP-only server, so the welcome page can be reached; the commit lets go of the ports and a failed or reverted commit brings it back; the wizard finds which port you are on. Checked with the real tools in a namespace. To do: try it on real hardware, `peakroute.local`, ports plugged in later.
   - [x] 9t. First-run wizard (`docs/setup.md`). Done 2026-10-12: a welcome page with the choice of a new router or a restore; for a new router country, time zone and name, the internet port and connection (DHCP, fixed, PPPoE), the local network (ports, address, DHCP range), the administrator, a review; for a restore the file and passphrase, what is in it, and the ports to use. Each page is checked by the server; everything is saved in the JSON files (the settings as the draft, the account, the configured flag) and the review opens by itself after the first sign-in. The port you are connected through is protected. The administrator is also the console login (Linux account, same hash). To do: Wi-Fi in the wizard, moving the console login to another administrator.
-  - [ ] 9u. **Flashable image, no installer** (decided 2026-10-12, image phase): a raw disk image written to disk like OpenWrt; `first_boot.sh`, the installer and the live-ISO autologin go away; the first thing a user sees is the welcome page. Needs: `sudo` and `procps` (`pkill`, used by the setup network) in the image, root locked, no autologin, root partition grown to the disk on first start, machine-id and ssh host keys made on first start, a disk-image build instead of `buildISO.sh`.
+  - [x] 9u. **Flashable image, no installer** (`docs/image.md`). Written 2026-10-12: `buildImage.sh` makes `peakroute-os.img` (GPT with a BIOS boot, an EFI and a root partition; UEFI and legacy BIOS; root grows to the disk at the first start), the same packages as the ISO minus `live-boot`/`live-config`, `first_boot.sh`, the installer and `buildISO.sh` are removed, root is locked with no autologin, the sudo group and `procps`/`gdisk`/`udev`/`kmod`/`initramfs-tools`/`grub-pc-bin` are in, and `image/run-qemu.sh` tries it in a virtual machine. **To do: the first build and boot** (needs `sudo`), then the checks on real hardware.
   - [x] 9s. Backup and restore (`docs/backup.md`). Done 2026-10-12: one file, always encrypted with a passphrase (scrypt, XChaCha20-Poly1305); settings, administrators, certificates and optionally the history; opened and shown before anything changes; settings become the draft; this router's own ports can be kept on other hardware; a copy of the router\'s own state is kept for undo. Restore from the first-run page done the same day (9t). To do: automatic copies after each commit, scheduled backups.
   - [x] 9o. Dynamic DNS (`docs/ddns.md`). Done 2026-10-11: dyndns2 (DynDNS, No-IP, Dynu and others), DuckDNS, Cloudflare and a custom https address; the connection's address or the one an internet service reports; backs off on trouble and stops on a wrong login; a status per name and *Update now*. Not tried against a real service yet.
   - [x] 9n. Settings round two (`docs/settings.md`). Done 2026-10-11. Host name as the machine's name with an opt-in for the provider: done 2026-10-11. Time zone and NTP, and syslog forwarding (with a test on Diagnostics) done the same day. Power (restart and power off) and the regrouped page the same day.
@@ -79,13 +77,8 @@ Effort: S = under an hour, M = one session, L = multi-session.
 - [x] 12b. **Build on Ubuntu without containers.** Done 2026-10-05: `buildISO.sh` now runs `debootstrap` natively (no docker/podman) and fetches a checksum-pinned Debian keyring, because Ubuntu 24.04's keyring cannot verify Trixie. `BUILD_DIR` can be overridden. Not yet tested end-to-end (needs `sudo apt install debootstrap xorriso mtools` first).
 - [x] 12c. **Auto-start the installer on the live ISO.** Done 2026-10-05: new `peakroute-installer.service` runs `peakroute-install` on tty1 only when `/run/live` exists (before the autologin shell). Ctrl+C drops to a shell. The installer removes the unit from the installed system. Needs a rebuild and a QEMU boot test.
 - [x] 13. **Fix host-side commands in `buildISO.sh`.** Done 2026-10-05: removed the stray `rm -rf /etc/systemd/system/getty@tty1.service.d/` and `systemctl daemon-reload`, which ran as root against the build host. The image keeps its autologin override for the live ISO, and `first_boot.sh` removes it on the installed system.
-- [ ] 14. **First-boot script fixes.**
-  - Use `CURRENT_HOSTNAME`, not `$HOSTNAME`.
-  - Range-check IPv4 octets and validate the DHCP range against the subnet.
-  - Add `isc-dhcp-client` or switch to `udhcpc`, and stop hiding failures behind `|| true`.
-  - Fill in `network.json` properly for AP mode.
-  - Use consistent mode casing (`router` vs `ROUTER`). (M)
-- [ ] 15. **Installer safety.** Exclude the live USB from the disk list. Show size and model, and require typing the device name to confirm. (S)
+- [x] 14. **First-boot script fixes.** Gone with the script (2026-10-12): there is no first-boot script any more.
+- [x] 15. **Installer safety.** Gone with the installer (2026-10-12): the image is written with `dd` by the person who chose the disk.
 
 ## Tier 3: Auth and session hardening
 

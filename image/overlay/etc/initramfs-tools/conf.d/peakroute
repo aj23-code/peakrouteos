@@ -1,0 +1,4 @@
+# The image is written to any machine's disk: the initramfs must carry the drivers for most storage hardware (not only the build
+# machine's, which MODULES=dep would pick), and must not wait for a swap partition to resume from.
+MODULES=most
+RESUME=none

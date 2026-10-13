@@ -9,13 +9,12 @@ records what the system does, why it is built that way, and what was learned on 
 
 ## 1. What it is
 
-- **Image:** a Debian 13 (Trixie) minimal live ISO built by `buildISO.sh` (native `debootstrap` on
-  Ubuntu/Debian, checksum-pinned Debian keyring, squashfs, GRUB). A built-in installer
-  (`peakroute-install`) starts automatically on the live ISO and installs to disk (UEFI only).
-- **First boot:** `internal/scripts/first_boot.sh` is a console wizard (router or AP mode, WAN and
-  LAN ports, LAN IP, DHCP range) that writes `/etc/network/interfaces`, the dnsmasq DHCP file,
-  `/etc/nftables.conf`, the forwarding sysctl, and `network.json` / `sys.json`.
-  The installer and wizard are going to be revisited; the daemon does not depend on their wording.
+- **Image:** a raw disk image, `peakroute-os.img`, built by `buildImage.sh` (Debian 13 Trixie, native `debootstrap` on
+  Ubuntu/Debian, checksum-pinned Debian keyring) and written to the machine's disk like OpenWrt's (`dd`). **No installer, no live
+  ISO, no console setup** (decided 2026-10-12): the first thing seen is the welcome page of the web interface. See 7t and
+  `docs/image.md`. Booting works by UEFI and legacy BIOS.
+- **First start:** the daemon builds the setup network (192.168.77.1, 7r) and the person sets everything up on the welcome page
+  (`docs/setup.md`); the administrator made there is the console login too. Root has no password.
 - **Daemon:** one static Go binary (`peakroute`) serving the web UI over HTTPS (443; 8443 in dev),
   with embedded templates and static files.
 
@@ -44,7 +43,7 @@ records what the system does, why it is built that way, and what was learned on 
 | `internal/network` | physical interface discovery, DHCP leases, per-device traffic tracker |
 | `internal/cert` | the web interface's certificate: built-in (own web authority) or uploaded; renewal; the Certificates API |
 | `web/` | HTML templates, CSS, JS (no framework; one module per view) |
-| `buildISO.sh`, `full_build.sh` | image build (`full_build.sh` builds the binary then the ISO) |
+| `buildImage.sh`, `full_build.sh`, `image/` | the disk image (`full_build.sh` builds the binary then the image; `image/overlay` holds the files of the image, `image/run-qemu.sh` tries it in a virtual machine) |
 
 ## 3. Running it
 
@@ -617,6 +616,24 @@ bands from the adapters' reports); the Wi-Fi network joins the default network a
 config (validation, review), translator (every rendered shape, router to AP and back as plans, the real `nft`), netapi (the endpoint),
 setup (the flow, checks per page, the connected port protected, Wi-Fi making), bootstrap. Checked in the browser (wizard end to end, the
 page, commit of the mode in the sandbox: files written, menu cut down). Not possible here: a real bridge with a Wi-Fi member.
+
+## 7t. The disk image (built 2026-10-12, first build still to run)
+
+Rules and how to use it: **`docs/image.md`**. `buildImage.sh` replaces `buildISO.sh`, `first_boot.sh` and the installer (all removed; the
+tests that compared the translator with `first_boot.sh`'s heredocs went with them, the scenarios stayed as ordinary render tests).
+Same packages as the ISO (the dependencies of everything the daemon uses stay covered) minus `live-boot` and `live-config`, plus what a
+disk needs: `initramfs-tools`, `udev`, `kmod`, `grub-pc-bin` (legacy BIOS), `sudo` (the console administrator), `procps` (`sysctl` and
+`pkill` are used by the daemon and were only there by accident), `gdisk`. Layout (GPT): 1 MiB BIOS boot, 128 MiB EFI system (FAT32,
+`PRESP`), root ext4 (`peakroute-root`). Found by label and UUID, so it can be written to any disk. `image/overlay` is copied over the
+Debian tree (services, sysctl, journald limits, fstab, grub defaults with `rootwait` and both consoles, initramfs `MODULES=most` so the
+drivers are not the build machine's, the console banner that says where the setup page is). **Security:** root is locked (no password in
+the image), nothing is signed in on the console, `systemd-firstboot` is masked, `machine-id` is empty so every device makes its own. First
+start: `peakroute-growroot.service` (`/usr/lib/peakroute/growroot`: move the backup GPT with `sgdisk -e`, stretch partition 3 into the free
+space with `sfdisk -N`, `partx -u`, `resize2fs`; once, marker `/var/lib/peakroute/rootgrown`; tested here against a disk image in a file with
+the real `sfdisk` and `sgdisk`). `image/run-qemu.sh` boots the image in QEMU (UEFI or BIOS, on a bigger virtual disk, the web interface
+forwarded). The real tools caught one mistake while writing it: the BIOS boot partition's type GUID. Not yet done: the first real run of
+`buildImage.sh` (it needs root, which the development machine does not give without a password), so the boot, the grow and the setup network on a
+real disk are untested.
 
 ## 7e. Static routes (built 2026-10-08)
 

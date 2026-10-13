@@ -84,8 +84,7 @@ type ManagedDir struct {
 }
 
 // LanTarget is the interface the default network lives on: the single LAN port that carries it, or
-// the br0 bridge when several ports are combined. Without further networks this mirrors what the
-// first-boot wizard does.
+// the br0 bridge when several ports are combined.
 func LanTarget(cfg config.NetworkConfig) string {
 	// a Wi-Fi network on the default network needs a bridge to join, whatever the number of ports
 	if ports := defaultPorts(cfg); len(ports) == 1 && !wifiOnDefaultNetwork(cfg) {

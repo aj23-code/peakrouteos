@@ -195,34 +195,20 @@ func TestAnUnreadableDnsmasqFileLeavesDhcpUnmanaged(t *testing.T) {
 	}
 }
 
-// The whole point: a box the wizard configured has no dhcp section in its JSON. After adoption
-// the translator must see no difference between the JSON and the files the wizard wrote.
-func TestAWizardBoxAdoptsItsRealRangeAndStillNeedsNoChanges(t *testing.T) {
-	script := wizardScript(t)
-
+// A box whose JSON has no dhcp section (set up by hand, or before the section existed) keeps the range its dnsmasq file has: after
+// adoption the translator sees no difference between the JSON and the files.
+func TestABoxWithoutADhcpSectionAdoptsItsRealRangeAndStillNeedsNoChanges(t *testing.T) {
 	for name, w := range wizardScenarios {
 		root := t.TempDir()
-		write := func(path, content string) {
-			full := filepath.Join(root, path)
-			if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(full, []byte(content), 0644); err != nil {
-				t.Fatal(err)
-			}
-		}
-		write(PathInterfaces, w.expand(t, heredoc(t, script, "/etc/network/interfaces")))
-		write(PathDnsmasqDHCP, w.expand(t, heredoc(t, script, "/etc/dnsmasq.d/peakroute-dhcp.conf")))
-		write(PathNftables, w.expand(t, heredoc(t, script, "/etc/nftables.conf")))
-		write(PathSysctl, "net.ipv4.ip_forward=1\n")
+		install(t, root, mustRender(t, w.config()))
 
-		// the JSON as the wizard writes it: no dhcp section
+		// the JSON without its dhcp section
 		cfg := w.config()
 		cfg.DHCP = nil
 
 		AdoptExisting(&cfg, RootFS(root), "ROUTER")
 		if cfg.DHCP == nil || cfg.DHCP.RangeStart != w.dhcpStart || cfg.DHCP.RangeEnd != w.dhcpEnd {
-			t.Fatalf("%s: adopted DHCP = %+v, want the wizard's %s-%s", name, cfg.DHCP, w.dhcpStart, w.dhcpEnd)
+			t.Fatalf("%s: adopted DHCP = %+v, want %s-%s", name, cfg.DHCP, w.dhcpStart, w.dhcpEnd)
 		}
 
 		d, err := Render(cfg, "ROUTER")

@@ -1,0 +1,55 @@
+#!/bin/sh
+# Makes the root partition fill the disk the image was written to, once (peakroute-growroot.service runs this at the first start).
+#
+# The image is a few gigabytes and the disk it is written to is usually bigger: the partition table's backup copy is moved to the end
+# of the disk, the root partition is stretched over the free space behind it, the kernel is told, and the file system is grown while
+# it is mounted. Nothing is lost if any step fails: the next start tries again, and a disk with no room behind the partition is fine.
+#
+# The places it looks can be changed through the environment, which is how the tests run this script.
+
+set -eu
+
+MARK="${PEAKROUTE_GROW_MARK:-/var/lib/peakroute/rootgrown}"
+SYS="${PEAKROUTE_SYS_BLOCK:-/sys/class/block}"
+MIN_SECTORS=2048    # less free space than this (1 MiB) is not worth a change
+
+say() { echo "growroot: $*" >&2; }
+mark() { mkdir -p "$(dirname "$MARK")" && : > "$MARK"; }
+
+[ -e "$MARK" ] && exit 0
+
+root="${PEAKROUTE_ROOT_DEV:-$(findmnt -n -o SOURCE /)}"
+case "$root" in
+    /dev/*) ;;
+    *) say "the root file system is not on a disk partition ($root): nothing to do"; mark; exit 0 ;;
+esac
+
+name="${root#/dev/}"
+if [ ! -r "$SYS/$name/partition" ]; then
+    say "$root is not a partition: nothing to do"
+    mark
+    exit 0
+fi
+partnum="$(cat "$SYS/$name/partition")"
+disk="${PEAKROUTE_DISK:-/dev/$(lsblk -no PKNAME "$root" | head -n 1)}"
+if [ ! -e "$disk" ]; then
+    say "cannot tell which disk $root is on"
+    exit 1
+fi
+
+# the second copy of the partition table belongs at the end of the disk, which is further away now
+sgdisk -e "$disk" >/dev/null 2>&1 || say "could not move the backup partition table (continuing)"
+
+# free space behind the last partition: the last line of the table holds its size in sectors
+free="$(sfdisk -F "$disk" 2>/dev/null | awk 'NF >= 4 && $1 ~ /^[0-9]+$/ { s = $3 } END { print s + 0 }')"
+if [ "$free" -ge "$MIN_SECTORS" ]; then
+    say "growing partition $partnum of $disk into $free free sectors"
+    echo ', +' | sfdisk --no-reread --no-tell-kernel -N "$partnum" "$disk" >/dev/null
+    partx -u --nr "$partnum" "$disk"
+else
+    say "no free space behind the root partition"
+fi
+
+resize2fs "$root"
+mark
+say "done"

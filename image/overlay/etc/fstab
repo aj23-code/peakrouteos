@@ -1,0 +1,3 @@
+# written by the image build: the partitions are found by label, so the image can be written to any disk
+LABEL=peakroute-root  /          ext4  defaults,noatime,errors=remount-ro  0  1
+LABEL=PRESP           /boot/efi  vfat  umask=0077,nofail                    0  2

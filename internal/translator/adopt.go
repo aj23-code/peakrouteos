@@ -10,7 +10,7 @@ import (
 )
 
 // ParseDnsmasqDHCP reads the DHCP settings back out of a dnsmasq file written by this project
-// (or the first-boot wizard). It accepts exactly one plain "dhcp-range=start,end,netmask,lease"
+// (or an older setup). It accepts exactly one plain "dhcp-range=start,end,netmask,lease"
 // line; anything else (tags, several ranges, IPv6, odd fields) is reported as not adoptable
 // rather than guessed at.
 func ParseDnsmasqDHCP(content []byte) (config.DHCPConfig, bool) {

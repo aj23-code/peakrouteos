@@ -1,0 +1,14 @@
+[Unit]
+Description=PeakRoute OS Wi-Fi access points
+ConditionPathExistsGlob=/etc/peakroute/hostapd/*.conf
+After=network.target networking.service
+
+[Service]
+Type=forking
+PIDFile=/run/peakroute-hostapd.pid
+ExecStart=/usr/lib/peakroute/hostapd-run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
