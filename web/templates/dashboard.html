@@ -506,8 +506,38 @@
 
         <div id="wifi-body" class="wifi-body">
           <div id="wifi-notes"></div>
-          <div id="wifi-ssids"></div>
-          <div id="wifi-adapters" class="wifi-adapters"></div>
+
+          <details class="card wifi-section" id="wifi-sec-ap">
+            <summary><span class="wifi-section-title">Wi-Fi networks: wireless router or access point</span><span class="form-hint wifi-section-sum" id="wifi-sec-ap-sum"></span></summary>
+            <div class="wifi-section-body">
+              <p class="wifi-explain"><strong>The usual indoor Wi-Fi.</strong> This device hosts Wi-Fi networks that phones, laptops and other devices join, like the wireless router or access point in a home, office or shop. Each Wi-Fi network has a name and a password, and belongs to one of your Local Networks (so a Guest network can have its own Wi-Fi). This works the same whether the device is a router or only an access point (System, Operation mode).</p>
+              <ol class="wifi-steps">
+                <li><strong>Switch on an adapter</strong> for a band below (2.4 GHz reaches further, 5 GHz is faster).</li>
+                <li><strong>Add a Wi-Fi network:</strong> its name, password and the Local Network it joins.</li>
+              </ol>
+              <div id="wifi-ssids"></div>
+              <h3 class="form-section">Adapters that host Wi-Fi</h3>
+              <div id="wifi-aps"></div>
+            </div>
+          </details>
+
+          <details class="card wifi-section" id="wifi-sec-link">
+            <summary><span class="wifi-section-title">Point-to-point links and wireless uplink</span><span class="form-hint wifi-section-sum" id="wifi-sec-link-sum"></span></summary>
+            <div class="wifi-section-body">
+              <p class="wifi-explain"><strong>For radios that link places together, or use someone else's Wi-Fi.</strong> Outdoor point-to-point radios (the kind mounted on a building to reach another one) work in pairs: one end <em>hosts</em> the link and the other end <em>joins</em> it as a client. Here an adapter can be that client end. You do not need this for ordinary Wi-Fi at home.</p>
+              <ul class="wifi-uses">
+                <li><strong>Link two buildings or sites.</strong> At the near end, turn on <em>Accept point-to-point links</em> on a Wi-Fi network (in the section above, under that network's Point-to-point link). At the far end, set an adapter here as a client and choose <em>A link into a local network</em>. Both ends are then one network, and devices keep their own addresses.</li>
+                <li><strong>Wireless extender.</strong> Set the device to access point mode (System, Operation mode) and link it to the main Wi-Fi here: it repeats that network where the cable does not reach.</li>
+                <li><strong>Wireless internet connection.</strong> Join a hotel, café or neighbour's Wi-Fi and choose <em>The internet connection</em>: the adapter becomes the internet port and the router shares it.</li>
+              </ul>
+              <div id="wifi-links"></div>
+            </div>
+          </details>
+
+          <details class="card wifi-section" id="wifi-sec-adapters">
+            <summary><span class="wifi-section-title">Adapters in this device</span><span class="form-hint wifi-section-sum" id="wifi-sec-adapters-sum"></span></summary>
+            <div class="wifi-section-body"><div id="wifi-adapters" class="wifi-adapters"></div></div>
+          </details>
         </div>
       </div>
 

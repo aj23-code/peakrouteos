@@ -117,7 +117,7 @@ window.WirelessModule = (function () {
         if (!a.capabilities_known || !a.ap_capable) return '';
         const stn = serverStation(a);
         if (stn && stn.enabled) {
-            return '<div class="wifi-radio"><p class="form-hint">This adapter is used as a Wi-Fi client (below). An adapter is either an access point or a client: switch the client off and save to use it as an access point.</p></div>';
+            return `<div class="wifi-radio"><div class="net-card-head"><h3 class="form-section">${escapeHtml(a.name)}</h3>${adapterBadges(a)}</div><p class="form-hint">This adapter is used as a Wi-Fi client (see Point-to-point links and wireless uplink). An adapter either hosts Wi-Fi or joins it: switch the client off and save to host Wi-Fi with it.</p></div>`;
         }
         const st = radioState(a);
         const f = st.form;
@@ -130,9 +130,9 @@ window.WirelessModule = (function () {
         const key = escapeHtml(a.name);
 
         return `<div class="wifi-radio" data-adapter="${key}">
-            <div class="net-card-head"><h3 class="form-section">Access point</h3>${server && server.pending ? '<span class="tag tag-draft">Draft</span>' : ''}</div>
+            <div class="net-card-head"><h3 class="form-section">${key}</h3>${adapterBadges(a)}${server && server.pending ? '<span class="tag tag-draft">Draft</span>' : ''}</div>
             <label class="toggle toggle--block"><input type="checkbox" data-adapter="${key}" data-radio="enabled"${f.enabled ? ' checked' : ''}${lock ? ' disabled' : ''}>
-                <span><strong>Use this adapter as an access point</strong><span class="form-hint">Devices connect to the Wi-Fi networks below through it.</span></span></label>
+                <span><strong>Host Wi-Fi networks with this adapter</strong><span class="form-hint">Devices join the Wi-Fi networks above through it, on the band, channel and width chosen here.</span></span></label>
             <div class="form-grid${f.enabled ? '' : ' is-off'}">
                 <div class="form-field"><label for="radio-${key}-band">Band</label>
                     <select id="radio-${key}-band" class="role-select" data-adapter="${key}" data-radio="band"${off ? ' disabled' : ''}>
@@ -157,8 +157,8 @@ window.WirelessModule = (function () {
     // ---------------------------------------------------------------- adapters: use as a Wi-Fi client
 
     const ROLES = [
-        ['uplink', 'The internet connection', 'This adapter becomes the internet port: the router connects to another Wi-Fi network (a hotel, a café, a neighbour) and shares it. A cable port that was the internet port is left unassigned.'],
-        ['bridge', 'A link into a local network', 'The adapter joins a local network like a cable port, over the air: a point-to-point link to another PeakRoute router, or a wireless extender. Devices behind it keep their own addresses.'],
+        ['uplink', 'The internet connection', 'Wireless uplink: this adapter becomes the internet port. The router joins another Wi-Fi network (a hotel, a café, a neighbour) and shares it. A cable port that was the internet port is left unassigned.'],
+        ['bridge', 'A link into a local network', 'The far end of a point-to-point link, or a wireless extender: the adapter joins a local network like a cable port, over the air, and devices behind it keep their own addresses. The other end must accept point-to-point links.'],
     ];
 
     function stationFormOf(a) {
@@ -186,7 +186,7 @@ window.WirelessModule = (function () {
         if (!canClient) return '';
         const rad = serverRadio(a);
         if (rad && rad.enabled) {
-            return '<div class="wifi-station"><p class="form-hint">This adapter is an access point (above). An adapter is either an access point or a client: switch the access point off and save to use it as a Wi-Fi client.</p></div>';
+            return `<div class="wifi-station"><div class="net-card-head"><h3 class="form-section">${escapeHtml(a.name)}</h3>${adapterBadges(a)}</div><p class="form-hint">This adapter hosts Wi-Fi networks (see Wi-Fi networks above). An adapter either hosts Wi-Fi or joins it: switch the access point off and save to use it as a client.</p></div>`;
         }
         const st = stationState(a);
         const f = st.form;
@@ -215,9 +215,9 @@ window.WirelessModule = (function () {
             ${err(field)}</div>`;
 
         return `<div class="wifi-station" data-adapter="${key}">
-            <div class="net-card-head"><h3 class="form-section">Wi-Fi client</h3>${server && server.pending ? '<span class="tag tag-draft">Draft</span>' : ''}</div>
+            <div class="net-card-head"><h3 class="form-section">${key}</h3>${adapterBadges(a)}${server && server.pending ? '<span class="tag tag-draft">Draft</span>' : ''}</div>
             <label class="toggle toggle--block"><input type="checkbox" data-st="${key}" data-stf="enabled"${f.enabled ? ' checked' : ''}${lock ? ' disabled' : ''}>
-                <span><strong>Connect this adapter to another Wi-Fi network</strong><span class="form-hint">The adapter joins a network as a client, the way a phone does.</span></span></label>
+                <span><strong>Use this adapter as a Wi-Fi client</strong><span class="form-hint">Instead of hosting a network, the adapter joins another one, the way a phone does: the other end of a link, or someone else's Wi-Fi.</span></span></label>
             ${scanHtml}
             <div class="form-grid${f.enabled ? '' : ' is-off'}">
                 ${input('ssid', 'Network name', 'text', 'placeholder="Name of the Wi-Fi network"')}
@@ -329,20 +329,20 @@ window.WirelessModule = (function () {
         afterSave();
     }
 
-    function adapterHtml(a) {
+    function adapterBadges(a) {
         let badge;
         if (!a.capabilities_known) badge = '<span class="tag">Capabilities unknown</span>';
-        else if (a.ap_capable) badge = '<span class="tag tag-ok">Can be an access point</span>';
-        else badge = '<span class="tag tag-warn">Cannot be an access point</span>';
+        else if (a.ap_capable) badge = '<span class="tag tag-ok">Can host Wi-Fi</span>';
+        else badge = '<span class="tag tag-warn">Cannot host Wi-Fi</span>';
         const srv = serverStation(a);
         if (srv && srv.enabled) badge += ` <span class="tag tag-ok">Wi-Fi client${srv.in_use ? '' : ' (not in use)'}</span>`;
+        return badge + ` <span class="tag">${escapeHtml(a.state || 'unknown')}</span>`;
+    }
 
-        return `<section class="card wifi-adapter" data-adapter="${escapeHtml(a.name)}">
-            <div class="net-card-head">
-                <h2>${escapeHtml(a.name)}</h2>
-                ${badge}
-                <span class="tag">${escapeHtml(a.state || 'unknown')}</span>
-            </div>
+    // the facts of one adapter (the Adapters section)
+    function adapterHtml(a) {
+        return `<section class="wifi-adapter" data-adapter="${escapeHtml(a.name)}">
+            <div class="net-card-head"><h3 class="form-section">${escapeHtml(a.name)}</h3>${adapterBadges(a)}</div>
             <dl class="inet-live">
                 <div><dt>MAC address</dt><dd><code class="code-mac">${escapeHtml(a.mac || '-')}</code></dd></div>
                 <div><dt>Driver</dt><dd>${a.driver ? `<span class="badge-driver">${escapeHtml(a.driver)}</span>` : '-'}</dd></div>
@@ -350,14 +350,36 @@ window.WirelessModule = (function () {
                 <div><dt>Modes</dt><dd>${a.modes.length ? escapeHtml(a.modes.join(', ')) : '-'}</dd></div>
                 ${a.max_ap ? `<div><dt>Wi-Fi networks at once</dt><dd>${a.max_ap}</dd></div>` : ''}
             </dl>
-            ${radioHtml(a)}
-            ${stationHtml(a)}
             <details class="wifi-caps"><summary>Bands and channels</summary>${a.bands.map(bandHtml).join('')}</details>
         </section>`;
     }
 
+    const apBlock = (a) => a.capabilities_known && a.ap_capable ? radioHtml(a)
+        : `<div class="wifi-radio"><div class="net-card-head"><h3 class="form-section">${escapeHtml(a.name)}</h3>${adapterBadges(a)}</div><p class="form-hint">${a.capabilities_known ? 'This adapter cannot host Wi-Fi networks.' : 'What this adapter can do could not be read, so it cannot be set up to host Wi-Fi.'}</p></div>`;
+
     function renderAdapters() {
-        $('wifi-adapters').innerHTML = report ? report.adapters.map(adapterHtml).join('') : '';
+        const list = report ? report.adapters : [];
+        $('wifi-aps').innerHTML = list.map(apBlock).join('');
+        $('wifi-links').innerHTML = list.map(stationHtmlOrNote).join('');
+        $('wifi-adapters').innerHTML = list.map(adapterHtml).join('');
+        sectionSummaries();
+    }
+
+    const stationHtmlOrNote = (a) => stationHtml(a) || `<div class="wifi-station"><div class="net-card-head"><h3 class="form-section">${escapeHtml(a.name)}</h3>${adapterBadges(a)}</div><p class="form-hint">This adapter cannot join Wi-Fi networks as a client.</p></div>`;
+
+    // one line on each closed section, so that it says what is set up without opening it
+    function sectionSummaries() {
+        if (!wifi || !report) return;
+        const nets = (wifi.networks || []).filter(n => n.enabled).length;
+        const aps = (wifi.radios || []).filter(r => r.enabled).length;
+        const stn = (wifi.stations || []).filter(x => x.enabled);
+        const wds = (wifi.networks || []).filter(n => n.wds && n.enabled).length;
+        const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+        $('wifi-sec-ap-sum').textContent = nets || aps ? `${plural(nets, 'Wi-Fi network', 'Wi-Fi networks')} on, ${plural(aps, 'adapter', 'adapters')} hosting` : 'Nothing set up';
+        const parts = stn.map(x => `${x.name}: ${x.role === 'uplink' ? 'internet connection' : 'link into a local network'}`);
+        if (wds) parts.push(`accepting links on ${plural(wds, 'network', 'networks')}`);
+        $('wifi-sec-link-sum').textContent = parts.length ? parts.join('; ') : 'Not used';
+        $('wifi-sec-adapters-sum').textContent = plural(report.adapters.length, 'adapter', 'adapters');
     }
 
     function notes(r) {
@@ -516,8 +538,12 @@ window.WirelessModule = (function () {
                 ${ssidToggle(c, 'enabled', 'Switched on', 'Off, the network is kept here but not broadcast.')}
                 ${ssidToggle(c, 'hidden', 'Hide the name', 'The network does not show up in the list of Wi-Fi networks; devices have to be told its name.')}
                 ${ssidToggle(c, 'isolation', 'Isolate devices from each other', 'Devices on this Wi-Fi network cannot talk to each other, only to the network behind it.')}
-                ${ssidToggle(c, 'wds', 'Accept point-to-point links', 'Lets another PeakRoute router link to this network over the air (set its adapter to link into a local network), so two sites share one network. Use a WPA3 or WPA2 network that nobody else knows the password of.')}
             </div>
+            <details class="wifi-ptp"${f.wds ? ' open' : ''}>
+                <summary>Point-to-point link (for linking two sites)</summary>
+                <p class="form-hint">Only for linking this device to another one over the air, the way outdoor point-to-point radios do. Turn this on at the <em>near</em> end; at the far end set an adapter as a Wi-Fi client with <em>A link into a local network</em> (under Point-to-point links and wireless uplink). Use a name and password that nobody else knows.</p>
+                <div class="net-access">${ssidToggle(c, 'wds', 'Accept point-to-point links', 'The far end joins this Wi-Fi network in 4-address mode, so the two sites become one network.')}</div>
+            </details>
 
             ${c.message ? `<div class="form-message${c.message.kind === 'ok' ? ' form-message--ok' : ''}" role="alert">${escapeHtml(c.message.text)}</div>` : ''}
 
@@ -622,8 +648,20 @@ window.WirelessModule = (function () {
 
     // ---------------------------------------------------------------- loading
 
+    let sectionsInit = false;
+
+    // the usual Wi-Fi is open; the link section is open only if something there is set up
+    function initSections() {
+        if (sectionsInit || !wifi) return;
+        sectionsInit = true;
+        $('wifi-sec-ap').open = true;
+        $('wifi-sec-link').open = (wifi.stations || []).length > 0 || (wifi.networks || []).some(n => n.wds);
+        $('wifi-sec-adapters').open = false;
+    }
+
     function render() {
         if (!report) return;
+        initSections();
         const none = report.adapters.length === 0;
         $('wifi-empty').classList.toggle('hidden', !none);
         $('wifi-body').classList.toggle('is-disabled', none);
@@ -842,6 +880,7 @@ window.WirelessModule = (function () {
         lastReport = '';
         radios = {};
         stations = {};
+        sectionsInit = false;
         ssids = [];
         selected = null;
         load();

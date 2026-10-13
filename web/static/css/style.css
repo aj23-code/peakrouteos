@@ -1775,3 +1775,24 @@ a.cfg-btn { text-decoration: none; display: inline-block; }
 .scan-pick:hover:not(:disabled), .scan-pick:focus-visible { border-color: var(--accent-green); outline: none; }
 .scan-pick.is-unsupported { opacity: 0.55; cursor: not-allowed; }
 .scan-pick .tag { margin-left: auto; }
+
+/* ---------- Wireless page: collapsible sections ---------- */
+.wifi-section { margin-bottom: 1rem; padding: 0; }
+.wifi-section > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.9rem; padding: 1rem 1.25rem; cursor: pointer; list-style: none; }
+.wifi-section > summary::-webkit-details-marker { display: none; }
+.wifi-section > summary::before { content: '\25B8'; color: var(--text-muted); transition: transform 0.15s; }
+.wifi-section[open] > summary::before { transform: rotate(90deg); }
+.wifi-section > summary:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; border-radius: 12px; }
+.wifi-section-title { font-size: 1.05rem; font-weight: 600; }
+.wifi-section-sum { margin-left: auto; }
+.wifi-section-body { padding: 0 1.25rem 1.25rem; border-top: 1px solid var(--border-color); }
+.wifi-section-body > * { margin-top: 1rem; }
+.wifi-explain { font-size: 0.9rem; line-height: 1.5; }
+.wifi-steps, .wifi-uses { margin-left: 1.2rem; font-size: 0.88rem; color: var(--text-muted); }
+.wifi-steps li, .wifi-uses li { margin-bottom: 0.4rem; line-height: 1.45; }
+.wifi-steps strong, .wifi-uses strong { color: var(--text-main); }
+.wifi-section .card { box-shadow: none; background: transparent; padding: 16px; margin-top: 0.8rem; }
+.wifi-radio, .wifi-station, .wifi-adapter { border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; margin-top: 0.8rem; }
+.wifi-radio .form-section:first-child, .wifi-station .form-section:first-child { margin-top: 0; }
+.wifi-ptp { margin-top: 1rem; }
+.wifi-ptp summary { cursor: pointer; color: var(--text-muted); font-size: 0.9rem; }
