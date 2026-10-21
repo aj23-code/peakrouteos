@@ -1,7 +1,7 @@
 # PeakRoute OS
 
 A router operating system for x86 machines: Debian 13 with one static Go daemon, `peakroute`, that serves the web interface and writes
-the configuration of the services under it (nftables, dnsmasq, hostapd, WireGuard, OpenVPN). Status: alpha.
+the configuration of the services under it (nftables, dnsmasq, hostapd, etc.) Status: alpha.
 
 - **Install:** download `peakroute-os-<version>.img.gz` from [Releases](../../releases), `gunzip -k` it and write it to a disk of at least 8 GB
   (`sudo dd if=peakroute-os-<version>.img of=/dev/sdX bs=4M conv=fsync status=progress`). Plug a computer into any port and open the welcome page.
