@@ -227,21 +227,22 @@ func TestWhatTheDeviceIsShownAs(t *testing.T) {
 	router := config.NetworkConfig{WanInterface: "eth0", LanInterfaces: []string{"eth1"}}
 	ap := config.NetworkConfig{AP: &config.APConfig{Enabled: true, Ports: []string{"eth0"}}}
 	blank := config.NetworkConfig{}
-	for name, c := range map[string]struct {
+	for _, c := range []struct {
+		name           string
 		active, staged config.NetworkConfig
 		has            bool
 		want           string
 	}{
-		"a router":                            {router, router, false, "ROUTER"},
-		"an access point":                     {ap, ap, false, "AP"},
-		"fresh from setup as an access point": {blank, ap, true, "AP"},
-		"fresh from setup as a router":        {blank, router, true, "ROUTER"},
-		"a router with a draft that makes it an access point": {router, ap, true, "ROUTER"},
-		"an access point with a draft back to a router":       {ap, router, true, "AP"},
-		"nothing at all": {blank, blank, false, "ROUTER"},
+		{"a router", router, router, false, "ROUTER"},
+		{"an access point", ap, ap, false, "AP"},
+		{"fresh from setup as an access point", blank, ap, true, "AP"},
+		{"fresh from setup as a router", blank, router, true, "ROUTER"},
+		{"a router with a draft that makes it an access point", router, ap, true, "ROUTER"},
+		{"an access point with a draft back to a router", ap, router, true, "AP"},
+		{"nothing at all", blank, blank, false, "ROUTER"},
 	} {
 		if got := config.ShownMode(c.active, c.staged, c.has); got != c.want {
-			t.Errorf("%s: %s, want %s", name, got, c.want)
+			t.Errorf("%s: %s, want %s", c.name, got, c.want)
 		}
 	}
 }

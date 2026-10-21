@@ -156,30 +156,31 @@ func TestRuleParts(t *testing.T) {
 	}
 	base := config.FirewallRule{ID: "fw1", Name: "x", From: "lan", Action: "allow", Protocol: "any", To: "iot"}
 	with := func(f func(*config.FirewallRule)) config.FirewallRule { r := base; f(&r); return r }
-	cases := map[string]struct {
+	cases := []struct {
+		name string
 		rule config.FirewallRule
 		want string
 	}{
-		"any protocol":      {base, `iifname "eth1" oifname "br30" counter accept comment "fw:fw1"`},
-		"tcp without ports": {with(func(r *config.FirewallRule) { r.Protocol = "tcp" }), `iifname "eth1" oifname "br30" meta l4proto tcp counter accept comment "fw:fw1"`},
-		"udp one port":      {with(func(r *config.FirewallRule) { r.Protocol = "udp"; r.Ports = "53" }), `iifname "eth1" oifname "br30" udp dport 53 counter accept comment "fw:fw1"`},
-		"tcp a range":       {with(func(r *config.FirewallRule) { r.Protocol = "tcp"; r.Ports = "8000-8100" }), `iifname "eth1" oifname "br30" tcp dport 8000-8100 counter accept comment "fw:fw1"`},
-		"tcp+udp":           {with(func(r *config.FirewallRule) { r.Protocol = "tcp+udp" }), `iifname "eth1" oifname "br30" meta l4proto { tcp, udp } counter accept comment "fw:fw1"`},
-		"icmp":              {with(func(r *config.FirewallRule) { r.Protocol = "icmp" }), `iifname "eth1" oifname "br30" meta l4proto icmp counter accept comment "fw:fw1"`},
-		"source and destination": {with(func(r *config.FirewallRule) { r.Source = "192.168.1.0/28"; r.Destination = "10.30.0.5" }),
+		{"any protocol", base, `iifname "eth1" oifname "br30" counter accept comment "fw:fw1"`},
+		{"tcp without ports", with(func(r *config.FirewallRule) { r.Protocol = "tcp" }), `iifname "eth1" oifname "br30" meta l4proto tcp counter accept comment "fw:fw1"`},
+		{"udp one port", with(func(r *config.FirewallRule) { r.Protocol = "udp"; r.Ports = "53" }), `iifname "eth1" oifname "br30" udp dport 53 counter accept comment "fw:fw1"`},
+		{"tcp a range", with(func(r *config.FirewallRule) { r.Protocol = "tcp"; r.Ports = "8000-8100" }), `iifname "eth1" oifname "br30" tcp dport 8000-8100 counter accept comment "fw:fw1"`},
+		{"tcp+udp", with(func(r *config.FirewallRule) { r.Protocol = "tcp+udp" }), `iifname "eth1" oifname "br30" meta l4proto { tcp, udp } counter accept comment "fw:fw1"`},
+		{"icmp", with(func(r *config.FirewallRule) { r.Protocol = "icmp" }), `iifname "eth1" oifname "br30" meta l4proto icmp counter accept comment "fw:fw1"`},
+		{"source and destination", with(func(r *config.FirewallRule) { r.Source = "192.168.1.0/28"; r.Destination = "10.30.0.5" }),
 			`iifname "eth1" oifname "br30" ip saddr 192.168.1.0/28 ip daddr 10.30.0.5 counter accept comment "fw:fw1"`},
-		"block":             {with(func(r *config.FirewallRule) { r.Action = "block" }), `iifname "eth1" oifname "br30" counter drop comment "fw:fw1"`},
-		"tcp reject":        {with(func(r *config.FirewallRule) { r.Action = "reject"; r.Protocol = "tcp" }), `iifname "eth1" oifname "br30" meta l4proto tcp counter reject with tcp reset comment "fw:fw1"`},
-		"udp reject":        {with(func(r *config.FirewallRule) { r.Action = "reject"; r.Protocol = "udp" }), `iifname "eth1" oifname "br30" meta l4proto udp counter reject comment "fw:fw1"`},
-		"any reject":        {with(func(r *config.FirewallRule) { r.Action = "reject" }), `iifname "eth1" oifname "br30" counter reject comment "fw:fw1"`},
-		"logged":            {with(func(r *config.FirewallRule) { r.Log = true }), `iifname "eth1" oifname "br30" counter log prefix "fw:fw1 " limit rate 5/second accept comment "fw:fw1"`},
-		"to the internet":   {with(func(r *config.FirewallRule) { r.To = "internet" }), `iifname "eth1" oifname "eth0" counter accept comment "fw:fw1"`},
-		"from another net":  {with(func(r *config.FirewallRule) { r.From = "guest"; r.To = "lan" }), `iifname "br20" oifname "eth1" counter accept comment "fw:fw1"`},
-		"from the internet": {with(func(r *config.FirewallRule) { r.From = "wan"; r.To = "guest" }), `iifname "eth0" oifname "br20" counter accept comment "fw:fw1"`},
+		{"block", with(func(r *config.FirewallRule) { r.Action = "block" }), `iifname "eth1" oifname "br30" counter drop comment "fw:fw1"`},
+		{"tcp reject", with(func(r *config.FirewallRule) { r.Action = "reject"; r.Protocol = "tcp" }), `iifname "eth1" oifname "br30" meta l4proto tcp counter reject with tcp reset comment "fw:fw1"`},
+		{"udp reject", with(func(r *config.FirewallRule) { r.Action = "reject"; r.Protocol = "udp" }), `iifname "eth1" oifname "br30" meta l4proto udp counter reject comment "fw:fw1"`},
+		{"any reject", with(func(r *config.FirewallRule) { r.Action = "reject" }), `iifname "eth1" oifname "br30" counter reject comment "fw:fw1"`},
+		{"logged", with(func(r *config.FirewallRule) { r.Log = true }), `iifname "eth1" oifname "br30" counter log prefix "fw:fw1 " limit rate 5/second accept comment "fw:fw1"`},
+		{"to the internet", with(func(r *config.FirewallRule) { r.To = "internet" }), `iifname "eth1" oifname "eth0" counter accept comment "fw:fw1"`},
+		{"from another net", with(func(r *config.FirewallRule) { r.From = "guest"; r.To = "lan" }), `iifname "br20" oifname "eth1" counter accept comment "fw:fw1"`},
+		{"from the internet", with(func(r *config.FirewallRule) { r.From = "wan"; r.To = "guest" }), `iifname "eth0" oifname "br20" counter accept comment "fw:fw1"`},
 	}
-	for name, c := range cases {
+	for _, c := range cases {
 		if got := line(c.rule); got != c.want {
-			t.Errorf("%s:\n%s\nwant\n%s", name, got, c.want)
+			t.Errorf("%s:\n%s\nwant\n%s", c.name, got, c.want)
 		}
 	}
 }

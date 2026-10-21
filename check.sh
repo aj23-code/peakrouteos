@@ -7,6 +7,7 @@ unformatted=$(gofmt -l .)
 if [ -n "$unformatted" ]; then
 	echo "gofmt: these files need formatting:" >&2
 	echo "$unformatted" >&2
+	gofmt -d $unformatted >&2 || true
 	exit 1
 fi
 go vet ./...
