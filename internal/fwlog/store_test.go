@@ -122,21 +122,24 @@ func TestAFailedBatchLeavesNothingBehind(t *testing.T) {
 }
 
 func TestTheCursorIsKept(t *testing.T) {
-	now := t0
 	path := filepath.Join(t.TempDir(), "fw.db")
 	s, err := Open(path)
 	must(t, err)
 	if s.Cursor() != "" {
 		t.Fatal("a new log has a cursor")
 	}
-	must(t, s.Add([]network.FirewallLogEntry{pkt(0, "fw1", "10.0.0.5", "1.2.3.4", 22)}, "s=abc;i=1"))
+	// Open prunes by the real clock when it reopens the file, so these entries are from now (a fixed date would age out of the log)
+	first := pkt(0, "fw1", "10.0.0.5", "1.2.3.4", 22)
+	first.Time = time.Now().Add(-time.Minute).UnixMilli()
+	second := pkt(0, "fw1", "10.0.0.5", "1.2.3.4", 22)
+	second.Time = first.Time + 1000
+	must(t, s.Add([]network.FirewallLogEntry{first}, "s=abc;i=1"))
 	must(t, s.Add(nil, "")) // an empty cursor leaves the old one
-	must(t, s.Add([]network.FirewallLogEntry{pkt(time.Second, "fw1", "10.0.0.5", "1.2.3.4", 22)}, "s=abc;i=2"))
+	must(t, s.Add([]network.FirewallLogEntry{second}, "s=abc;i=2"))
 	s.Close()
 	s, err = Open(path)
 	must(t, err)
 	defer s.Close()
-	_ = now
 	if s.Cursor() != "s=abc;i=2" {
 		t.Fatalf("%q", s.Cursor())
 	}
