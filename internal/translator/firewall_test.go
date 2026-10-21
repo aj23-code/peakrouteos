@@ -23,17 +23,19 @@ func fwCfg(rules []config.FirewallRule, forwards ...config.PortForward) config.N
 }
 
 func sampleRules() ([]config.FirewallRule, []config.PortForward) {
-	return []config.FirewallRule{
-			{ID: "fw1", Name: "Printer", From: "lan", Action: "allow", Protocol: "tcp", To: "iot", Destination: "10.30.0.20", Ports: "9100,631"},
-			{ID: "fw2", Name: "Camera", From: "iot", Action: "block", Protocol: "any", To: "internet", Source: "10.30.0.40", Log: true},
-			{ID: "fw3", Name: "Ping", From: "wan", Action: "allow", Protocol: "icmp", To: "router"},
-			{ID: "fw4", Name: "Refuse", From: "guest", Action: "reject", Protocol: "tcp+udp", To: "any", Ports: "53"},
-			{ID: "fw5", Name: "Off", From: "lan", Action: "block", Protocol: "tcp", To: "iot", Disabled: true},
-		}, []config.PortForward{
-			{ID: "pf1", Name: "Web", Protocol: "tcp", ExternalPorts: "443", ToIP: "192.168.1.50", InternalPorts: "8443", Sources: []string{"203.0.113.7", "198.51.100.0/24"}},
-			{ID: "pf2", Name: "Game", Protocol: "tcp+udp", ExternalPorts: "5000-5010", ToIP: "10.30.0.5"},
-			{ID: "pf3", Name: "Off", Protocol: "tcp", ExternalPorts: "9999", ToIP: "192.168.1.50", Disabled: true},
-		}
+	rules := []config.FirewallRule{
+		{ID: "fw1", Name: "Printer", From: "lan", Action: "allow", Protocol: "tcp", To: "iot", Destination: "10.30.0.20", Ports: "9100,631"},
+		{ID: "fw2", Name: "Camera", From: "iot", Action: "block", Protocol: "any", To: "internet", Source: "10.30.0.40", Log: true},
+		{ID: "fw3", Name: "Ping", From: "wan", Action: "allow", Protocol: "icmp", To: "router"},
+		{ID: "fw4", Name: "Refuse", From: "guest", Action: "reject", Protocol: "tcp+udp", To: "any", Ports: "53"},
+		{ID: "fw5", Name: "Off", From: "lan", Action: "block", Protocol: "tcp", To: "iot", Disabled: true},
+	}
+	forwards := []config.PortForward{
+		{ID: "pf1", Name: "Web", Protocol: "tcp", ExternalPorts: "443", ToIP: "192.168.1.50", InternalPorts: "8443", Sources: []string{"203.0.113.7", "198.51.100.0/24"}},
+		{ID: "pf2", Name: "Game", Protocol: "tcp+udp", ExternalPorts: "5000-5010", ToIP: "10.30.0.5"},
+		{ID: "pf3", Name: "Off", Protocol: "tcp", ExternalPorts: "9999", ToIP: "192.168.1.50", Disabled: true},
+	}
+	return rules, forwards
 }
 
 func TestTheRulesetIsUnchangedWithoutRulesAndForwards(t *testing.T) {
