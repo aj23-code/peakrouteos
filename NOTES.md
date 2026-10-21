@@ -1297,6 +1297,7 @@ every future page works on every screen automatically.
 | 2026-10-08 | Overview: one device card first (hostname and a vertical list of specs, no DNS), then Internet and Network cards; the interfaces table is gone | the landing page should say what this box is, then whether it is working and what is connected |
 | 2026-10-08 | WAN usage reuses the stats and traffic endpoints instead of a new one | the data is already collected and served; one less thing to keep in step |
 | 2026-10-08 | Static WAN needs a gateway and a DNS server in the editor, though the shared validation allows them empty | an address alone cannot reach the internet, and the health chart needs a DNS server to measure |
+| 2026-10-20 | The disk image is about 6.6 GB for about 1.1 GB of system: two 3 GiB root slots, 129 MiB of boot partitions, a 256 MiB data partition | A/B updates need a second slot, and slots cannot be resized after the disk is written, so they are generous; the empty space compresses to nothing in the release download. Laying the disk out at the first start (a ~1.4 GB image) and slimming the system are deferred until the layout has been booted for real (`docs/image.md`, "Why the image file is about 6.6 GB") |
 | 2026-10-06 | Success messages show ~8 s; failures and reverts stay until dismissed | problems must not be missed, good news should not nag |
 
 ## 10. How things are tested (worth documenting)

@@ -110,6 +110,14 @@ Effort: S = under an hour, M = one session, L = multi-session.
 4. **Project on its own:** 9.
 5. **The end of the road (decided 2026-10-11):** build the remaining features first; then **Backup and restore** (System, Backup and restore: one file with the whole configuration, restored through the same review, commit and confirm path), second to last, because its format depends on every settings schema being settled; then the image (3). The Backup and restore page stays greyed out until then.
 
+## Deferred: a smaller image
+
+- [ ] **Lay out the disk at the first start** (M/L): ship slot A at its real size (an image of about 1.4 GB instead of 6.6 GB) and let the initramfs
+  stretch A, make B and the data partition to fit the disk, once, offline (`sfdisk`, `e2fsck`, `resize2fs` in the initramfs; B and the data
+  are empty then). Slots could scale with the disk size. Risky (a mistake leaves a device unbootable) and untestable without booting
+  hardware, so after the first real boot of the A/B layout. Reasoning: `docs/image.md`, "Why the image file is about 6.6 GB".
+- [ ] **Slim the system** (M): less Wi-Fi firmware, fewer packages, a compressed read-only root; only matters for small flash targets.
+
 ## Longer-term gaps (needs design decisions first)
 
 IPv6 (NAT and ICMPv6 input rules), time sync (NTP), an update mechanism for the OS and daemon, a watchdog, a recovery path (SSH or console tool), Secure Boot and BIOS boot, and the missing UI pages above.

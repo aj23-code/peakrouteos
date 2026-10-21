@@ -14,12 +14,34 @@ That builds the daemon (`peakroute`) and then runs `buildImage.sh`, which asks f
 root) and makes **`peakroute-os.img`** (the disk image) and **`peakroute-os-<version>.update`** (the bundle that updates a running device,
 `docs/updates.md`), each with a `.sha256`. `VERSION=v0.10.1 ./full_build.sh` names the build; `UPDATE_REPO=owner/name` sets the
 default place a device looks for updates. The image is two root slots (the system plus half again, at least 3 GiB each) and a data
-partition of 256 MiB that grows to the disk at the first start, so about 7 GB of mostly empty file; `IMAGE_SIZE=16G` makes it an exact size
+partition of 256 MiB that grows to the disk at the first start, so about 6.6 GB, most of it empty space (see "Why the image file is about 6.6 GB" below); `IMAGE_SIZE=16G` makes it an exact size
 (the data partition takes the rest). Debian is unpacked in `build/` in the project folder, or in `/var/tmp/peakroute-build` when the project
 folder is on a drive mounted `nodev` or `noexec` (external and data drives often are: debootstrap cannot work there); `BUILD_DIR=/some/folder`
 chooses another, which needs about 9 GB free. The script stops at the first error and checks that Debian really installed before it goes on. After a first build,
 `REUSE_ROOTFS=1 ./buildImage.sh` skips the download of Debian and builds the image again in about a minute (to try a change to the
 overlay, the scripts or the binary).
+
+## Why the image file is about 6.6 GB (decided 2026-10-20, to revisit after the first real boot)
+
+The disk image is **much bigger than what is in it**: about 1.1 GB of system, in a file of about 6.6 GB. This is a choice, not an accident, and the
+reasoning is kept here so that it is not mistaken for waste:
+
+- **A/B updates need two slots.** The update writes the new system into the slot that is not running (`docs/updates.md`), so the disk has
+  two root partitions of 3 GiB each (the system is about 1.1 GB, so each slot has more than twice its size to grow into over many
+  updates). Slot B is empty in a new image. Plus 129 MiB of boot partitions and a 256 MiB data partition that grows to the whole disk at the
+  first start. That is 6.6 GB; the old single-root image was 1.3 GB.
+- **The slots cannot be resized later.** Their size is fixed when the disk is written (the data partition comes after them), so they are
+  made generous. A release whose system does not fit its slot cannot be installed as an update; the Updates page says to write a new image.
+- **The empty space costs almost nothing to download.** It is zeros: the `.img.gz` of a release is about as big as the compressed system
+  (around 1 GB or less). Only the unpacked file (`gunzip`) is the full size, and it needs a disk or stick of at least 8 GB.
+- **Smaller options, for the day they matter:** `SLOT_SIZE_MB=2048 ./full_build.sh` makes 2 GiB slots (about 4.6 GB); the update bundle
+  itself (`.update`) is only the system, compressed. Not done, because they trade away headroom or need work that cannot be tried without
+  booting hardware: (1) **lay out the disk at the first start** (ship only slot A at its real size, about 1.4 GB, and let the initramfs
+  stretch A, create B and make the data partition to fit the actual disk, once, while B and the data are still empty; slots could then
+  scale with the disk); (2) **slim the system** (less Wi-Fi firmware, fewer packages, a compressed read-only root) to get under 1 GB of
+  real content, which matters for small flash targets, not for x86 machines with real disks.
+- A 128 GB drive is used completely: the slots stay 3 GiB and the data partition takes the rest (about 121 GB), which is far more than the
+  settings, certificates, history and logs need, and is free for features that store more later.
 
 ## Writing it
 
