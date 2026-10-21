@@ -336,19 +336,26 @@ func (m *Manager) IsConfigured() bool {
 	return m.configured
 }
 
-// Default fallback version if not set via go build -ldflags
-var BuildVersion = "v0.1.0-dev"
+// defaultBuildVersion is what a binary calls itself when nobody named the build (go run, go build, tests).
+const defaultBuildVersion = "v0.1.0-dev"
 
-// DefaultUpdateRepo is the GitHub repository ("owner/name") that updates come from unless the administrator chooses another; set at
-// build time (full_build.sh, UPDATE_REPO).
+// BuildVersion is the version of this build. full_build.sh sets it with -ldflags (from the git tag, or VERSION=); it is the only place
+// the version comes from: the Overview, the Updates page and the backups all show this.
+var BuildVersion = defaultBuildVersion
+
+// DefaultUpdateRepo is the GitHub repository ("owner/name") that updates come from; set at build time (full_build.sh, UPDATE_REPO)
+// and not changeable by the administrator.
 var DefaultUpdateRepo = ""
 
-// GetBinaryVersion returns BuildVersion as the primary version string,
-// appending git commit details if present in debug build info.
+// GetBinaryVersion returns the version to show. A named build (full_build.sh) is shown exactly as named, so that every page says the
+// same as the update bundle does; an unnamed one (go run, go build) gets the git commit it was built from, if the build knows it.
 func GetBinaryVersion() string {
 	baseVersion := BuildVersion
 	if baseVersion == "" {
 		baseVersion = "Unknown Version Info"
+	}
+	if baseVersion != defaultBuildVersion {
+		return baseVersion
 	}
 
 	info, ok := debug.ReadBuildInfo()

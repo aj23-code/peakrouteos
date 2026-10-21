@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -571,4 +572,18 @@ func TestConcurrentReadsAndWritesDoNotRace(t *testing.T) {
 	}
 	close(stop)
 	wg.Wait()
+}
+
+// The version shown everywhere is the one the build was named with; only an unnamed build adds the commit it came from.
+func TestTheVersionShownIsTheOneTheBuildWasNamedWith(t *testing.T) {
+	old := BuildVersion
+	defer func() { BuildVersion = old }()
+	BuildVersion = "v9.8.7-beta"
+	if got := GetBinaryVersion(); got != "v9.8.7-beta" {
+		t.Fatalf("a named build shows %q", got)
+	}
+	BuildVersion = defaultBuildVersion
+	if got := GetBinaryVersion(); !strings.HasPrefix(got, defaultBuildVersion) {
+		t.Fatalf("an unnamed build shows %q", got)
+	}
 }

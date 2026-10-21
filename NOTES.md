@@ -659,6 +659,10 @@ Design and rules: **`docs/updates.md`** (read it first). Decisions with the user
   puts it in slot A and it is gzip-compressed into the **bundle** `peakroute-os-<version>.update` (tar: `manifest.json` first, then
   `rootfs.img.gz`; manifest: format, version, built, arch, layout, `rootfs_size`, `rootfs_sha256`, `payload_sha256`, notes, `reset`) with a
   `.sha256` beside it. `/usr/lib/peakroute/release` (version, built, layout, arch, Debian) is written into the system. `full_build.sh`
+  **The version has one source, `config.BuildVersion`** (linker flag from `full_build.sh`): the Overview, the Updates page, backups, the release
+  file in the image and the bundle all show it (checked 2026-10-20: no version number is typed anywhere else). `full_build.sh` takes it from
+  `VERSION=` or from git: the tag when HEAD is tagged and clean, else `<last tag>-dev.g<hash>[.dirty]`; `GetBinaryVersion` shows a named
+  build exactly as named and adds the commit only for an unnamed `go build`. The release workflow passes the tag. `full_build.sh`
   passes `VERSION`, `UPDATE_REPO` (the fixed source, linker flag `config.DefaultUpdateRepo`) and `UPDATE_NOTES`.
 - **`internal/update`**: `version.go` (semver order, `v0.9.5-alpha` < `v0.10.0`), `bundle.go` (read the tar, `WriteSlot`: wipe the head of
   the slot, stream gzip into the partition hashing both the compressed and the raw bytes, refuse anything that does not match the manifest,
