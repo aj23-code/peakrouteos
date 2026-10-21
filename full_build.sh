@@ -3,7 +3,8 @@
 # docs/image.md and docs/updates.md.
 #
 #   ./full_build.sh                              build both
-#   UPDATE_REPO=owner/name ./full_build.sh       the GitHub repository the device looks for updates in (fixed in the build: the administrator cannot change it)
+#   UPDATE_REPO=owner/name ./full_build.sh       the GitHub repository the device looks for updates in (default aj23-code/peakrouteos;
+#                                                fixed in the build: the administrator cannot change it)
 #   UPDATE_NOTES="what changed" ./full_build.sh  the line the Updates page shows for an uploaded bundle
 #   VERSION=v0.10.1 ./full_build.sh              name the build; without it the name comes from git: the tag when this commit is
 #                                                tagged and clean (v0.10.1), otherwise the last tag plus the commit (v0.10.1-dev.g1a2b3c4)
@@ -26,7 +27,8 @@ git_version() {
 }
 cd "$(dirname "$0")"
 VERSION="${VERSION:-$(git_version)}"
-UPDATE_REPO="${UPDATE_REPO:-}"
+# where this software looks for its updates (GitHub releases); fixed in the build, the administrator cannot change it
+UPDATE_REPO="${UPDATE_REPO:-aj23-code/peakrouteos}"
 
 set -e
 echo "Building ${VERSION}"
