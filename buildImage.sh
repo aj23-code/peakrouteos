@@ -240,8 +240,16 @@ for f in vmlinuz initrd.img; do
 done
 # the initramfs must hold the script that lays the router's state over the system, or no device would keep its settings
 initrd_file="$(readlink -f "${ROOTFS_DIR}/initrd.img")"
-chroot "${ROOTFS_DIR}" lsinitramfs "${initrd_file#${ROOTFS_DIR}}" 2>/dev/null | grep -q 'scripts/local-bottom/peakroute-state' \
-    || { echo "Error: the initramfs does not hold the state script"; exit 1; }
+# (the listing goes to a file first: "lsinitramfs | grep -q" ends with status 141 under pipefail even when grep finds the line)
+initrd_list="${BUILD_DIR}/initrd.list"
+chroot "${ROOTFS_DIR}" lsinitramfs "${initrd_file#${ROOTFS_DIR}}" > "${initrd_list}"
+for f in 'scripts/local-bottom/peakroute-state' 'overlay.ko' 'e2fsck'; do
+    grep -q "${f}" "${initrd_list}" || {
+        echo "Error: the initramfs does not hold ${f}. What it has in scripts/ and of the file systems:"
+        grep -E 'scripts/|/ext4|overlay' "${initrd_list}" | head -40
+        exit 1
+    }
+done
 
 # Small: no caches, no lists, no manual pages (the licences stay)
 chroot "${ROOTFS_DIR}" apt-get clean || true
