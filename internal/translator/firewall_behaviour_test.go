@@ -294,6 +294,9 @@ func TestTheRulesDecideWhatRealConnectionsDo(t *testing.T) {
 				t.Skipf("no %s", tool)
 			}
 		}
+		if out, err := exec.Command("unshare", "-rn", "true").CombinedOutput(); err != nil {
+			t.Skipf("no user and network namespaces here (a restricted runner or container): %v %s", err, out)
+		}
 		exe, err := os.Executable()
 		if err != nil {
 			t.Fatal(err)

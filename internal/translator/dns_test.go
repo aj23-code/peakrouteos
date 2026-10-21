@@ -277,6 +277,9 @@ func TestTheRealDnsmasqAnswersAsTheFileSays(t *testing.T) {
 		if _, err := exec.LookPath("unshare"); err != nil {
 			t.Skip("no unshare")
 		}
+		if out, err := exec.Command("unshare", "-rn", "true").CombinedOutput(); err != nil {
+			t.Skipf("no user and network namespaces here (a restricted runner or container): %v %s", err, out)
+		}
 		exe, _ := os.Executable()
 		cmd := exec.Command("unshare", "-rn", exe, "-test.run=^TestTheRealDnsmasqAnswersAsTheFileSays$", "-test.v")
 		cmd.Env = append(os.Environ(), envDNS+"=1")
