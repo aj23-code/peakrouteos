@@ -1,0 +1,13 @@
+#!/bin/sh
+# Puts what peakroute-state (scripts/local-bottom) needs into the initramfs: the overlay file system and the file system checker.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "${1:-}" in
+    prereqs) prereqs; exit 0 ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+force_load overlay
+force_load ext4
+copy_exec /sbin/e2fsck

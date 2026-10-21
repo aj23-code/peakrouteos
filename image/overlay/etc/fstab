@@ -1,3 +1,6 @@
-# written by the image build: the partitions are found by label, so the image can be written to any disk
-LABEL=peakroute-root  /          ext4  defaults,noatime,errors=remount-ro  0  1
-LABEL=PRESP           /boot/efi  vfat  umask=0077,nofail                    0  2
+# written by the image build (docs/updates.md). The root file system is not here: the boot loader names the slot on the kernel's command
+# line (root=LABEL=peakroute-root-a or -b), and it is read-only. /etc, /var, /home and /usr/local are laid over it from /data by the
+# initramfs before systemd starts.
+LABEL=peakroute-data  /data      ext4  defaults,noatime,nofail           0  0
+# the boot loader's partition is read-only except while the daemon changes which slot starts
+LABEL=PRESP           /boot/efi  vfat  ro,umask=0077,noatime,nofail      0  0

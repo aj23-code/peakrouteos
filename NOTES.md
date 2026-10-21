@@ -2,7 +2,7 @@
 
 Living notes for the eventual documentation. Updated with every meaningful change, so it
 records what the system does, why it is built that way, and what was learned on the way.
-`TODO.md` is the work list; this file is the knowledge. Last updated: 2026-10-06.
+`TODO.md` is the work list; this file is the knowledge. Last updated: 2026-10-20.
 
 > Status: alpha. A router appliance OS (Debian base) with a Go daemon and web UI. The daemon is
 > a monitoring dashboard plus a safe configuration pipeline that is being built (see section 7).
@@ -635,6 +635,65 @@ forwarded). The real tools caught one mistake while writing it: the BIOS boot pa
 moves to `/var/tmp` then) and a `set +e` inside `cleanup` disabled the script's stop-at-first-error. The rebuilt image was written to an NVMe disk in a real
 machine and **booted to the welcome page** (the setup network works on real hardware). It then **grew the root partition to the whole disk and routed** (router setup, commit and routing worked on real hardware). Still to check on it: the rest of
 the wizard flows (access point, extender, link, restore), Wi-Fi, VPN and the other pages.
+
+## 7u. Updates: A/B slots and the update bundle (built 2026-10-20)
+
+Design and rules: **`docs/updates.md`** (read it first). Decisions with the user: **A/B root partitions** (the device is a live router), releases
+**from GitHub or an uploaded file**, **checksum only** for trust (a signature entry is left room for in the bundle). What changed:
+
+- **Disk layout 1** (`buildImage.sh`, `docs/image.md`): GPT with BIOS boot, ESP (`PRESP`, 128 MiB), **slot A and slot B** (ext4, labels
+  `peakroute-root-a/-b`, partition names the same; B is empty in a fresh image) and **data** (`peakroute-data`, grows to the disk). The
+  boot loader's files, `grub.cfg` (`image/grub/grub.cfg`) and `grubenv` are on the **ESP** (`grub-install --boot-directory=/boot/efi`), so
+  both slots are equal and an update never touches GRUB. `grubenv` has `slot` (kept) and `trial` (tried once: GRUB clears it as it reads
+  it, so an unconfirmed trial is a single start). GRUB finds the slot by label and passes `root=LABEL=...`, `peakroute.slot=`,
+  `peakroute.trial=1` and `panic=10`; it uses `/vmlinuz` and `/initrd.img` (Debian's links at the top of the file system).
+- **Read-only root, state on the data partition.** The initramfs script `image/overlay/etc/initramfs-tools/scripts/local-bottom/peakroute-state`
+  (with a hook that adds `overlay` and `e2fsck`) mounts the data partition at `/data` and lays overlays on `/etc`, `/var`, `/home` and
+  `/usr/local` (upper layers in `/data/overlay/<name>`); if the data partition cannot be used it lays tmpfs layers and writes `volatile` to
+  `/run/peakroute/state` (the page warns). The daemon binary moved to `/usr/lib/peakroute/peakroute` so a copy in the upper `/usr/local`
+  can never shadow the slot's. The daemon writes `/usr/local/sbin/peakroute-*-sync` scripts, which is why `/usr/local` is a layer too.
+  `growroot` became `growdata` (`peakroute-growdata.service`, marker `/var/lib/peakroute/datagrown`, grows partition 5 of the disk /data is on).
+  `image/growdata_test.go` is the old growroot test moved (five partitions now). **A device written from an older image cannot update**
+  (different layout): one more write of the image, settings carried over with Backup and restore.
+- **One root file system image, two outputs.** `buildImage.sh` makes `rootfs.img` once (ext4, loop-mounted, copied, `e2fsck`ed); `dd`
+  puts it in slot A and it is gzip-compressed into the **bundle** `peakroute-os-<version>.update` (tar: `manifest.json` first, then
+  `rootfs.img.gz`; manifest: format, version, built, arch, layout, `rootfs_size`, `rootfs_sha256`, `payload_sha256`, notes, `reset`) with a
+  `.sha256` beside it. `/usr/lib/peakroute/release` (version, built, layout, arch, Debian) is written into the system. `full_build.sh`
+  passes `VERSION`, `UPDATE_REPO` (the fixed source, linker flag `config.DefaultUpdateRepo`) and `UPDATE_NOTES`.
+- **`internal/update`**: `version.go` (semver order, `v0.9.5-alpha` < `v0.10.0`), `bundle.go` (read the tar, `WriteSlot`: wipe the head of
+  the slot, stream gzip into the partition hashing both the compressed and the raw bytes, refuse anything that does not match the manifest,
+  `Compatible` for arch/layout/slot size), `github.go` (newest release by version number with a `.update` asset and a checksum, from the
+  `.sha256` asset or GitHub's `digest`; https only; `FindRelease`), `service.go` (`BootState` from `/proc/cmdline` and `grub-editenv list`;
+  `receive` shared by upload and download; `finishSlot` = `e2fsck -f -p` (exit 1 is fine), `resize2fs`, then **`tune2fs -L` last**, so a
+  slot that was not written to the end has no label and can never be started; `Restart`, `Keep`, `GoBack`; `update.json` in the config
+  directory holds settings, last check, the version in each slot and a 30-entry history), `api.go`, `sim.go`. The ESP is mounted read-only
+  and remounted writable only for the `grub-editenv set`. Restart makes a copy of the settings first (`backup.Service.SaveCopy`, new
+  exported wrapper). **Trial:** `Restart` sets `trial=<other>` and reboots; the new version shows a bar on every page and the Updates card
+  with a 10-minute countdown; **Keep** sets `slot=<running>`; **Go back** just reboots (the kept slot starts), or from a kept version sets a
+  trial of the other slot. `image/overlay/usr/lib/peakroute/trialwatch` (+ `peakroute-trialwatch.service`, only when the kernel was told
+  `peakroute.trial=1`) reboots if the grubenv still names another slot after `PEAKROUTE_TRIAL_SECONDS` (600), so even a dead daemon is undone.
+  Installing is refused while a version is on trial (the other slot is the way back), while a configuration change awaits confirmation, and
+  while another update runs. The upload and download handlers lift the server's 10-second limits for themselves
+  (`http.NewResponseController`). Endpoints: `GET /api/v1/updates` and POST `check`, `install`, `cancel`, `upload`, `restart`, `keep`,
+  `revert`, PUT `settings` (a read-only account is refused by `auth.RequireAuth` for all but the GET).
+- **Page** (`updates.js`, System, Updates): trial card, "ready" card with a two-click restart, versions, check for updates, install from a
+  file (the manifest is read in the browser from the first 64 KiB so the version and notes show before sending; upload with
+  `XMLHttpRequest` for progress), go back, settings (pre-releases, daily look; **the GitHub repository is fixed at build time, `UPDATE_REPO`, and is not a setting**, decided 2026-10-20), history; a "restarting" card that waits for the
+  router and re-signs-in; and `watch()` on every page: an amber dot on the menu entry for a newer release or a trial, and a bar while a
+  version is on trial. The versions of the system (PeakRoute OS, built, Debian, kernel, slot) are on this page.
+- **Development run:** `peakroute -dev` uses `update.NewSimulated` (`dev-data/update-sim`: two 64 MiB slot files, a text `grubenv`, a
+  restart that only re-reads it, a sample update file `sample-v99.0.0-sim.update` and a damaged one). The whole flow (upload, ready,
+  restart, trial bar, keep, go back from a kept version, go back from a trial, damaged file) was clicked through in a real browser; the
+  browser pane refuses self-signed HTTPS, so a small plain-HTTP proxy on another port was used (not in the repo).
+- **Releases** (`.github/workflows/release.yml`): a pushed `v*` tag runs the checks, `full_build.sh`, and attaches `peakroute-os-<tag>.update`
+  (+ `.sha256`) and `peakroute-os-<tag>.img.gz` (+ `.sha256`) to a GitHub release; a tag with a hyphen is a pre-release. GitHub itself
+  has no update mechanism: a release is only files on a tag, and the device does the rest. A release file may be at most 2 GiB.
+- **Not run for real yet** (needs `sudo` and a boot): the new `buildImage.sh` (partitioning, GRUB on the ESP for UEFI and BIOS, the
+  initramfs script and the overlays on a read-only root, the resulting slot boot), `grub.cfg` (syntax checked with `grub-script-check`),
+  the real `e2fsck`/`resize2fs`/`tune2fs`/`grub-editenv` on a real partition, and the release workflow. Test in QEMU: build twice (a second
+  `VERSION=`), boot the first image (`image/run-qemu.sh`), upload the second `.update` on the Updates page, restart, keep. Likely trouble
+  spots: GRUB's prefix for the removable EFI build with the boot directory on the ESP, `root=LABEL=` and the read-only root (anything
+  that writes outside `/etc`, `/var`, `/home`, `/usr/local`, `/tmp`, `/run`), and `overlay` in the initramfs.
 
 ### Access point mode, the second round (2026-10-12)
 

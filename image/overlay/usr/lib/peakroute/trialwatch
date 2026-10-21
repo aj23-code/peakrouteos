@@ -1,0 +1,29 @@
+#!/bin/sh
+# Started only when this version is on trial (peakroute-trialwatch.service, kernel option peakroute.trial=1): if nobody keeps it
+# within the time, the device restarts into the version that was kept before. It does not depend on the daemon, so a version whose
+# daemon cannot start is undone as well. docs/updates.md, section 4.
+#
+# The places and the time can be changed through the environment, which is how the tests run this script.
+
+set -eu
+
+GRUBENV="${PEAKROUTE_GRUBENV:-/boot/efi/grub/grubenv}"
+CMDLINE="${PEAKROUTE_CMDLINE:-/proc/cmdline}"
+SECONDS_TO_WAIT="${PEAKROUTE_TRIAL_SECONDS:-600}"
+REBOOT="${PEAKROUTE_REBOOT:-systemctl reboot}"
+
+running="$(tr ' ' '\n' < "$CMDLINE" | sed -n 's/^peakroute\.slot=//p' | head -n 1)"
+[ -n "$running" ] || { echo "trialwatch: the kernel was not told which slot it runs" >&2; exit 0; }
+
+kept() { grub-editenv "$GRUBENV" list 2>/dev/null | sed -n 's/^slot=//p' | head -n 1; }
+
+waited=0
+while [ "$waited" -lt "$SECONDS_TO_WAIT" ]; do
+    # kept (or gone back): nothing more to watch
+    [ "$(kept)" = "$running" ] && exit 0
+    sleep "${PEAKROUTE_TRIAL_STEP:-5}"
+    waited=$((waited + ${PEAKROUTE_TRIAL_STEP:-5}))
+done
+[ "$(kept)" = "$running" ] && exit 0
+echo "trialwatch: version in slot $running was not kept within ${SECONDS_TO_WAIT} s: going back" >&2
+exec $REBOOT

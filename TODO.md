@@ -7,6 +7,10 @@ Effort: S = under an hour, M = one session, L = multi-session.
 
 **Image and install**
 - Debian 13 (Trixie) disk image built by `buildImage.sh` (`docs/image.md`); no installer, no console wizard: setup is the web welcome page.
+- Updates (2026-10-20, `docs/updates.md`): A/B root slots, data partition, update bundle from GitHub releases or an uploaded file, trial and keep/go back,
+  the Updates page. Daemon side tested (and clicked through in `-dev` with simulated slots); the image side (new `buildImage.sh`, GRUB on the ESP,
+  read-only root with layers) has **not been built or booted yet**: do that in QEMU first. Later: a signature in the bundle, `reset` paths, a boot counter for a
+  kept slot that fails, a hardware watchdog.
 
 **Router base (Router mode)**
 - nftables: default-drop input and forward, LAN to WAN allowed, stateful tracking, IPv4 masquerade.

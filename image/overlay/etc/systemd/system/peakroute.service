@@ -1,11 +1,11 @@
 [Unit]
 Description=PeakRoute OS daemon
-After=network-pre.target peakroute-growroot.service
+After=network-pre.target peakroute-growdata.service
 Before=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/peakroute
+ExecStart=/usr/lib/peakroute/peakroute
 Restart=always
 RestartSec=3
 LimitNOFILE=65536

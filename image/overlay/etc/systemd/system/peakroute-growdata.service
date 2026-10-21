@@ -1,0 +1,14 @@
+[Unit]
+Description=PeakRoute OS: grow the data partition to fill the disk (once)
+ConditionPathExists=!/var/lib/peakroute/datagrown
+RequiresMountsFor=/data
+After=local-fs.target
+Before=peakroute.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/peakroute/growdata
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

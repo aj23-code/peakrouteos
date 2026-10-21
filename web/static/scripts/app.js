@@ -249,6 +249,11 @@ function loadView(viewName) {
                 activeViewCleanup = window.BackupModule.init();
             }
             break;
+        case 'updates':
+            if (window.UpdatesModule) {
+                activeViewCleanup = window.UpdatesModule.init();
+            }
+            break;
         case 'certificates':
             if (window.CertificatesModule) {
                 activeViewCleanup = window.CertificatesModule.init();
@@ -382,6 +387,9 @@ document.addEventListener('click', (e) => {
 // App Shell Initialization
 document.addEventListener('DOMContentLoaded', () => {
     const sidebarNav = document.getElementById('sidebar-nav');
+
+    // the mark on the Updates entry, and the bar while a new version is on trial
+    if (window.UpdatesModule && sidebarNav) window.UpdatesModule.watch();
 
     if (sidebarNav) {
         // Event delegation for sidebar link navigation

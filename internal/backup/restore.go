@@ -895,6 +895,9 @@ func (s *Service) currentBundle() *Bundle {
 	return b
 }
 
+// SaveCopy keeps a copy of the router's state as it is (before an update restarts the router into a new version) and returns its id.
+func (s *Service) SaveCopy() (string, error) { return s.saveCopy() }
+
 func (s *Service) saveCopy() (string, error) {
 	src := s.source(false)
 	b, err := Collect(src)

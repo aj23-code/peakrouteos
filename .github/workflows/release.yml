@@ -1,0 +1,45 @@
+name: release
+# Pushing a version tag (v0.10.0, v0.11.0-beta) builds the image and the update bundle and attaches them to a GitHub release
+# (docs/updates.md, section 7). A tag with a hyphen is a pre-release: devices only offer it when "include pre-releases" is on.
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Checks
+        run: ./check.sh
+      - name: Make room (the build needs about 9 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+      - name: Tools of the image build
+        run: sudo apt-get update && sudo apt-get install -y debootstrap fdisk dosfstools e2fsprogs wget pigz
+      - name: Build the image and the update bundle
+        env:
+          VERSION: ${{ github.ref_name }}
+          UPDATE_REPO: ${{ github.repository }}
+          UPDATE_NOTES: Release ${{ github.ref_name }}
+        run: ./full_build.sh
+      - name: Package
+        run: |
+          mkdir -p dist
+          mv "peakroute-os-${GITHUB_REF_NAME}.update" "peakroute-os-${GITHUB_REF_NAME}.update.sha256" dist/
+          # a release file may be at most 2 GiB: the disk image is mostly empty space and compresses far below that
+          pigz -6 -c peakroute-os.img > "dist/peakroute-os-${GITHUB_REF_NAME}.img.gz"
+          ( cd dist && sha256sum "peakroute-os-${GITHUB_REF_NAME}.img.gz" > "peakroute-os-${GITHUB_REF_NAME}.img.gz.sha256" )
+          ls -lh dist
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=""
+          case "${GITHUB_REF_NAME}" in *-*) flags="--prerelease" ;; esac
+          gh release create "${GITHUB_REF_NAME}" dist/* --title "PeakRoute OS ${GITHUB_REF_NAME}" --generate-notes ${flags}

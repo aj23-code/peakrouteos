@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// The script that grows the root partition runs here against a disk image in a file, with the commands that need a real block
+// The script that grows the data partition runs here against a disk image in a file, with the commands that need a real block
 // device (findmnt, lsblk, partx, resize2fs) replaced by recorders. sfdisk and sgdisk are the real ones.
 
 type growLab struct {
@@ -35,7 +35,7 @@ func newGrowLab(t *testing.T, imageMiB, diskMiB int) *growLab {
 	t.Helper()
 	need(t, "sfdisk", "sgdisk", "awk", "sh")
 	dir := t.TempDir()
-	l := &growLab{t: t, dir: dir, disk: filepath.Join(dir, "disk.img"), calls: filepath.Join(dir, "calls"), mark: filepath.Join(dir, "state", "rootgrown")}
+	l := &growLab{t: t, dir: dir, disk: filepath.Join(dir, "disk.img"), calls: filepath.Join(dir, "calls"), mark: filepath.Join(dir, "state", "datagrown")}
 	if err := os.Truncate(l.disk, 0); err != nil {
 		f, err := os.Create(l.disk)
 		if err != nil {
@@ -49,7 +49,9 @@ func newGrowLab(t *testing.T, imageMiB, diskMiB int) *growLab {
 	layout := "label: gpt\nunit: sectors\nfirst-lba: 2048\n" +
 		"start=2048, size=2048, type=21686148-6449-6E6F-744E-656564454649, name=\"BIOS boot\"\n" +
 		"size=16384, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name=\"EFI System\"\n" +
-		"type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=\"PeakRoute root\"\n"
+		"size=8192, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=\"peakroute-root-a\"\n" +
+		"size=8192, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=\"peakroute-root-b\"\n" +
+		"type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=\"peakroute-data\"\n"
 	cmd := exec.Command("sfdisk", "--quiet", l.disk)
 	cmd.Stdin = strings.NewReader(layout)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -67,21 +69,21 @@ func newGrowLab(t *testing.T, imageMiB, diskMiB int) *growLab {
 			t.Fatal(err)
 		}
 	}
-	fake("findmnt", "echo /dev/fakeroot3\n")
+	fake("findmnt", "echo /dev/fakedata5\n")
 	fake("lsblk", "echo fakedisk\n")
 	fake("partx", `echo "partx $*" >> `+l.calls+"\n")
 	fake("resize2fs", `echo "resize2fs $*" >> `+l.calls+"\n")
 
 	sys := filepath.Join(dir, "sys")
-	os.MkdirAll(filepath.Join(sys, "fakeroot3"), 0755)
-	os.WriteFile(filepath.Join(sys, "fakeroot3", "partition"), []byte("3\n"), 0644)
-	l.env = []string{"PATH=" + bin + ":/usr/sbin:/usr/bin:/sbin:/bin", "PEAKROUTE_ROOT_DEV=/dev/fakeroot3", "PEAKROUTE_SYS_BLOCK=" + sys,
+	os.MkdirAll(filepath.Join(sys, "fakedata5"), 0755)
+	os.WriteFile(filepath.Join(sys, "fakedata5", "partition"), []byte("5\n"), 0644)
+	l.env = []string{"PATH=" + bin + ":/usr/sbin:/usr/bin:/sbin:/bin", "PEAKROUTE_DATA_DEV=/dev/fakedata5", "PEAKROUTE_SYS_BLOCK=" + sys,
 		"PEAKROUTE_DISK=" + l.disk, "PEAKROUTE_GROW_MARK=" + l.mark}
 	return l
 }
 
 func (l *growLab) run(extraEnv ...string) (string, error) {
-	cmd := exec.Command("sh", "overlay/usr/lib/peakroute/growroot")
+	cmd := exec.Command("sh", "overlay/usr/lib/peakroute/growdata")
 	cmd.Env = append(append([]string(nil), l.env...), extraEnv...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
@@ -114,30 +116,29 @@ func (l *growLab) verify() string {
 	return string(out)
 }
 
-func TestTheRootPartitionGrowsToFillALargerDisk(t *testing.T) {
+func TestTheDataPartitionGrowsToFillALargerDisk(t *testing.T) {
 	l := newGrowLab(t, 64, 512)
 	out, err := l.run()
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	start, size := l.partition(3)
+	start, size := l.partition(5)
 	diskSectors := int64(512<<20) / 512
 	// the last 33 sectors hold the second copy of the partition table; sfdisk keeps the end on a 1 MiB boundary
 	if end := start + size; end > diskSectors-33 || end < diskSectors-33-2048 {
-		t.Fatalf("the root partition ends at sector %d of %d (it starts at %d and is %d long): %s", end, diskSectors, start, size, out)
+		t.Fatalf("the data partition ends at sector %d of %d (it starts at %d and is %d long): %s", end, diskSectors, start, size, out)
 	}
 	if v := l.verify(); !strings.Contains(v, "No problems found") {
 		t.Fatalf("the partition table is not clean afterwards:\n%s", v)
 	}
-	// the other two partitions did not move
-	if s, z := l.partition(1); s != 2048 || z != 2048 {
-		t.Fatalf("partition 1: %d %d", s, z)
-	}
-	if s, z := l.partition(2); s != 4096 || z != 16384 {
-		t.Fatalf("partition 2: %d %d", s, z)
+	// the other four partitions (the two slots among them) did not move
+	for n, want := range map[int][2]int64{1: {2048, 2048}, 2: {4096, 16384}, 3: {20480, 8192}, 4: {28672, 8192}} {
+		if s, z := l.partition(n); s != want[0] || z != want[1] {
+			t.Fatalf("partition %d: %d %d, want %v", n, s, z, want)
+		}
 	}
 	calls := l.recorded()
-	if !strings.Contains(calls, "partx -u --nr 3 "+l.disk) || !strings.Contains(calls, "resize2fs /dev/fakeroot3") {
+	if !strings.Contains(calls, "partx -u --nr 5 "+l.disk) || !strings.Contains(calls, "resize2fs /dev/fakedata5") {
 		t.Fatalf("the kernel and the file system were not told:\n%s", calls)
 	}
 	if strings.Index(calls, "partx") > strings.Index(calls, "resize2fs") {
@@ -155,7 +156,7 @@ func TestTheRootPartitionGrowsToFillALargerDisk(t *testing.T) {
 
 func TestADiskWithNoRoomLeftOnlyChecksTheFileSystem(t *testing.T) {
 	l := newGrowLab(t, 64, 64)
-	_, sizeBefore := l.partition(3)
+	_, sizeBefore := l.partition(5)
 	out, err := l.run()
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
@@ -166,7 +167,7 @@ func TestADiskWithNoRoomLeftOnlyChecksTheFileSystem(t *testing.T) {
 	if !strings.Contains(l.recorded(), "resize2fs") {
 		t.Fatal("the file system was not checked")
 	}
-	if _, sizeAfter := l.partition(3); sizeAfter != sizeBefore {
+	if _, sizeAfter := l.partition(5); sizeAfter != sizeBefore {
 		t.Fatalf("the partition changed from %d to %d sectors with no room", sizeBefore, sizeAfter)
 	}
 	if _, err := os.Stat(l.mark); err != nil {
@@ -174,16 +175,16 @@ func TestADiskWithNoRoomLeftOnlyChecksTheFileSystem(t *testing.T) {
 	}
 }
 
-func TestNothingIsDoneWhenTheRootIsNotOnAPartition(t *testing.T) {
+func TestNothingIsDoneWhenTheDataIsNotOnAPartition(t *testing.T) {
 	l := newGrowLab(t, 64, 128)
 	before, _ := os.ReadFile(l.disk)
-	// the root is an overlay or a network share, not a /dev name
-	if out, err := l.run("PEAKROUTE_ROOT_DEV=overlay"); err != nil {
+	// the data file system is an overlay or a network share, not a /dev name
+	if out, err := l.run("PEAKROUTE_DATA_DEV=overlay"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	// or a device with no partition number (a whole disk)
 	os.Remove(l.mark)
-	if out, err := l.run("PEAKROUTE_ROOT_DEV=/dev/fakedisk"); err != nil {
+	if out, err := l.run("PEAKROUTE_DATA_DEV=/dev/fakedisk"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if l.recorded() != "" {
@@ -216,7 +217,7 @@ func TestAFailureIsReportedAndTriedAgain(t *testing.T) {
 
 func TestTheScriptIsPlainShell(t *testing.T) {
 	need(t, "sh")
-	for _, f := range []string{"overlay/usr/lib/peakroute/growroot", "../internal/scripts/hostapd-run.sh"} {
+	for _, f := range []string{"overlay/usr/lib/peakroute/growdata", "../internal/scripts/hostapd-run.sh"} {
 		if out, err := exec.Command("sh", "-n", f).CombinedOutput(); err != nil {
 			t.Errorf("%s: %v\n%s", f, err, out)
 		}

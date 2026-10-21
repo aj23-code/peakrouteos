@@ -339,6 +339,10 @@ func (m *Manager) IsConfigured() bool {
 // Default fallback version if not set via go build -ldflags
 var BuildVersion = "v0.1.0-dev"
 
+// DefaultUpdateRepo is the GitHub repository ("owner/name") that updates come from unless the administrator chooses another; set at
+// build time (full_build.sh, UPDATE_REPO).
+var DefaultUpdateRepo = ""
+
 // GetBinaryVersion returns BuildVersion as the primary version string,
 // appending git commit details if present in debug build info.
 func GetBinaryVersion() string {

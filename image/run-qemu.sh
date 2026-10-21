@@ -3,7 +3,7 @@
 #
 #   image/run-qemu.sh                 UEFI boot, the web interface forwarded to https://localhost:9443
 #   BOOT=bios image/run-qemu.sh       legacy BIOS boot
-#   DISK=8G image/run-qemu.sh         a bigger disk than the image (the root partition grows to fill it at the first start)
+#   DISK=8G image/run-qemu.sh         a bigger disk than the image (the data partition grows to fill it at the first start)
 #   NICS=3 image/run-qemu.sh          more network ports (the second and later ones are joined by a virtual cable to nothing)
 #
 # The image itself is never written: the machine works on a copy-on-write layer (build/qemu.qcow2) that is thrown away at the start.

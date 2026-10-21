@@ -1,15 +1,16 @@
 #!/bin/sh
-# Makes the root partition fill the disk the image was written to, once (peakroute-growroot.service runs this at the first start).
+# Makes the data partition (the last one, mounted at /data) fill the disk the image was written to, once (peakroute-growdata.service runs
+# this at the first start). docs/updates.md, section 2.
 #
 # The image is a few gigabytes and the disk it is written to is usually bigger: the partition table's backup copy is moved to the end
-# of the disk, the root partition is stretched over the free space behind it, the kernel is told, and the file system is grown while
+# of the disk, the data partition is stretched over the free space behind it, the kernel is told, and the file system is grown while
 # it is mounted. Nothing is lost if any step fails: the next start tries again, and a disk with no room behind the partition is fine.
 #
 # The places it looks can be changed through the environment, which is how the tests run this script.
 
 set -eu
 
-MARK="${PEAKROUTE_GROW_MARK:-/var/lib/peakroute/rootgrown}"
+MARK="${PEAKROUTE_GROW_MARK:-/var/lib/peakroute/datagrown}"
 SYS="${PEAKROUTE_SYS_BLOCK:-/sys/class/block}"
 MIN_SECTORS=2048    # less free space than this (1 MiB) is not worth a change
 
@@ -18,10 +19,10 @@ mark() { mkdir -p "$(dirname "$MARK")" && : > "$MARK"; }
 
 [ -e "$MARK" ] && exit 0
 
-root="${PEAKROUTE_ROOT_DEV:-$(findmnt -n -o SOURCE /)}"
+root="${PEAKROUTE_DATA_DEV:-$(findmnt -n -o SOURCE /data)}"
 case "$root" in
     /dev/*) ;;
-    *) say "the root file system is not on a disk partition ($root): nothing to do"; mark; exit 0 ;;
+    *) say "the data file system is not on a disk partition ($root): nothing to do"; mark; exit 0 ;;
 esac
 
 name="${root#/dev/}"
@@ -47,7 +48,7 @@ if [ "$free" -ge "$MIN_SECTORS" ]; then
     echo ', +' | sfdisk --no-reread --no-tell-kernel -N "$partnum" "$disk" >/dev/null
     partx -u --nr "$partnum" "$disk"
 else
-    say "no free space behind the root partition"
+    say "no free space behind the data partition"
 fi
 
 resize2fs "$root"

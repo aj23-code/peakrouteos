@@ -40,6 +40,7 @@ import (
 	"peakroute/internal/syslogfwd"
 	"peakroute/internal/system"
 	"peakroute/internal/translator"
+	"peakroute/internal/update"
 	"peakroute/internal/wanhealth"
 	"peakroute/internal/wg"
 	"peakroute/internal/wireless"
@@ -457,6 +458,28 @@ func main() {
 	mux.HandleFunc("/api/v1/backup/restore", requireAuth(backupSvc.HandleRestore))
 	mux.HandleFunc("/api/v1/backup/copies/{id}", requireAuth(backupSvc.HandleCopy))
 	mux.HandleFunc("/api/v1/backup/copies/{id}/restore", requireAuth(backupSvc.HandleCopyRestore))
+	// Updates: a new version is written into the other of the two system slots, started on trial and kept (or not) from the web
+	// interface (docs/updates.md)
+	updateSvc := update.New(configDir, config.BuildVersion, config.DefaultUpdateRepo, configSvc.Idle, backupSvc.SaveCopy)
+	if devMode {
+		// no disk with two slots here: a simulated one in the development folder, with sample update files to try the page with
+		if sim, err := update.NewSimulated(filepath.Join(configDir, "update-sim"), config.BuildVersion, configSvc.Idle, backupSvc.SaveCopy); err != nil {
+			log.Printf("Warning: the simulated update slots could not be made: %v", err)
+		} else {
+			updateSvc = sim
+			log.Printf("[+] Updates are simulated: sample update files are in %s", filepath.Join(configDir, "update-sim"))
+		}
+	}
+	go updateSvc.Watch(pollerCtx)
+	mux.HandleFunc("/api/v1/updates", requireAuth(updateSvc.HandleState))
+	mux.HandleFunc("/api/v1/updates/check", requireAuth(updateSvc.HandleCheck))
+	mux.HandleFunc("/api/v1/updates/install", requireAuth(updateSvc.HandleInstall))
+	mux.HandleFunc("/api/v1/updates/cancel", requireAuth(updateSvc.HandleCancel))
+	mux.HandleFunc("/api/v1/updates/upload", requireAuth(updateSvc.HandleUpload))
+	mux.HandleFunc("/api/v1/updates/restart", requireAuth(updateSvc.HandleRestart))
+	mux.HandleFunc("/api/v1/updates/keep", requireAuth(updateSvc.HandleKeep))
+	mux.HandleFunc("/api/v1/updates/revert", requireAuth(updateSvc.HandleRevert))
+	mux.HandleFunc("/api/v1/updates/settings", requireAuth(updateSvc.HandleSettings))
 	netAPI.FirewallCounters = func() (map[string]netapi.Counter, bool) {
 		raw, ok := network.ReadFirewallCounters()
 		if !ok {

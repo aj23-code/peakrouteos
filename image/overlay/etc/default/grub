@@ -1,9 +1,0 @@
-GRUB_DEFAULT=0
-GRUB_TIMEOUT=2
-GRUB_DISTRIBUTOR="PeakRoute"
-GRUB_CMDLINE_LINUX_DEFAULT="quiet"
-# rootwait: a USB or slow disk may not be there yet; both consoles: the screen, and a serial cable (115200 8N1) when there is one
-GRUB_CMDLINE_LINUX="rootwait console=tty0 console=ttyS0,115200n8"
-GRUB_DISABLE_OS_PROBER=true
-GRUB_DISABLE_RECOVERY=true
-GRUB_TERMINAL=console

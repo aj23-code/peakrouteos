@@ -1,0 +1,11 @@
+[Unit]
+Description=PeakRoute OS: go back to the kept version if this one is not kept in time
+ConditionKernelCommandLine=peakroute.trial=1
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/peakroute/trialwatch
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,71 @@
+#!/bin/sh
+# Lays the router's writable state over the read-only system, before systemd starts (docs/updates.md, section 2).
+#
+# The root file system of a slot is read-only. The data partition (label peakroute-data) holds everything that belongs to the router;
+# /etc, /var, /home and /usr/local are overlays with the slot below and the data partition's layer above, so the router sees its own
+# changes and the slot's files it has not changed, and an update of the slot changes only the lower half.
+#
+# If the data partition cannot be used the layers are made in memory instead: the device still starts (on the setup network) but
+# nothing is kept, and /run/peakroute/state says so for the daemon to show.
+
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "${1:-}" in
+    prereqs) prereqs; exit 0 ;;
+esac
+
+. /scripts/functions
+
+DATA=/dev/disk/by-label/peakroute-data
+LAYERS="etc var home usr/local"
+
+say() { echo "peakroute-state: $*" >&2; }
+
+# the partition appears when udev has looked at the disk
+i=0
+while [ ! -b "$DATA" ] && [ "$i" -lt 30 ]; do
+    udevadm settle --timeout=2 2>/dev/null
+    [ -b "$DATA" ] && break
+    sleep 1
+    i=$((i + 1))
+done
+
+mkdir -p /run/peakroute
+persistent=no
+if [ -b "$DATA" ]; then
+    # a power cut can leave it unclean: repair what can be repaired without asking
+    if [ -x /sbin/e2fsck ]; then
+        /sbin/e2fsck -p "$DATA" >/dev/null 2>&1
+        rc=$?
+        [ "$rc" -ge 4 ] && say "the data partition has errors that were not repaired (e2fsck $rc)"
+    fi
+    if mount -t ext4 -o noatime "$DATA" "${rootmnt}/data"; then
+        persistent=yes
+    else
+        say "the data partition could not be mounted"
+    fi
+else
+    say "there is no data partition"
+fi
+
+failed=0
+for l in $LAYERS; do
+    name=$(echo "$l" | tr / -)
+    if [ "$persistent" = yes ]; then
+        base="${rootmnt}/data/overlay/$name"
+    else
+        base="/run/peakroute-state/$name"
+    fi
+    mkdir -p "$base/upper" "$base/work"
+    if ! mount -t overlay overlay -o "lowerdir=${rootmnt}/$l,upperdir=$base/upper,workdir=$base/work" "${rootmnt}/$l"; then
+        say "could not lay $l over the system"
+        failed=1
+    fi
+done
+
+if [ "$persistent" = yes ] && [ "$failed" = 0 ]; then
+    echo persistent > /run/peakroute/state
+else
+    echo volatile > /run/peakroute/state
+fi
+exit 0
