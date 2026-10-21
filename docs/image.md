@@ -56,10 +56,14 @@ the screen on this terminal's serial console (leave with Ctrl-A then X).
   settings (`rootwait`, and the screen and the serial port both as consoles), the initramfs settings (`MODULES=most`: the drivers of
   most storage hardware, not only the build machine's), an empty `interfaces` (the daemon writes it), the host name `peakroute` and the
   console banner that says where the setup page is.
-- **No passwords, no autologin.** Root is locked. The console shows a login prompt that nobody can pass until the welcome page has
+- **No default password, no autologin.** Root is **locked** (`passwd -l`: no password, not even an empty one, can log in as root; there is no
+  account with a known password in the image). The console shows a login prompt that nobody can pass until the welcome page has
   made the administrator, who is then the console login too (with `sudo`). `systemd-firstboot` is masked (it would ask on the console for
   a language and a password), and `machine-id` is empty so that every device makes its own identity at its first start.
 - **No SSH.** It is not in the image.
+- **Known limits.** Until setup is finished the welcome page needs no login, so whoever reaches it first can claim the router (`docs/setup.md`):
+  finish setup before connecting the router to an untrusted network. GRUB has no password and shows a 2-second menu, so someone at the
+  keyboard can start a root shell; as with any router, physical access is full access (the disk can be removed anyway).
 
 ## The first start
 

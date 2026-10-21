@@ -14,7 +14,7 @@ records what the system does, why it is built that way, and what was learned on 
   ISO, no console setup** (decided 2026-10-12): the first thing seen is the welcome page of the web interface. See 7t and
   `docs/image.md`. Booting works by UEFI and legacy BIOS.
 - **First start:** the daemon builds the setup network (192.168.77.1, 7r) and the person sets everything up on the welcome page
-  (`docs/setup.md`); the administrator made there is the console login too. Root has no password.
+  (`docs/setup.md`); the administrator made there is the console login too. Root is locked (no default password; no password of any kind logs in as root).
 - **Daemon:** one static Go binary (`peakroute`) serving the web UI over HTTPS (443; 8443 in dev),
   with embedded templates and static files.
 
@@ -626,7 +626,7 @@ disk needs: `initramfs-tools`, `udev`, `kmod`, `grub-pc-bin` (legacy BIOS), `sud
 `pkill` are used by the daemon and were only there by accident), `gdisk`. Layout (GPT): 1 MiB BIOS boot, 128 MiB EFI system (FAT32,
 `PRESP`), root ext4 (`peakroute-root`). Found by label and UUID, so it can be written to any disk. `image/overlay` is copied over the
 Debian tree (services, sysctl, journald limits, fstab, grub defaults with `rootwait` and both consoles, initramfs `MODULES=most` so the
-drivers are not the build machine's, the console banner that says where the setup page is). **Security:** root is locked (no password in
+drivers are not the build machine's, the console banner that says where the setup page is). **Security:** root is locked (`passwd -l`; there is no default password in
 the image), nothing is signed in on the console, `systemd-firstboot` is masked, `machine-id` is empty so every device makes its own. First
 start: `peakroute-growroot.service` (`/usr/lib/peakroute/growroot`: move the backup GPT with `sgdisk -e`, stretch partition 3 into the free
 space with `sfdisk -N`, `partx -u`, `resize2fs`; once, marker `/var/lib/peakroute/rootgrown`; tested here against a disk image in a file with

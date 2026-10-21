@@ -211,8 +211,8 @@ mount --bind /sys "${ROOTFS_DIR}/sys"
 mount --bind /dev "${ROOTFS_DIR}/dev"
 mount --bind /dev/pts "${ROOTFS_DIR}/dev/pts"
 
-# No password for anyone: root is locked (there is no known password in the image) and the console is not signed in. The
-# administrator made on the welcome page is the only way in, on the web and on the console.
+# No default password for anyone: root is locked (passwd -l: no password of any kind, not even an empty one, can log in as root) and the
+# console is not signed in. The administrator made on the welcome page is the only way in, on the web and on the console.
 chroot "${ROOTFS_DIR}" passwd -l root
 # the host's name servers were only for the download
 : > "${ROOTFS_DIR}/etc/resolv.conf"
