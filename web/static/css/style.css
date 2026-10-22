@@ -1573,6 +1573,11 @@ height: 260px;
 }
 .conn-icon { display: inline-flex; color: var(--text-muted); vertical-align: middle; }
 .conn-icon--wifi { color: var(--accent-blue); }
+/* the count over the Clients table: the header's size, green for the devices that are here and red for the ones that are not */
+.lease-count { font-size: 1.125rem; font-weight: 600; display: flex; align-items: baseline; gap: 0.6rem; }
+.lease-count-online { color: var(--accent-green); }
+.lease-count-offline { color: var(--error-color); }
+.lease-count-none, .lease-count-sep { color: var(--text-muted); }
 .client-status { display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 600; color: var(--text-muted); }
 .client-status--online { color: var(--accent-green); }
 .status-pip { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: currentColor; flex: none; }
