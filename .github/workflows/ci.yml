@@ -1,7 +1,8 @@
 name: checks
+# Run by hand (Actions > checks > Run workflow). It is not run on every push: the release workflow runs ./check.sh before it builds anything,
+# and this one exists to run the tests that need real tools (WireGuard, OpenVPN, dnsmasq) on a clean machine when that is wanted.
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 jobs:
   check:
     runs-on: ubuntu-latest

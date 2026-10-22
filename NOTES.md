@@ -566,7 +566,7 @@ the browser against real `ping` and `tracepath`.
 - **Stale temp files** (`fsutil.SweepStale`): `.name.123.tmp` files older than a minute are removed at start from the daemon's, the
   certificates' and every directory the configuration writes to.
 - **CSP**: `script-src 'self'` (the last inline handler became `data-goto`); `style-src` still allows inline styles.
-- **Checks**: `./check.sh` (gofmt, vet, tests) and `.github/workflows/ci.yml` (installs wireguard-tools, openvpn, nftables so that the end-to-end tests run;
+- **Checks**: `./check.sh` (gofmt, vet, tests) and `.github/workflows/ci.yml` (**run by hand only since 2026-10-22**, `workflow_dispatch`: it was red after v0.9.5-alpha with a failure whose log could not be read without a login and that does not reproduce locally, and the release workflow already runs `check.sh` before building; installs wireguard-tools, openvpn, nftables so that the end-to-end tests run;
   they skip themselves without the tools or user namespaces). No git remote yet.
 
 ## 7q. Backup and restore (built 2026-10-12)

@@ -1,5 +1,5 @@
 #!/bin/sh
-# The checks every change must pass: formatting, vet, and all tests. Run it before committing; the CI workflow runs the same.
+# The checks every change must pass: formatting, vet, and all tests. Run it before committing; the release workflow runs it before it builds, and the checks workflow (run by hand) runs it with the end-to-end tools installed.
 # The tests that need real tools (wg, openvpn, unshare, nft) skip themselves when the machine lacks them.
 set -eu
 cd "$(dirname "$0")"
