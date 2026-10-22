@@ -392,6 +392,7 @@ func main() {
 		return netapi.ClassifyRoutes(network.ParseRoutingTable(data))
 	}
 	mux.HandleFunc("/api/v1/routes", requireAuth(routerOnly(netAPI.HandleRoutes)))
+	mux.HandleFunc("/api/v1/dhcp/reservations", requireAuth(routerOnly(netAPI.HandleReservations)))
 	// Wi-Fi adapters and what they can do (read only)
 	wifi := wireless.Detector{SysClassNet: "/sys/class/net", Run: func(ctx context.Context, name string, args ...string) (string, error) {
 		out, err := exec.CommandContext(ctx, name, args...).Output()

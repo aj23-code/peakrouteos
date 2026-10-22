@@ -4,6 +4,10 @@
 
 window.DHCPServerModule = (function () {
     let cards = [];          // { server, form, errors, message }
+    // the reserved addresses: what the router has in the draft, what the rows show, the errors by "reservations[2].ip", and the devices
+    // that are connected now (to pick from)
+    let resv = { server: [], rows: [], errors: {}, saving: false, devices: [], message: null };
+    let prefill = null;      // a device the Clients page asked to reserve an address for
     let editable = true;
     let busy = false;
     let wired = false;
@@ -131,9 +135,201 @@ window.DHCPServerModule = (function () {
         if (window.ConfigBanner) window.ConfigBanner.refresh();
     }
 
+    // ---------------------------------------------------------------- reserved addresses
+
+    const blankRow = () => ({ name: '', mac: '', ip: '' });
+    const rowOf = (r) => ({ name: r.name || '', mac: r.mac || '', ip: r.ip || '' });
+    const rowNorm = (rows) => JSON.stringify(rows.map(r => [r.name.trim(), r.mac.trim().toLowerCase().replace(/-/g, ':'), r.ip.trim()]));
+    const resvDirty = () => rowNorm(resv.rows.filter(r => !isBlank(r))) !== rowNorm(resv.server.map(rowOf));
+    const isBlank = (r) => !r.name.trim() && !r.mac.trim() && !r.ip.trim();
+    const resvLocked = () => !editable || resv.saving;
+
+    function showResvMessage(text, kind) { resv.message = text ? { text, kind } : null; }
+
+    // the network an address is in, for the label beside the row (the draft's own networks, as the cards above hold them)
+    function networkOf(ip) {
+        const a = ipToInt(ip.trim());
+        if (a === null) return '';
+        for (const c of cards) {
+            const base = ipToInt(c.server.ip), mask = ipToInt(c.server.netmask);
+            if (base !== null && mask !== null && ((a & mask) >>> 0) === ((base & mask) >>> 0)) return c.server.default ? 'LAN' : (c.server.name || c.server.id);
+        }
+        return '';
+    }
+    function ipToInt(s) {
+        const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s || '');
+        if (!m) return null;
+        const p = m.slice(1).map(Number);
+        if (p.some(n => n > 255)) return null;
+        return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
+    }
+
+    function resvFieldHtml(i, field, label, value, attrs) {
+        const err = resv.errors[`reservations[${i}].${field}`];
+        const id = `resv-${i}-${field}`;
+        return `<div class="form-field"><label for="${id}">${label}</label>
+            <input type="text" id="${id}" data-resv-row="${i}" data-resv-field="${field}" value="${escapeHtml(value)}" autocomplete="off" spellcheck="false"${attrs || ''}${err ? ' aria-invalid="true"' : ''}${resvLocked() ? ' disabled' : ''}>
+            ${err ? `<p class="field-error">${escapeHtml(err)}</p>` : ''}</div>`;
+    }
+
+    // a host name from what the device calls itself, or nothing when that is not a valid name
+    function nameFrom(hostname) {
+        const n = (hostname || '').trim();
+        return /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(n) ? n : '';
+    }
+
+    function resvHtml() {
+        const reservedMacs = new Set(resv.rows.map(r => r.mac.trim().toLowerCase().replace(/-/g, ':')));
+        const options = resv.devices.filter(d => !reservedMacs.has((d.mac_address || '').toLowerCase()))
+            .map(d => `<option value="${escapeHtml(d.mac_address)}">${escapeHtml(d.hostname && d.hostname !== 'Unknown Device' ? d.hostname : d.mac_address)} \u00b7 ${escapeHtml(d.ip_address)}</option>`).join('');
+        const dirty = resvDirty();
+        const rows = resv.rows.map((r, i) => {
+            const net = networkOf(r.ip);
+            return `<div class="route-row" data-resv-row="${i}">
+                <div class="route-fields">
+                    ${resvFieldHtml(i, 'name', 'Name', r.name, ' placeholder="Optional, e.g. printer" maxlength="63"')}
+                    ${resvFieldHtml(i, 'mac', 'Hardware address', r.mac, ' placeholder="f8:94:c2:a4:13:a7"')}
+                    ${resvFieldHtml(i, 'ip', 'Address', r.ip, ' placeholder="192.168.1.50" inputmode="decimal"')}
+                </div>
+                <div class="route-controls">
+                    ${net ? `<span class="chip" title="The local network this address is in">${escapeHtml(net)}</span>` : (r.ip.trim() ? '<span class="form-hint">in no network</span>' : '')}
+                    <button type="button" class="cfg-btn cfg-btn--ghost" data-resv-remove="${i}" aria-label="Remove reserved address ${i + 1}"${resvLocked() ? ' disabled' : ''}>Remove</button>
+                </div>
+            </div>`;
+        }).join('');
+        return `<section class="card" id="dhcpsrv-resv-card">
+            <div class="net-card-head"><h2>Reserved addresses</h2>${changedTag()}</div>
+            <p class="form-hint">A device with a reserved address always gets that address from this router, on whichever network it is. This is the better way to give a device a fixed address: it is kept in one place, cannot clash with the addresses handed out to others, and a device reset to its defaults gets it back. The device takes it the next time it asks for an address (when it reconnects or renews, or after you restart it). An address inside or outside the range above both work; the router never gives a reserved address to anyone else.</p>
+            ${rows || '<p class="form-hint">No device has a reserved address yet.</p>'}
+            ${resv.message ? `<div class="form-message${resv.message.kind === 'ok' ? ' form-message--ok' : ''}" role="alert">${escapeHtml(resv.message.text)}</div>` : ''}
+            ${resv.errors.reservations ? `<p class="field-error">${escapeHtml(resv.errors.reservations)}</p>` : ''}
+            <div class="form-actions">
+                <label class="net-picker"><span class="form-hint">Reserve for</span>
+                    <select id="resv-pick" class="role-select" aria-label="Choose a connected device to reserve an address for"${resvLocked() ? ' disabled' : ''}><option value="">a connected device&hellip;</option>${options}</select></label>
+                <button type="button" class="cfg-btn" id="resv-add"${resvLocked() ? ' disabled' : ''}>Add by hand</button>
+                <button type="button" class="cfg-btn" id="resv-reset"${resvLocked() || !dirty ? ' disabled' : ''}>Reset</button>
+                <button type="button" class="cfg-btn cfg-btn--primary" id="resv-save"${resvLocked() || !dirty ? ' disabled' : ''}>Save to draft</button>
+            </div>
+        </section>`;
+    }
+    const changedTag = () => (resv.pending ? '<span class="tag tag-draft">Draft</span>' : '');
+
+    function renderResv() {
+        const box = $('dhcpsrv-reserved');
+        if (box) box.innerHTML = resvHtml();
+    }
+
+    async function loadResv() {
+        const [r, l] = await Promise.all([apiFetch('/api/v1/dhcp/reservations'), apiFetch('/api/v1/dhcp/leases')]);
+        if (r && r.ok) {
+            const data = await r.json();
+            const wasDirty = resvDirty() && resv.rows.length > 0 && !resv.justSaved;
+            resv.server = data.reservations || [];
+            resv.pending = !!data.pending;
+            if (!wasDirty) { resv.rows = resv.server.map(rowOf); resv.errors = {}; }
+            resv.justSaved = false;
+        } else {
+            showResvMessage('The reserved addresses could not be loaded.', 'error');
+        }
+        if (l && l.ok) resv.devices = (await l.json()) || [];
+        addPrefill();
+        renderResv();
+    }
+
+    // the Clients page asked for an address for this device: it keeps the address it has now unless told otherwise
+    function addPrefill() {
+        if (!prefill) return;
+        const d = prefill;
+        prefill = null;
+        const mac = (d.mac || '').toLowerCase();
+        const have = resv.rows.findIndex(r => r.mac.trim().toLowerCase() === mac);
+        if (have < 0) resv.rows.push({ name: nameFrom(d.hostname), mac, ip: d.ip || '' });
+        resv.focusRow = have < 0 ? resv.rows.length - 1 : have;
+    }
+
+    async function saveResv() {
+        resv.errors = {};
+        showResvMessage('');
+        resv.saving = true;
+        renderResv();
+        const body = { reservations: resv.rows.filter(r => !isBlank(r)).map(r => ({ name: r.name.trim(), mac: r.mac.trim(), ip: r.ip.trim() })) };
+        const res = await apiFetch('/api/v1/dhcp/reservations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        resv.saving = false;
+        if (!res) { showResvMessage('The router did not answer. Try again.', 'error'); renderResv(); return; }
+        if (!res.ok) {
+            let err = {};
+            try { err = await res.json(); } catch (e) { /* not JSON */ }
+            // the errors name a row of what was sent: blank rows were left out, so map them back to the rows on screen
+            const shown = resv.rows.map((r, i) => i).filter(i => !isBlank(resv.rows[i]));
+            const general = [];
+            (err.errors || []).forEach(e => {
+                const m = /^reservations\[(\d+)\]\.(\w+)$/.exec(e.field);
+                if (m) {
+                    const key = `reservations[${shown[Number(m[1])] ?? m[1]}].${m[2]}`;
+                    resv.errors[key] = resv.errors[key] ? resv.errors[key] + ' ' + e.message : e.message;
+                } else general.push(e.message);
+            });
+            if (general.length) resv.errors.reservations = general.join(' ');
+            showResvMessage(Object.keys(resv.errors).length ? 'Some reserved addresses need attention.' : (err.error || `Saving failed (${res.status}).`), 'error');
+            renderResv();
+            return;
+        }
+        resv.justSaved = true;
+        showMessage('Saved as a draft. Review and commit it from the bar at the top when you are ready.', 'ok');
+        await loadResv();
+        if (window.ConfigBanner) window.ConfigBanner.refresh();
+    }
+
+    function wireResv() {
+        const box = $('dhcpsrv-reserved');
+        box.addEventListener('input', (e) => {
+            const i = e.target.dataset.resvRow, f = e.target.dataset.resvField;
+            if (i === undefined || !f) return;
+            resv.rows[Number(i)][f] = e.target.value;
+            delete resv.errors[`reservations[${i}].${f}`];
+            const dirty = resvDirty();
+            $('resv-save').disabled = !dirty || resvLocked();
+            $('resv-reset').disabled = !dirty || resvLocked();
+            if (f === 'ip') {
+                const net = networkOf(e.target.value);
+                const chip = e.target.closest('.route-row').querySelector('.route-controls .chip, .route-controls .form-hint');
+                if (chip) { chip.textContent = net || 'in no network'; }
+            }
+        });
+        box.addEventListener('change', (e) => {
+            if (e.target.id !== 'resv-pick' || !e.target.value) return;
+            const d = resv.devices.find(x => (x.mac_address || '').toLowerCase() === e.target.value.toLowerCase());
+            if (d) { prefill = { mac: d.mac_address, ip: d.ip_address, hostname: d.hostname }; addPrefill(); }
+            renderResv();
+            focusRow();
+        });
+        box.addEventListener('click', (e) => {
+            if (e.target.id === 'resv-add') { resv.rows.push(blankRow()); resv.focusRow = resv.rows.length - 1; renderResv(); focusRow(); return; }
+            if (e.target.id === 'resv-save') { saveResv(); return; }
+            if (e.target.id === 'resv-reset') { resv.rows = resv.server.map(rowOf); resv.errors = {}; showResvMessage(''); renderResv(); return; }
+            const rm = e.target.closest('[data-resv-remove]');
+            if (rm) { resv.rows.splice(Number(rm.dataset.resvRemove), 1); resv.errors = {}; renderResv(); }
+        });
+    }
+
+    function focusRow() {
+        if (resv.focusRow === undefined) return;
+        const i = resv.focusRow;
+        resv.focusRow = undefined;
+        const el = $(`resv-${i}-${resv.rows[i] && resv.rows[i].mac ? 'ip' : 'mac'}`);
+        if (el) { el.scrollIntoView({ block: 'center' }); el.focus(); }
+    }
+
+    // called by the Clients page: reserve an address for this device (it keeps the one it has)
+    function reserve(device) {
+        prefill = device;
+        if (typeof loadView === 'function') loadView('dhcp-server');
+    }
+
     function wire() {
         if (wired) return;
         wired = true;
+        wireResv();
         const body = $('dhcpsrv-list');
         const find = (id) => cards.find(c => c.server.id === id);
         body.addEventListener('change', (e) => {
@@ -171,9 +367,10 @@ window.DHCPServerModule = (function () {
         wire();
         showMessage('');
         cards = [];
-        load();
+        // the networks first: the rows below show which network an address is in
+        load().then(loadResv);
         return () => {};
     }
 
-    return { init };
+    return { init, reserve };
 })();

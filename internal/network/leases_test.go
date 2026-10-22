@@ -100,3 +100,18 @@ func TestLeasesSayWhichLocalNetworkTheyAreOn(t *testing.T) {
 		t.Errorf("networks %q, want %q", got, want)
 	}
 }
+
+func TestLeasesSayWhetherTheDeviceHasAReservedAddress(t *testing.T) {
+	cfg := config.NetworkConfig{
+		LanIP: "192.168.1.1", LanSubnet: "255.255.255.0",
+		Reservations: []config.Reservation{{MAC: "f8:94:c2:a4:13:a7", IP: "192.168.1.50"}},
+	}
+	leases := []ClientLease{
+		{MACAddress: "F8:94:C2:A4:13:A7", IPAddress: "192.168.1.119"}, // still holds a dynamic address
+		{MACAddress: "48:b0:2d:f1:fe:ca", IPAddress: "192.168.1.120"},
+	}
+	LabelNetworks(leases, cfg)
+	if !leases[0].Reserved || leases[0].Reservation != "192.168.1.50" || leases[1].Reserved || leases[1].Reservation != "" {
+		t.Errorf("%+v", leases)
+	}
+}

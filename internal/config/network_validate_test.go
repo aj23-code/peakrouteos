@@ -272,3 +272,51 @@ func TestNonContiguousNetmaskGetsAMeaningfulMessage(t *testing.T) {
 		}
 	}
 }
+
+func TestReservationRules(t *testing.T) {
+	with := func(rs ...Reservation) NetworkConfig {
+		c := validNet()
+		c.Reservations = rs
+		return c
+	}
+	good := Reservation{MAC: "f8:94:c2:a4:13:a7", IP: "192.168.1.50", Name: "printer"}
+	if err := with(good).Validate(); err != nil {
+		t.Fatalf("a good reservation was refused: %v", err)
+	}
+	// inside the dynamic range is fine too (the server then never hands that address to anyone else)
+	if err := with(Reservation{MAC: "f8:94:c2:a4:13:a7", IP: "192.168.1.150"}).Validate(); err != nil {
+		t.Fatalf("inside the range: %v", err)
+	}
+	for name, c := range map[string]struct {
+		cfg   NetworkConfig
+		field string
+	}{
+		"not a MAC":             {with(Reservation{MAC: "nope", IP: "192.168.1.50"}), "reservations[0].mac"},
+		"a multicast MAC":       {with(Reservation{MAC: "01:00:5e:00:00:01", IP: "192.168.1.50"}), "reservations[0].mac"},
+		"an upper case MAC":     {with(Reservation{MAC: "F8:94:C2:A4:13:A7", IP: "192.168.1.50"}), "reservations[0].mac"},
+		"the same MAC twice":    {with(good, Reservation{MAC: good.MAC, IP: "192.168.1.51"}), "reservations[1].mac"},
+		"the same address":      {with(good, Reservation{MAC: "48:b0:2d:f1:fe:ca", IP: good.IP}), "reservations[1].ip"},
+		"the same name":         {with(good, Reservation{MAC: "48:b0:2d:f1:fe:ca", IP: "192.168.1.51", Name: "PRINTER"}), "reservations[1].name"},
+		"not an address":        {with(Reservation{MAC: good.MAC, IP: "192.168.1.50/24"}), "reservations[0].ip"},
+		"outside every network": {with(Reservation{MAC: good.MAC, IP: "10.1.1.1"}), "reservations[0].ip"},
+		"the router itself":     {with(Reservation{MAC: good.MAC, IP: "192.168.1.1"}), "reservations[0].ip"},
+		"the network address":   {with(Reservation{MAC: good.MAC, IP: "192.168.1.0"}), "reservations[0].ip"},
+		"the broadcast":         {with(Reservation{MAC: good.MAC, IP: "192.168.1.255"}), "reservations[0].ip"},
+		"a name with a space":   {with(Reservation{MAC: good.MAC, IP: "192.168.1.50", Name: "my printer"}), "reservations[0].name"},
+		"a name ending in -":    {with(Reservation{MAC: good.MAC, IP: "192.168.1.50", Name: "printer-"}), "reservations[0].name"},
+	} {
+		err := c.cfg.Validate()
+		var ve ValidationError
+		if !errors.As(err, &ve) || !ve.Has(c.field) {
+			t.Errorf("%s: no error on %s (%v)", name, c.field, err)
+		}
+	}
+
+	// with the network's DHCP server off, there is nothing to keep the address
+	off := with(good)
+	off.DHCP.Enabled = false
+	var ve ValidationError
+	if err := off.Validate(); !errors.As(err, &ve) || !ve.Has("reservations[0].ip") {
+		t.Errorf("DHCP off: %v", err)
+	}
+}

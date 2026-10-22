@@ -190,7 +190,8 @@ func DiffNetwork(active, candidate NetworkConfig) []Change {
 	changes = append(changes, diffVPN(active, candidate)...)
 	changes = append(changes, diffNetworks(active, candidate)...)
 	changes = append(changes, diffPortNetworks(active, candidate)...)
-	return append(changes, diffRoutes(active.Routes, candidate.Routes)...)
+	changes = append(changes, diffRoutes(active.Routes, candidate.Routes)...)
+	return append(changes, diffReservations(active.Reservations, candidate.Reservations)...)
 }
 
 func onOff(b bool, on, off string) string {
@@ -366,6 +367,46 @@ func diffRoutes(active, candidate []Route) []Change {
 	for _, r := range active {
 		if !seen[key(r)] {
 			changes = append(changes, Change{Field: "routes", Label: label(r), Old: routeText(r), New: "(removed)"})
+		}
+	}
+	return changes
+}
+
+// diffReservations reports one change per reserved address that was added, removed or changed. A reservation is the same one while its
+// device (hardware address) stays; its address and name can change.
+func diffReservations(active, candidate []Reservation) []Change {
+	label := func(r Reservation) string {
+		if r.Name != "" {
+			return "Reserved address for " + r.Name + " (" + r.MAC + ")"
+		}
+		return "Reserved address for " + r.MAC
+	}
+	value := func(r Reservation) string {
+		if r.Name != "" {
+			return text(r.IP) + " (" + r.Name + ")"
+		}
+		return text(r.IP)
+	}
+
+	before := map[string]Reservation{}
+	for _, r := range active {
+		before[r.MAC] = r
+	}
+	var changes []Change
+	seen := map[string]bool{}
+	for _, r := range candidate {
+		seen[r.MAC] = true
+		old, existed := before[r.MAC]
+		switch {
+		case !existed:
+			changes = append(changes, Change{Field: "reservations", Label: label(r), Old: valueNone, New: value(r)})
+		case old != r:
+			changes = append(changes, Change{Field: "reservations", Label: label(r), Old: value(old), New: value(r)})
+		}
+	}
+	for _, r := range active {
+		if !seen[r.MAC] {
+			changes = append(changes, Change{Field: "reservations", Label: label(r), Old: value(r), New: "(removed)"})
 		}
 	}
 	return changes

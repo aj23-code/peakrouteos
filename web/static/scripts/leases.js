@@ -4,6 +4,7 @@ window.DHCPModule = (function () {
     let pollInterval = null;
     let networkFilter = '';   // "" = every network
     let wired = false;
+    let lastLeases = [];      // what the table shows now, for the Reserve links
     let shownNetworks = '';   // the options in the filter now (rebuilt only when they change, or an open list would close every poll)
 
     // How the device is attached, as an icon: Wi-Fi, or an Ethernet plug, and the local network it is on (LAN, IoT, Guest...) beside it. The details (Wi-Fi name and band) are in
@@ -20,6 +21,16 @@ window.DHCPModule = (function () {
             return `<span class="conn-icon" role="img" aria-label="Wired" title="Wired">${ICON_ETHERNET}</span>`;
         }
         return '<span class="form-hint" title="The Wi-Fi side could not be read" aria-label="Unknown">\u2013</span>';
+    }
+
+    // whether the router keeps an address for the device; if not, a link to reserve the one it has
+    function reservedHtml(c) {
+        if (c.reserved) {
+            const moves = c.reservation && c.reservation !== c.ip_address
+                ? `<div class="form-hint">will move to ${escapeHtml(c.reservation)}</div>` : '';
+            return `<div><span class="tag" title="The router always gives this device the same address">Reserved</span></div>${moves}`;
+        }
+        return `<div><a href="#" class="view-all-link" data-reserve="${escapeHtml(c.mac_address)}" title="Always give this device this address">Reserve</a></div>`;
     }
 
     // "5 minutes ago" for a time in Unix seconds
@@ -61,6 +72,7 @@ window.DHCPModule = (function () {
             }
             select.value = networkFilter;
         }
+        lastLeases = all;
         const leases = networkFilter ? all.filter(c => c.network === networkFilter) : all;
         // devices that are here come first
         leases.sort((a, b) => (b.status === 'online') - (a.status === 'online'));
@@ -87,7 +99,7 @@ window.DHCPModule = (function () {
         <tr${c.status === 'offline' ? ' class="row-offline"' : ''}>
         <td>${statusHtml(c)}</td>
         <td><strong>${escapeHtml(c.hostname)}</strong></td>
-        <td>${escapeHtml(c.ip_address)}</td>
+        <td>${escapeHtml(c.ip_address)}${reservedHtml(c)}</td>
         <td><code>${escapeHtml(c.mac_address)}</code></td>
         <td>${connectionHtml(c)}${c.network ? ` <span class="chip" title="The local network this device is on">${escapeHtml(c.network)}</span>` : ''}</td>
         <td>${escapeHtml(c.expiry_text)}</td>
@@ -101,6 +113,14 @@ window.DHCPModule = (function () {
             wired = true;
             const select = document.getElementById('lease-network');
             if (select) select.addEventListener('change', () => { networkFilter = select.value; fetchAllLeases(); });
+            const body = document.getElementById('all-clients-table-body');
+            if (body) body.addEventListener('click', (e) => {
+                const link = e.target.closest('[data-reserve]');
+                if (!link) return;
+                e.preventDefault();
+                const c = lastLeases.find(x => x.mac_address === link.dataset.reserve);
+                if (c && window.DHCPServerModule) window.DHCPServerModule.reserve({ mac: c.mac_address, ip: c.ip_address, hostname: c.hostname });
+            });
         }
         fetchAllLeases();
         // Polls full lease table every 3 seconds while active

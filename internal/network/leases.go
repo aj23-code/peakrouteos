@@ -31,6 +31,10 @@ type ClientLease struct {
 	Band       string `json:"band,omitempty"`
 	// Network is the name of the local network the device's address belongs to ("LAN", "IoT", "Guest"...); empty when it is in none.
 	Network string `json:"network,omitempty"`
+	// Reserved: the DHCP server keeps an address for this device (Settings of the DHCP page); Reservation is that address, which may
+	// differ from the one it holds now until it asks again.
+	Reserved    bool   `json:"reserved,omitempty"`
+	Reservation string `json:"reservation,omitempty"`
 	// Whether the device is here now: "online", "offline" (the lease is still held, the device is gone) or
 	// "unknown" (it cannot be told on this system). LastSeen is when it was last seen, Unix seconds (0: never).
 	Status   string `json:"status"`
@@ -119,7 +123,8 @@ func ReadLeases(paths []string) []ClientLease {
 	return leases
 }
 
-// LabelNetworks says which local network each lease is on: the one whose subnet holds the address. The default network is called LAN.
+// LabelNetworks says which local network each lease is on (the one whose subnet holds the address; the default network is called LAN)
+// and whether the device has an address reserved.
 func LabelNetworks(leases []ClientLease, cfg config.NetworkConfig) {
 	type subnet struct {
 		name string
@@ -142,7 +147,14 @@ func LabelNetworks(leases []ClientLease, cfg config.NetworkConfig) {
 	for _, n := range cfg.Networks {
 		add(n.Name, n.IP, n.Netmask)
 	}
+	reserved := map[string]string{}
+	for _, r := range cfg.Reservations {
+		reserved[strings.ToLower(r.MAC)] = r.IP
+	}
 	for i := range leases {
+		if ip, ok := reserved[strings.ToLower(leases[i].MACAddress)]; ok {
+			leases[i].Reserved, leases[i].Reservation = true, ip
+		}
 		a, err := netip.ParseAddr(leases[i].IPAddress)
 		if err != nil {
 			continue

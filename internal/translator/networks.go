@@ -173,6 +173,7 @@ func renderDnsmasqDHCPNetworks(cfg config.NetworkConfig, lan string) string {
 	for _, n := range cfg.Networks {
 		scope(n.ID, n.IP, n.Netmask, n.DNSServers, n.DHCP)
 	}
+	writeReservations(&b, cfg)
 	return b.String()
 }
 

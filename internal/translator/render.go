@@ -6,6 +6,7 @@ package translator
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"regexp"
 	"strings"
@@ -127,6 +128,9 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 
 	tokens := append([]string{cfg.WanInterface, cfg.LanIP, cfg.LanSubnet}, cfg.LanInterfaces...)
 	if err := ensureSafeWan(cfg); err != nil {
+		return Desired{}, err
+	}
+	if err := ensureSafeReservations(cfg.Reservations); err != nil {
 		return Desired{}, err
 	}
 	if err := ensureSafeFirewall(cfg); err != nil {
@@ -295,6 +299,24 @@ var (
 
 // ensureSafeRoutes is the render-time twin of ensureSafe for routes, whose destinations contain
 // a slash.
+// ensureSafeReservations: the lines of dnsmasq's file are a hardware address, an IPv4 address and a host name, nothing else.
+func ensureSafeReservations(rs []config.Reservation) error {
+	for _, r := range rs {
+		if m, ok := config.NormalizeMAC(r.MAC); !ok || m != r.MAC {
+			return fmt.Errorf("refusing to render an unsafe reserved hardware address %q", r.MAC)
+		}
+		if a, err := netip.ParseAddr(r.IP); err != nil || !a.Is4() || a.String() != r.IP {
+			return fmt.Errorf("refusing to render an unsafe reserved address %q", r.IP)
+		}
+		if r.Name != "" {
+			if err := ensureSafe(r.Name); err != nil || strings.Contains(r.Name, ".") || strings.Contains(r.Name, "_") {
+				return fmt.Errorf("refusing to render an unsafe reserved name %q", r.Name)
+			}
+		}
+	}
+	return nil
+}
+
 func ensureSafeRoutes(routes []config.Route) error {
 	for _, r := range routes {
 		if r.Disabled {
@@ -376,7 +398,20 @@ func renderDnsmasqDHCP(cfg config.NetworkConfig, lan string) string {
 	fmt.Fprintf(&b, "dhcp-range=%s,%s,%s,%s\n", d.RangeStart, d.RangeEnd, cfg.LanSubnet, d.LeaseTime)
 	fmt.Fprintf(&b, "dhcp-option=option:router,%s\n", cfg.LanIP)
 	fmt.Fprintf(&b, "dhcp-option=option:dns-server,%s\n", dnsServerOption(cfg.LanDNSServers, cfg.LanIP))
+	writeReservations(&b, cfg)
 	return b.String()
+}
+
+// writeReservations adds a line for each reserved address: the device with that hardware address always gets that address (and its name
+// in the router's DNS). The values were checked when the configuration was validated; they are plain tokens, and rechecked here.
+func writeReservations(b *strings.Builder, cfg config.NetworkConfig) {
+	for _, r := range cfg.Reservations {
+		line := "dhcp-host=" + r.MAC + "," + r.IP
+		if r.Name != "" {
+			line += "," + r.Name
+		}
+		b.WriteString(line + "\n")
+	}
 }
 
 func renderDnsmasqUpstream(cfg config.NetworkConfig) string {

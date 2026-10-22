@@ -123,6 +123,8 @@ type NetworkConfig struct {
 	LanSubnet     string        `json:"lan_subnet,omitempty"`
 	DHCP          *DHCPConfig   `json:"dhcp,omitempty"`
 	Routes        []Route       `json:"routes,omitempty"`
+	// Addresses kept for particular devices: the DHCP server always gives a device (by its hardware address) the same address
+	Reservations []Reservation `json:"reservations,omitempty"`
 	// Further local networks, and which LAN ports carry them. LanIsolated is the default network's
 	// own isolation switch (the extra networks carry theirs).
 	LanIsolated  bool                    `json:"lan_isolated,omitempty"`
@@ -243,6 +245,10 @@ func (c NetworkConfig) clone() NetworkConfig {
 	}
 	c.LanInterfaces = append([]string(nil), c.LanInterfaces...)
 	c.Routes = append([]Route(nil), c.Routes...)
+	c.Reservations = append([]Reservation(nil), c.Reservations...)
+	if len(c.Reservations) == 0 {
+		c.Reservations = nil
+	}
 	if len(c.Networks) > 0 {
 		nets := make([]Network, len(c.Networks))
 		for i, n := range c.Networks {
