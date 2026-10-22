@@ -236,12 +236,12 @@
 
           <!-- Storage & Firewall States Card -->
           <div class="card">
-            <div class="metric-header">
-              <span class="metric-label">Disk Storage ( Root / )</span>
-              <span id="disk-val" class="metric-subtext">0 GB / 0 GB</span>
-            </div>
-            <div class="progress-track mb-3">
-              <div id="disk-bar" class="progress-fill fill-blue" style="width: 0%"></div>
+            <!-- one bar for each partition (telemetry.js): the root file system, and the data partition when it is a partition of its own -->
+            <div id="disk-list" class="mb-3">
+              <div class="metric-header">
+                <span class="metric-label">Disk</span>
+                <span class="metric-subtext">&ndash;</span>
+              </div>
             </div>
 
             <div class="metric-header">

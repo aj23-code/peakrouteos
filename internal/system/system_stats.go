@@ -27,6 +27,8 @@ type InterfaceStats struct {
 }
 
 type DiskStats struct {
+	Name        string  `json:"name,omitempty"`  // "Root" or "Data"
+	Mount       string  `json:"mount,omitempty"` // where it is mounted
 	TotalMB     uint64  `json:"total_mb"`
 	UsedMB      uint64  `json:"used_mb"`
 	FreeMB      uint64  `json:"free_mb"`
@@ -55,7 +57,8 @@ type SystemStats struct {
 	SwapTotalMB    uint64                    `json:"swap_total_mb"`
 	SwapUsedMB     uint64                    `json:"swap_used_mb"`
 	SwapFreeMB     uint64                    `json:"swap_free_mb"`
-	Disk           DiskStats                 `json:"disk"`
+	Disk           DiskStats                 `json:"disk"`  // the root file system
+	Disks          []DiskStats               `json:"disks"` // each partition the router keeps things on: root, and data when it is a partition of its own
 	StateTable     StateTableInfo            `json:"state_table"`
 	DNSServers     []string                  `json:"dns_servers"`
 	Interfaces     map[string]InterfaceStats `json:"interfaces"`
@@ -245,6 +248,7 @@ func GetSystemStats(src ConfigSource) (SystemStats, error) {
 		stats.CPUTempC = &t
 	}
 	stats.Disk = getDiskUsage("/")
+	stats.Disks = getDisks(statfsOf)
 	stats.StateTable = getStateTableSize()
 	stats.DNSServers = getDNSServers()
 
@@ -563,4 +567,39 @@ func HandleSystemStats(w http.ResponseWriter, r *http.Request, src ConfigSource)
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 
 	json.NewEncoder(w).Encode(stats)
+}
+
+// statfsOf reads the size of the file system a path is on, and its id (two paths with the same id are the same file system).
+func statfsOf(path string) (total, free uint64, id [2]int32, err error) {
+	var stat syscall.Statfs_t
+	if err = syscall.Statfs(path, &stat); err != nil {
+		return 0, 0, id, err
+	}
+	return stat.Blocks * uint64(stat.Bsize), stat.Bfree * uint64(stat.Bsize), [2]int32{stat.Fsid.X__val[0], stat.Fsid.X__val[1]}, nil
+}
+
+// getDisks lists the partitions the router keeps its things on. The root file system is the running system's slot (a few GB, read-only
+// on the image); the data partition (/data) holds everything the router saves and has the rest of the disk. /data is listed only when
+// it is a file system of its own, which it is on the image and is not on a development machine.
+func getDisks(stat func(path string) (total, free uint64, id [2]int32, err error)) []DiskStats {
+	var out []DiskStats
+	var rootID [2]int32
+	for i, d := range []struct{ name, mount string }{{"Root", "/"}, {"Data", "/data"}} {
+		total, free, id, err := stat(d.mount)
+		if err != nil || total == 0 {
+			continue
+		}
+		if i == 0 {
+			rootID = id
+		} else if id == rootID {
+			continue // the same file system as the root: not a partition of its own
+		}
+		used := total - free
+		out = append(out, DiskStats{
+			Name: d.name, Mount: d.mount,
+			TotalMB: total / (1024 * 1024), UsedMB: used / (1024 * 1024), FreeMB: free / (1024 * 1024),
+			UsedPercent: float64(used) / float64(total) * 100.0,
+		})
+	}
+	return out
 }

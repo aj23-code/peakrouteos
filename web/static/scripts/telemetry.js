@@ -140,19 +140,19 @@ if (archMatch) {
             swapBarEl.style.width = `${swapPct}%`;
         }
 
-        // 7. Disk Storage Usage
-        const diskValEl = document.getElementById('disk-val');
-        const diskBarEl = document.getElementById('disk-bar');
-        if (diskValEl && diskBarEl && data.disk) {
-            const diskUsedMB = data.disk.used_mb || 0;
-            const diskTotalMB = data.disk.total_mb || 1;
-            const diskPct = (data.disk.used_percent || 0).toFixed(1);
-
-            const usedGB = (diskUsedMB / 1024).toFixed(1);
-            const totalGB = (diskTotalMB / 1024).toFixed(1);
-
-            diskValEl.innerText = `${usedGB} GB / ${totalGB} GB (${diskPct}%)`;
-            diskBarEl.style.width = `${diskPct}%`;
+        // 7. Disk storage: one bar for each partition (root, and data when it has one of its own)
+        const diskListEl = document.getElementById('disk-list');
+        if (diskListEl && Array.isArray(data.disks) && data.disks.length) {
+            const gb = (mb) => (mb / 1024).toFixed(1);
+            diskListEl.innerHTML = data.disks.map((d, i) => {
+                const pct = (d.used_percent || 0).toFixed(1);
+                const label = `Disk \u2013 ${escapeHtml(d.name || 'Disk')} ( ${escapeHtml(d.mount || '/')} )`;
+                return `<div class="metric-header">
+                    <span class="metric-label">${label}</span>
+                    <span class="metric-subtext">${gb(d.used_mb || 0)} GB / ${gb(d.total_mb || 1)} GB (${pct}%)</span>
+                </div>
+                <div class="progress-track${i < data.disks.length - 1 ? ' mb-3' : ''}"><div class="progress-fill fill-blue" style="width: ${pct}%"></div></div>`;
+            }).join('');
         }
 
         // 8. Firewall State Table (Conntrack)
@@ -203,7 +203,7 @@ if (archMatch) {
 
         tbody.innerHTML = topClients.map(c => `
         <tr>
-        <td><strong>${escapeHtml(c.hostname || 'Unknown')}</strong></td>
+        <td><strong>${escapeHtml(c.hostname || (c.static ? 'Static device' : 'Unknown'))}</strong></td>
         <td>${escapeHtml(c.ip_address || c.ip || '--')}</td>
         <td><code>${escapeHtml(c.mac_address || c.mac || '--')}</code></td>
         <td>${formatBytes(c.total_bytes || 0)}</td>
