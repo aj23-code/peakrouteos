@@ -11,6 +11,8 @@ window.SettingsModule = (function () {
     let clockTimer = null;
     let power = { arming: null, state: null };   // arming: the button pressed once; state: what is happening after it was confirmed
     let powerTimer = null;
+    // the factory reset: open (the password box is shown), the password as typed, an error, and what is happening once it was confirmed
+    let reset = { open: false, password: '', error: '', done: false };
 
     const $ = (id) => document.getElementById(id);
 
@@ -199,6 +201,45 @@ window.SettingsModule = (function () {
         </section>`;
     }
 
+    function resetCard() {
+        if (reset.done) {
+            return `<section class="card" id="settings-reset"><div class="net-card-head"><h2>Factory reset</h2></div>
+                <div class="form-message form-message--ok" role="status">The router is erasing everything it saved and restarting. When it is up again it is a new router: plug a computer into any of its network ports, let it take an address, and open <strong>https://192.168.77.1</strong> to set it up. This page will not come back by itself.</div></section>`;
+        }
+        const lock = locked() ? ' disabled' : '';
+        const form = reset.open ? `
+            <div class="form-grid"><div class="form-field"><label for="settings-reset-password">Your password</label>
+                <input type="password" id="settings-reset-password" value="${escapeHtml(reset.password)}" autocomplete="current-password" spellcheck="false"${lock}></div></div>
+            ${reset.error ? `<p class="field-error" id="settings-reset-error">${escapeHtml(reset.error)}</p>` : ''}
+            <div class="form-actions"><button type="button" class="cfg-btn" id="settings-reset-cancel"${lock}>Cancel</button>
+                <button type="button" class="cfg-btn cfg-btn--danger" id="settings-reset-go"${lock}>Erase everything and restart</button></div>`
+            : `<div class="form-actions"><button type="button" class="cfg-btn cfg-btn--danger" id="settings-reset-open"${lock}>Factory reset&hellip;</button></div>`;
+        return `<section class="card" id="settings-reset">
+            <div class="net-card-head"><h2>Factory reset</h2></div>
+            <p class="form-hint">Erases everything this router saved: its networks, firewall rules, Wi-Fi, VPNs, certificates, history and every administrator account (the console login too), and starts it again as a new router that must be set up from the beginning. The installed version stays. Nothing is kept and this cannot be undone; to keep your settings, make a backup first. This is not possible while a change is being applied or waits for confirmation.</p>
+            ${form}
+        </section>`;
+    }
+
+    async function doReset() {
+        reset.error = '';
+        if (!reset.password) { reset.error = 'Enter your password to confirm.'; render(); return; }
+        showMessage('');
+        busy = true; render();
+        const res = await apiFetch('/api/v1/system/factory-reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: reset.password }) });
+        busy = false;
+        reset.password = '';
+        if (!res || !res.ok) {
+            let e = {};
+            try { e = res ? await res.json() : {}; } catch (x) { /* not JSON */ }
+            reset.error = (e.errors || []).map(x => x.message).join(' ') || e.error || 'The request could not be made.';
+            render();
+            return;
+        }
+        reset.done = true;
+        render();
+    }
+
     async function doPower(action) {
         if (power.arming !== action) {
             power.arming = action;
@@ -258,7 +299,8 @@ window.SettingsModule = (function () {
             '<h2 class="settings-group">Logging</h2>' +
             syslogCard() +
             '<h2 class="settings-group">Power</h2>' +
-            powerCard();
+            powerCard() +
+            resetCard();
         keys.concat('time', 'syslog').forEach(updateButton);
         startClock();
     }
@@ -411,6 +453,7 @@ window.SettingsModule = (function () {
             }
         });
         body.addEventListener('input', (e) => {
+            if (e.target.id === 'settings-reset-password') { reset.password = e.target.value; reset.error = ''; const err = $('settings-reset-error'); if (err) err.remove(); return; }
             if (e.target.dataset.sl === 'host' || e.target.dataset.sl === 'port') {
                 syslogEdit().servers[Number(e.target.dataset.i)][e.target.dataset.sl] = e.target.value;
                 clearErrors(`sl-error-${e.target.dataset.i}`, 'sl-error');
@@ -433,6 +476,9 @@ window.SettingsModule = (function () {
             if (e.target.id === 'settings-time-save') { saveTime(); return; }
             if (e.target.id === 'settings-syslog-save') { saveSyslog(); return; }
             if (e.target.classList.contains('settings-power-btn')) { doPower(e.target.dataset.action); return; }
+            if (e.target.id === 'settings-reset-open') { reset.open = true; render(); $('settings-reset-password').focus(); return; }
+            if (e.target.id === 'settings-reset-cancel') { reset = { open: false, password: '', error: '', done: false }; render(); return; }
+            if (e.target.id === 'settings-reset-go') { doReset(); return; }
             if (e.target.id === 'sl-add') {
                 const s = syslogEdit();
                 if (s.servers.length === 0) { s.system = true; s.firewall = true; }
@@ -447,6 +493,7 @@ window.SettingsModule = (function () {
         });
         body.addEventListener('keydown', (e) => {
             if (e.key !== 'Enter' || busy) return;
+            if (e.target.id === 'settings-reset-password') { e.preventDefault(); doReset(); return; }
             const k = keyOf(e.target);
             if (k && dirty(k)) { e.preventDefault(); saveText(k); }
             else if (e.target.id === 'settings-servers' && dirty('time')) { e.preventDefault(); saveTime(); }

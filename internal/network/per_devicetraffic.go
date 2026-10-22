@@ -21,7 +21,8 @@ type TrafficTracker struct {
 	mu       sync.RWMutex
 	macBytes map[string]uint64
 	ipToMac  map[string]string
-	capture  map[string]bool // interfaces a capture is running on
+	capture  map[string]bool      // interfaces a capture is running on
+	retry    map[string]time.Time // when a capture that ended may be started again (a failing one is not tried every ten seconds)
 	mgr      *config.Manager
 	arpPath  string
 }
@@ -40,6 +41,7 @@ func InitTrafficTracker(mgr *config.Manager, ifaceName string) {
 		macBytes: make(map[string]uint64),
 		ipToMac:  make(map[string]string),
 		capture:  make(map[string]bool),
+		retry:    make(map[string]time.Time),
 		mgr:      mgr,
 		arpPath:  "/proc/net/arp",
 	}
@@ -76,10 +78,12 @@ func (t *TrafficTracker) refresh() {
 	}
 	for _, dev := range captureTargets(devs, wan) {
 		t.mu.Lock()
-		running := t.capture[dev]
-		t.capture[dev] = true
+		start := !t.capture[dev] && !time.Now().Before(t.retry[dev])
+		if start {
+			t.capture[dev] = true
+		}
 		t.mu.Unlock()
-		if !running {
+		if start {
 			go t.startPacketCapture(dev)
 		}
 	}
@@ -150,6 +154,9 @@ func (t *TrafficTracker) startPacketCapture(ifaceName string) {
 	defer func() {
 		t.mu.Lock()
 		delete(t.capture, ifaceName)
+		if t.retry != nil {
+			t.retry[ifaceName] = time.Now().Add(time.Minute)
+		}
 		t.mu.Unlock()
 	}()
 

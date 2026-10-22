@@ -39,6 +39,9 @@ type AdminAPI struct {
 	// Power restarts or switches off the machine: action is "reboot" or "poweroff". It returns at once; the action follows
 	// a moment later, so that the answer reaches the browser first.
 	Power func(action string) error
+	// FactoryReset asks for everything the router saved to be erased and restarts it a moment later (nil: this router cannot).
+	// An error is shown to the administrator as it is: it says why nothing was erased.
+	FactoryReset func() error
 	// Console gives the console login its new password hash when the account that is also the console login changes its password
 	// (nil: there is no console login to keep in step).
 	Console interface{ Set(name, hash string) error }
@@ -544,4 +547,46 @@ func (a *AdminAPI) HandlePower(w http.ResponseWriter, r *http.Request) {
 	}
 	a.logf("[+] %s requested by %q", map[string]string{"reboot": "Restart", "poweroff": "Power off"}[req.Action], info.Username)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": req.Action})
+}
+
+// HandleFactoryReset: POST /api/v1/system/factory-reset {"password": "..."} erases every setting and account and restarts the router,
+// which then starts as a new one. The administrator's own password is asked for again, since a stolen session must not be able to
+// do this, and it is not done while a configuration change is being applied or waits for confirmation.
+func (a *AdminAPI) HandleFactoryReset(w http.ResponseWriter, r *http.Request) {
+	if !method(w, r, http.MethodPost) {
+		return
+	}
+	info, ok := a.admin(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	if a.Attempts != nil && !a.Attempts.Allow(info.Username) {
+		refuse(w, http.StatusTooManyRequests, "Too many attempts. Wait a couple of minutes and try again.")
+		return
+	}
+	if !Authenticate(a.Cfg.Users(), info.Username, req.Password) {
+		refuseField(w, http.StatusBadRequest, "password", "That is not your password.")
+		return
+	}
+	if a.Idle != nil && !a.Idle() {
+		refuse(w, http.StatusConflict, "A change is being applied or is waiting for confirmation. Confirm or revert it first.")
+		return
+	}
+	if a.FactoryReset == nil {
+		refuse(w, http.StatusServiceUnavailable, "This router cannot be reset from here.")
+		return
+	}
+	if err := a.FactoryReset(); err != nil {
+		a.logf("[-] Factory reset requested by %q could not be started: %v", info.Username, err)
+		refuse(w, http.StatusConflict, err.Error())
+		return
+	}
+	a.logf("[+] Factory reset requested by %q: everything saved is erased at the restart", info.Username)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

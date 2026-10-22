@@ -586,6 +586,28 @@ func main() {
 		return nil
 	}
 	mux.HandleFunc("/api/v1/system/power", requireAuth(adminAPI.HandlePower))
+	// A factory reset is done by the initramfs at the next start, before the saved layers are in use (image/overlay/.../peakroute-state):
+	// the daemon only leaves a file on the data partition and restarts. -dev has no such partition, so it only says what it would do.
+	adminAPI.FactoryReset = func() error {
+		if devMode {
+			log.Printf("[dry-run] would ask for a factory reset (a file on the data partition) and restart")
+			return nil
+		}
+		if state, _ := os.ReadFile("/run/peakroute/state"); strings.TrimSpace(string(state)) != "persistent" {
+			return errors.New("This router started without its data partition, so nothing it keeps is saved and a restart already starts it fresh.")
+		}
+		if err := fsutil.WriteFileAtomic("/data/factory-reset", []byte("erase everything the router saved\n"), 0600); err != nil {
+			return errors.New("The reset could not be asked for: the data partition cannot be written.")
+		}
+		go func() {
+			time.Sleep(2 * time.Second)
+			if out, err := runner.Run(context.Background(), "systemctl", "reboot"); err != nil {
+				log.Printf("[-] systemctl reboot failed: %v %s", err, out)
+			}
+		}()
+		return nil
+	}
+	mux.HandleFunc("/api/v1/system/factory-reset", requireAuth(adminAPI.HandleFactoryReset))
 	mux.HandleFunc("/api/v1/dns", requireAuth(routerOnly(netAPI.HandleDNS)))
 	mux.HandleFunc("/api/v1/dns/lookup", requireAuth(netAPI.HandleDNSLookup))
 	mux.HandleFunc("/api/v1/diagnostics", requireAuth(netAPI.HandleDiagnostics))

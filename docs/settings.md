@@ -5,7 +5,7 @@ port. Like the network pages, everything here is saved as a **draft** and applie
 words), except where a section says otherwise. This file is a living document: every commit that changes the page updates it, and
 it is meant to become the settings chapter of the user documentation.
 
-Contents: 1 General (host name, country, local domain), 2 Time, 3 Logging (syslog forwarding), 4 Power (restart, power off), 5 Internals, 6 Not planned.
+Contents: 1 General (host name, country, local domain), 2 Time, 3 Logging (syslog forwarding), 4 Power (restart, power off, factory reset), 5 Internals, 6 Not planned.
 
 ---
 
@@ -96,6 +96,23 @@ them (the firewall log holds 7 days or 100,000 entries; the journal 100 MB).
 **Restart the router** and **Power off**, for administrators. Each button asks twice (the first click turns it into *Click again to
 confirm* for five seconds). They are refused (409) while a configuration change is being applied or waits for confirmation, so a
 restart never cuts a change off halfway; what was committed is kept.
+
+**Factory reset** erases everything the router saved and starts it again as a new one, without reflashing: networks, firewall rules,
+Wi-Fi, VPNs, certificates, history, the host name, and every administrator account, the console login included. The installed version
+(and the other system slot) stay. Not planned: keeping some of it.
+
+- The button opens a box for **the administrator's own password** (a stolen session cannot do it; wrong guesses are rate limited like
+  the password change). Refused (409) while a configuration change is being applied or waits for confirmation.
+- The daemon only writes the file `/data/factory-reset` on the data partition and restarts. The **initramfs** does the erasing at that
+  start (`factory_reset_if_asked` in `/etc/initramfs-tools/scripts/local-bottom/peakroute-state`), before the layers are laid over
+  the system, because they cannot be emptied while in use: it removes `/data/overlay`, then the file, so a power cut in between
+  simply starts the erasing again. Nothing else on the data partition is touched.
+- The router then starts as on its first start: the setup network at `192.168.77.1`, the welcome page. The page says so, and does not
+  come back by itself (the address a computer used may change).
+- A router that started without its data partition (the layers are in memory, `/run/peakroute/state` says `volatile`) refuses: a restart
+  already starts it fresh. `-dev` only logs.
+- Needs an image with the changed initramfs (an update brings it, it is part of the system slot). Before that image runs, the file is
+  written and the restart happens but nothing is erased; the file stays and the *next* start with the new initramfs erases.
 
 - The router answers first and acts two seconds later (`systemctl reboot` or `systemctl poweroff`), so that the page gets its answer.
 - After a restart the page waits until the router has gone away and come back, then reloads by itself. After *Power off* it says to

@@ -21,6 +21,19 @@ LAYERS="etc var home usr/local"
 
 say() { echo "peakroute-state: $*" >&2; }
 
+# A factory reset is asked for by the daemon with a file on the data partition (docs/settings.md), and done here, before anything
+# uses the layers: they cannot be emptied while they are in use. The layers go first and the file last, so a power cut in between
+# starts the wipe again at the next start. Nothing outside the layers is touched (the boot loader and the two system slots stay).
+# factory_reset_if_asked <the data partition's mount point>
+factory_reset_if_asked() {
+    [ -e "$1/factory-reset" ] || return 0
+    say "factory reset: erasing the router's settings and data"
+    rm -rf "$1/overlay"
+    sync
+    rm -f "$1/factory-reset"
+    sync
+}
+
 # the partition appears when udev has looked at the disk
 i=0
 while [ ! -b "$DATA" ] && [ "$i" -lt 30 ]; do
@@ -40,6 +53,7 @@ if [ -b "$DATA" ]; then
         [ "$rc" -ge 4 ] && say "the data partition has errors that were not repaired (e2fsck $rc)"
     fi
     if mount -t ext4 -o noatime "$DATA" "${rootmnt}/data"; then
+        factory_reset_if_asked "${rootmnt}/data"
         persistent=yes
     else
         say "the data partition could not be mounted"

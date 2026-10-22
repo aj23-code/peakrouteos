@@ -40,6 +40,8 @@ by the initramfs (`/etc/initramfs-tools/scripts/local-bottom/peakroute-state`) b
 | `/usr/local` | overlay | the daemon writes small helper scripts here (`peakroute-wg-sync`, `peakroute-ovpn-sync`) |
 | `/data` | the data partition itself | the overlays' upper layers and work directories |
 
+A **factory reset** removes `/data/overlay` (all four layers at once) at the next start; the daemon asks for it with the file `/data/factory-reset` and the initramfs does it before laying the layers (docs/settings.md, section 4).
+
 Files the router has *changed* are in the upper layer and win over the slot's own copy; files it never touched come from the slot. An
 update therefore brings new defaults for everything the router has not changed. A file in `/etc` that the router *has* changed keeps its
 router version after an update: the daemon writes nearly all of its configuration, so this is what we want. (When an image ever needs to

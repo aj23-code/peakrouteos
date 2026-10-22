@@ -111,6 +111,7 @@ func (l *lab) do(who *loggedIn, method, path, body string) reply {
 	mux.HandleFunc(OwnPasswordPath, wrap(l.api.HandleOwnPassword))
 	mux.HandleFunc("/api/v1/session/timeout", wrap(l.api.HandleSessionTimeout))
 	mux.HandleFunc("/api/v1/system/power", wrap(l.api.HandlePower))
+	mux.HandleFunc("/api/v1/system/factory-reset", wrap(l.api.HandleFactoryReset))
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
@@ -868,6 +869,83 @@ func TestTheRouterIsNotRestartedInTheMiddleOfAChange(t *testing.T) {
 	l.api.Power = func(string) error { return errors.New("boom") }
 	n := len(l.logs)
 	if r := l.do(&alice, http.MethodPost, "/api/v1/system/power", `{"action":"reboot"}`); r.code != http.StatusInternalServerError || strings.Contains(r.body, "boom") || len(l.logs) != n {
+		t.Fatalf("%d %s", r.code, r.body)
+	}
+}
+
+func TestAFactoryResetNeedsTheAdministratorsOwnPassword(t *testing.T) {
+	l := newLab(t)
+	called := 0
+	l.api.FactoryReset = func() error { called++; return nil }
+	alice, carol := l.signIn("alice"), l.signIn("carol")
+	const path = "/api/v1/system/factory-reset"
+
+	for name, c := range map[string]struct {
+		who    *loggedIn
+		method string
+		body   string
+		code   int
+	}{
+		"no password":         {&alice, http.MethodPost, `{}`, 400},
+		"a wrong password":    {&alice, http.MethodPost, `{"password":"nope"}`, 400},
+		"another account's":   {&alice, http.MethodPost, `{"password":"` + pwBob + `"}`, 400},
+		"a read-only account": {&carol, http.MethodPost, `{"password":"` + pwCarol + `"}`, 403},
+		"signed out":          {nil, http.MethodPost, `{"password":"` + pwAlice + `"}`, 401},
+		"GET":                 {&alice, http.MethodGet, ``, 405},
+		"a flag too many":     {&alice, http.MethodPost, `{"password":"` + pwAlice + `","now":true}`, 400},
+	} {
+		if r := l.do(c.who, c.method, path, c.body); r.code != c.code {
+			t.Errorf("%s: %d %s", name, r.code, r.body)
+		}
+	}
+	if called != 0 {
+		t.Fatalf("a refused request reset the router (%d)", called)
+	}
+
+	if r := l.do(&alice, http.MethodPost, path, `{"password":"`+pwAlice+`"}`); r.code != http.StatusOK || called != 1 {
+		t.Fatalf("%d %s (%d calls)", r.code, r.body, called)
+	}
+	if !strings.Contains(strings.Join(l.logs, "\n"), `Factory reset requested by "alice"`) {
+		t.Errorf("not logged: %v", l.logs)
+	}
+}
+
+func TestAFactoryResetWaitsForAChangeAndSaysWhyItCannotRun(t *testing.T) {
+	l := newLab(t)
+	alice := l.signIn("alice")
+	const path = "/api/v1/system/factory-reset"
+	body := `{"password":"` + pwAlice + `"}`
+	called := 0
+	l.api.FactoryReset = func() error { called++; return nil }
+	idle := false
+	l.api.Idle = func() bool { return idle }
+	if r := l.do(&alice, http.MethodPost, path, body); r.code != http.StatusConflict || called != 0 {
+		t.Fatalf("%d %s (%d calls)", r.code, r.body, called)
+	}
+	idle = true
+
+	// nothing that can do it
+	l.api.FactoryReset = nil
+	if r := l.do(&alice, http.MethodPost, path, body); r.code != http.StatusServiceUnavailable {
+		t.Fatalf("%d", r.code)
+	}
+	// it cannot, and says why
+	l.api.FactoryReset = func() error { return errors.New("There is nothing saved.") }
+	if r := l.do(&alice, http.MethodPost, path, body); r.code != http.StatusConflict || r.errorText() != "There is nothing saved." {
+		t.Fatalf("%d %s", r.code, r.body)
+	}
+}
+
+func TestAFactoryResetCannotBeUsedToGuessPasswords(t *testing.T) {
+	l := newLab(t)
+	l.api.Attempts = NewRateLimiter(3, time.Minute)
+	l.api.FactoryReset = func() error { return nil }
+	alice := l.signIn("alice")
+	const path = "/api/v1/system/factory-reset"
+	for i := 0; i < 3; i++ {
+		l.do(&alice, http.MethodPost, path, `{"password":"wrong"}`)
+	}
+	if r := l.do(&alice, http.MethodPost, path, `{"password":"`+pwAlice+`"}`); r.code != http.StatusTooManyRequests {
 		t.Fatalf("%d %s", r.code, r.body)
 	}
 }
