@@ -87,6 +87,31 @@ the screen on this terminal's serial console (leave with Ctrl-A then X).
   finish setup before connecting the router to an untrusted network. GRUB has no password and shows a 2-second menu, so someone at the
   keyboard can start a root shell; as with any router, physical access is full access (the disk can be removed anyway).
 
+## The service's limits (decided 2026-10-21)
+
+The daemon runs as root and stays so: it writes the system's network, firewall and DHCP files, restarts services, makes the console
+login, installs updates and restarts the machine, and the files it writes are executable by root (an `up` line in
+`/etc/network/interfaces` runs as root). Splitting it into an unprivileged part and a small root helper would only help if the helper
+rendered and applied the settings itself, which is most of the daemon, so a helper that is told what to write would be root by another
+name. TODO #21 is therefore settled as **limiting what has no use in any of that**, with systemd's own settings in
+`peakroute.service`:
+
+- `NoNewPrivileges`, `RestrictSUIDSGID`, `LockPersonality`, `RestrictRealtime`, `RestrictNamespaces`: nothing it starts can gain more than it
+  has, make setuid files or make namespaces.
+- `ProtectKernelModules`, `ProtectKernelLogs`, `ProtectControlGroups`, `ProtectClock`: no loading modules (the kernel still loads the
+  ones a command needs by itself, such as `wireguard` or `bridge`), reading the kernel log, changing control groups or setting the clock.
+- `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET`: sockets only of the kinds the router uses (the web
+  interface, `ip` and `nft`, systemd, the ARP probe, the DHCP server it starts).
+- `CapabilityBoundingSet` without the capabilities a router never needs (loading modules, raw I/O, tracing other processes, setting the
+  clock, BPF, kernel log, audit control, MAC policy...).
+
+`systemd-analyze security` rates the unit 6.2 (medium) instead of 9.4 (unsafe). None of it changes what the daemon can see or write on
+disk, so none of it can stop it from doing its work in a way a test on a laptop would miss. **Not done, deliberately:** a filesystem
+sandbox (`ProtectSystem=strict` with `ReadWritePaths=` for `/etc`, `/var`, `/home`, `/usr/local`, `/data`, `/run`, `/boot/efi`). The
+state is already on the data partition, so that is the natural line, but it changes how the boot partition is remounted for the update
+and how the layers are seen, and it can only be tried properly by booting an image: do it with a test boot in the virtual machine above,
+and the same applies to anything that later runs from the data partition (plugins, a drop-in for the units).
+
 ## The first start
 
 1. The boot loader starts the kernel with `rootwait` and both consoles.

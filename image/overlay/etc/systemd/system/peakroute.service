@@ -10,5 +10,21 @@ Restart=always
 RestartSec=3
 LimitNOFILE=65536
 
+# Limits on what the daemon (and what it starts) could be made to do if it were ever taken over. It stays root: it writes the system's
+# network files, controls its services and installs updates, so what is limited here is what has no use in any of that. Nothing below
+# changes what it can see or write on disk; a stricter filesystem sandbox is for later (docs/image.md, "The service's limits").
+NoNewPrivileges=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET
+SystemCallArchitectures=native
+CapabilityBoundingSet=~CAP_SYS_MODULE CAP_SYS_RAWIO CAP_SYS_PTRACE CAP_SYS_TIME CAP_SYSLOG CAP_BPF CAP_PERFMON CAP_SYS_PACCT CAP_SYS_TTY_CONFIG CAP_LINUX_IMMUTABLE CAP_MAC_ADMIN CAP_MAC_OVERRIDE CAP_WAKE_ALARM CAP_BLOCK_SUSPEND CAP_AUDIT_CONTROL CAP_AUDIT_READ
+
 [Install]
 WantedBy=multi-user.target
