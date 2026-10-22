@@ -70,6 +70,8 @@ func newGrowLab(t *testing.T, imageMiB, diskMiB int) *growLab {
 		}
 	}
 	fake("findmnt", "echo /dev/fakedata5\n")
+	// the real readlink would follow the label path the mount table can show to the device; here the one link the tests know
+	fake("readlink", `case "$2" in /dev/disk/by-label/peakroute-data) echo /dev/fakedata5 ;; *) echo "$2" ;; esac`+"\n")
 	fake("lsblk", "echo fakedisk\n")
 	fake("partx", `echo "partx $*" >> `+l.calls+"\n")
 	fake("resize2fs", `echo "resize2fs $*" >> `+l.calls+"\n")
@@ -221,5 +223,40 @@ func TestTheScriptIsPlainShell(t *testing.T) {
 		if out, err := exec.Command("sh", "-n", f).CombinedOutput(); err != nil {
 			t.Errorf("%s: %v\n%s", f, err, out)
 		}
+	}
+}
+
+// The initramfs mounts the data partition by its label, so the mount table can name it /dev/disk/by-label/peakroute-data. The script
+// once took that for "not a partition", wrote its mark and grew nothing, so a router flashed to a big disk kept a data partition of
+// about 0.2 GB. It follows the link to the device first now.
+func TestAPartitionNamedByItsLabelIsStillGrown(t *testing.T) {
+	l := newGrowLab(t, 64, 512)
+	out, err := l.run("PEAKROUTE_DATA_DEV=/dev/disk/by-label/peakroute-data")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	start, size := l.partition(5)
+	diskSectors := int64(512<<20) / 512
+	if end := start + size; end > diskSectors-33 || end < diskSectors-33-2048 {
+		t.Fatalf("the data partition was not grown (ends at sector %d of %d): %s", end, diskSectors, out)
+	}
+	if !strings.Contains(l.recorded(), "resize2fs /dev/fakedata5") {
+		t.Fatalf("the file system was not grown:\n%s", l.recorded())
+	}
+}
+
+func TestTheMarkOfTheFirstVersionDoesNotStopTheNewOne(t *testing.T) {
+	data, err := os.ReadFile("overlay/etc/systemd/system/peakroute-growdata.service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script, err := os.ReadFile("overlay/usr/lib/peakroute/growdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// a router that the first version marked done (having done nothing) has /var/lib/peakroute/datagrown: neither the service nor the script
+	// may look at that file
+	if strings.Contains(string(data), "datagrown\n") || strings.Contains(string(script), "datagrown}") || !strings.Contains(string(data), "datagrown2") || !strings.Contains(string(script), "datagrown2") {
+		t.Fatal("the marker is not the new one in both the service and the script")
 	}
 }

@@ -1,6 +1,6 @@
 [Unit]
 Description=PeakRoute OS: grow the data partition to fill the disk (once)
-ConditionPathExists=!/var/lib/peakroute/datagrown
+ConditionPathExists=!/var/lib/peakroute/datagrown2
 RequiresMountsFor=/data
 After=local-fs.target
 Before=peakroute.service

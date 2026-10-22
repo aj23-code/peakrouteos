@@ -10,7 +10,9 @@
 
 set -eu
 
-MARK="${PEAKROUTE_GROW_MARK:-/var/lib/peakroute/datagrown}"
+# datagrown2: the first version of this script wrote datagrown when it did nothing at all (see below), so a router that was marked then
+# gets one more try with this one
+MARK="${PEAKROUTE_GROW_MARK:-/var/lib/peakroute/datagrown2}"
 SYS="${PEAKROUTE_SYS_BLOCK:-/sys/class/block}"
 MIN_SECTORS=2048    # less free space than this (1 MiB) is not worth a change
 
@@ -19,9 +21,14 @@ mark() { mkdir -p "$(dirname "$MARK")" && : > "$MARK"; }
 
 [ -e "$MARK" ] && exit 0
 
-root="${PEAKROUTE_DATA_DEV:-$(findmnt -n -o SOURCE /data)}"
-case "$root" in
-    /dev/*) ;;
+root="${PEAKROUTE_DATA_DEV:-$(findmnt -n -o SOURCE /data | tail -n 1)}"
+# The data partition is mounted by the initramfs by its label, so the mount table can name it /dev/disk/by-label/peakroute-data and not
+# /dev/sda5. Only the real device has a partition number: follow the link first. (Without this the script took the label for "not a
+# partition", wrote its mark and never grew anything: the data partition stayed at the size it has in the image.)
+real="$(readlink -f "$root" 2>/dev/null || true)"
+[ -n "$real" ] || real="$root"
+case "$real" in
+    /dev/*) root="$real" ;;
     *) say "the data file system is not on a disk partition ($root): nothing to do"; mark; exit 0 ;;
 esac
 
