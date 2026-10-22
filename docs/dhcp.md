@@ -25,8 +25,9 @@ ports or Wi-Fi it comes in on. It takes the address the next time it asks (when 
   listed once; the address is a host address inside one of your local networks, not that network's own address, not its network or
   broadcast address, and used once; **the DHCP server of that network must be on**; the name is a host name (letters, digits and hyphens),
   used once. An address inside the dynamic range works too: the server never gives a reserved address to anyone else.
-- A change is committed like any other (it restarts only the DHCP server, for a moment). If a network is deleted or its DHCP server is
-  switched off while a device still has an address reserved in it, the commit is refused and names the address.
+- A change is committed like any other (it restarts only the DHCP server, for a moment). A network cannot be deleted, have its DHCP
+  server switched off or be moved to another subnet while a device still has an address reserved in it: the edit is refused at once and
+  names the address (change or remove the reservation first).
 - The Clients page shows *Reserved* from what is **committed**; a reservation in the draft is shown in the review and on the DHCP page.
 
 ## 3. What is written

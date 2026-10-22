@@ -214,6 +214,23 @@ func errorsForNetwork(err error, index int) error {
 	return out
 }
 
+// withReservations adds to a network edit's own problems the ones it causes for reserved addresses (the DHCP server switched off, the
+// address range moved, a network deleted): the change is refused now, naming the address, instead of failing at commit.
+func withReservations(own error, validated error) error {
+	var out config.ValidationError
+	var ve config.ValidationError
+	if errors.As(own, &ve) {
+		out = append(out, ve...)
+	}
+	for _, e := range ownedErrors(validated, "reservations") {
+		out = append(out, config.FieldError{Field: e.Field, Message: e.Message + "; change it on the DHCP page first"})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func nextNetworkID(c config.NetworkConfig) string {
 	for k := 2; ; k++ {
 		id := fmt.Sprintf("net%d", k)
@@ -289,7 +306,8 @@ func (a *API) putNetwork(w http.ResponseWriter, r *http.Request, id string) {
 			if req.Isolated != nil {
 				n.Isolated = *req.Isolated
 			}
-			return errorsForNetwork(c.Validate(), i)
+			v := c.Validate()
+			return withReservations(errorsForNetwork(v, i), v)
 		}
 		return nil // the id was checked before
 	})
@@ -325,7 +343,8 @@ func (a *API) editDefault(c *config.NetworkConfig, req networkRequest) error {
 	// Only this network's own fields are checked here; the rest of the configuration (the WAN, say)
 	// is checked when the draft is committed. A disabled DHCP server needs no range, so only the
 	// fields that apply are reported. A new address that overlaps another network is reported too.
-	return ownedErrorsOrNil(c.Validate(), "lan_ip", "lan_subnet", "dhcp_range_start", "dhcp_range_end", "dhcp_lease_time", "networks")
+	v := c.Validate()
+	return withReservations(ownedErrorsOrNil(v, "lan_ip", "lan_subnet", "dhcp_range_start", "dhcp_range_end", "dhcp_lease_time", "networks"), v)
 }
 
 func (a *API) deleteNetwork(w http.ResponseWriter, id string) {
@@ -368,6 +387,14 @@ func (a *API) deleteNetwork(w http.ResponseWriter, id string) {
 				if ip, err := netip.ParseAddr(p.ToIP); err == nil && np.Contains(ip) {
 					problems = append(problems, config.FieldError{Field: "firewall",
 						Message: fmt.Sprintf("the port forward %q sends to a device on this network; delete or change it first", p.Name)})
+				}
+			}
+		}
+		for _, r := range c.Reservations {
+			if np, ok := c.NetworkPrefix(id); ok {
+				if ip, err := netip.ParseAddr(r.IP); err == nil && np.Contains(ip) {
+					problems = append(problems, config.FieldError{Field: "reservations",
+						Message: fmt.Sprintf("the address %s is reserved for a device (%s) on this network; remove it on the DHCP page first", r.IP, r.MAC)})
 				}
 			}
 		}
