@@ -18,8 +18,7 @@ name the device gives itself underneath in small type. Type the name and press E
 A nickname is only a label on the router's own pages: it is saved at once, with no draft and no commit, and it changes nothing in the
 system: it is not the DNS name (a reserved address has its own name for that) and is not sent to the device. It is kept by hardware
 address, so it follows the device whatever address it has, and a device that is not connected keeps it. Up to 40 characters, any script,
-no control characters; up to 2000 devices. Only administrators can set one. **Not in a backup** (it is in `client_names.json` in the
-router's configuration directory): a restore onto a new router starts without nicknames.
+no control characters; up to 2000 devices. Only administrators can set one. They are **in a backup** (in the Settings part) and come back at once with a restore (docs/backup.md).
 
 ### Devices with an address of their own
 

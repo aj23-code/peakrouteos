@@ -122,6 +122,67 @@ func (s *Store) Set(mac, name string) error {
 	return nil
 }
 
+// All returns a copy of every nickname, by hardware address.
+func (s *Store) All() map[string]string {
+	if s == nil {
+		return map[string]string{}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[string]string, len(s.names))
+	for k, v := range s.names {
+		out[k] = v
+	}
+	return out
+}
+
+// ParseFile reads the nicknames of a saved file (or of a backup): a JSON object of hardware address to name. Entries that are not
+// valid (a bad address, a name that is too long or has control characters, more than MaxNames) are left out and counted, so that one bad
+// entry never costs the rest; only something that is not such an object is an error.
+func ParseFile(b []byte) (names map[string]string, skipped int, err error) {
+	var raw map[string]string
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return nil, 0, errors.New("the nicknames are not in the form this router writes them")
+	}
+	names = map[string]string{}
+	for mac, name := range raw {
+		m, ok := config.NormalizeMAC(mac)
+		clean, nerr := CleanName(name)
+		if !ok || nerr != nil || clean == "" || len(names) >= MaxNames {
+			skipped++
+			continue
+		}
+		names[m] = clean
+	}
+	return names, skipped, nil
+}
+
+// Replace makes the given nicknames the only ones (checked as ParseFile does, so use its result). The file is written before they count.
+func (s *Store) Replace(names map[string]string) error {
+	next := make(map[string]string, len(names))
+	for mac, name := range names {
+		m, ok := config.NormalizeMAC(mac)
+		clean, err := CleanName(name)
+		if !ok || err != nil || clean == "" || len(next) >= MaxNames {
+			continue
+		}
+		next[m] = clean
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.path != "" {
+		b, err := json.Marshal(next)
+		if err != nil {
+			return err
+		}
+		if err := fsutil.WriteFileAtomic(s.path, b, 0600); err != nil {
+			return errors.New("the nicknames could not be saved")
+		}
+	}
+	s.names = next
+	return nil
+}
+
 type setRequest struct {
 	Name string `json:"name"`
 }

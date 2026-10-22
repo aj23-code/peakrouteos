@@ -36,17 +36,23 @@ const (
 // The files a backup may hold, by path inside it. Nothing else is accepted when a backup is opened.
 const (
 	FileNetwork = "settings/network.json"
-	FileAuth    = "admins/auth.json"
-	FileSys     = "admins/sys.json"
-	certPrefix  = "certificates/"
-	histPrefix  = "history/"
+	// FileNames holds the nicknames of the devices (client_names.json): a label for each hardware address, part of the settings but
+	// restored at once, as they have no commit.
+	FileNames  = "settings/client_names.json"
+	FileAuth   = "admins/auth.json"
+	FileSys    = "admins/sys.json"
+	certPrefix = "certificates/"
+	histPrefix = "history/"
 )
 
 // CertFiles are the files of the certificates section, by name in the certificate directory.
 var CertFiles = []string{"ca.crt", "ca.key", "tls.crt", "tls.key", "custom", "extra-names.json"}
 
 // HistoryFiles are the databases of the history section, by name in the configuration directory.
-var HistoryFiles = []string{"traffic_history.db", "wan_health.db", "firewall_log.db"}
+//
+// client_usage.json (how much each device has used the internet) and client_presence.json (when each was last seen) are history too, but
+// plain files: they are copied as they are, the databases are copied with VACUUM INTO.
+var HistoryFiles = []string{"traffic_history.db", "wan_health.db", "firewall_log.db", "client_usage.json", "client_presence.json"}
 
 const (
 	maxUnpacked = 1 << 30 // what a backup may unpack to
@@ -97,7 +103,7 @@ type Bundle struct {
 
 func allowedPath(p string) bool {
 	switch p {
-	case FileNetwork, FileAuth, FileSys:
+	case FileNetwork, FileNames, FileAuth, FileSys:
 		return true
 	}
 	if rest, ok := strings.CutPrefix(p, certPrefix); ok {
@@ -317,7 +323,7 @@ func snapshotDB(p string) ([]byte, error) {
 func Collect(src Source) (*Bundle, error) {
 	b := &Bundle{Files: map[string][]byte{}}
 	b.Manifest = Manifest{Created: src.Now.Unix(), Hostname: src.Hostname, Software: src.Software, Ports: src.Ports}
-	for p, file := range map[string]string{FileNetwork: "network.json", FileAuth: "auth.json", FileSys: "sys.json"} {
+	for p, file := range map[string]string{FileNetwork: "network.json", FileNames: "client_names.json", FileAuth: "auth.json", FileSys: "sys.json"} {
 		body, ok, err := readIfThere(filepath.Join(src.ConfigDir, file))
 		if err != nil {
 			return nil, fmt.Errorf("reading %s: %w", file, err)
@@ -341,7 +347,13 @@ func Collect(src Source) (*Bundle, error) {
 			if _, err := os.Stat(p); err != nil {
 				continue
 			}
-			body, err := snapshotDB(p)
+			var body []byte
+			var err error
+			if strings.HasSuffix(f, ".json") {
+				body, err = os.ReadFile(p)
+			} else {
+				body, err = snapshotDB(p)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -350,6 +362,11 @@ func Collect(src Source) (*Bundle, error) {
 	}
 	if len(b.Files) == 0 {
 		return nil, errors.New("there is nothing to back up")
+	}
+	// the nicknames are always in a backup, empty if there are none, so that restoring it replaces what the router has instead of
+	// leaving the nicknames of before (a backup from a version without them has no such file, and a restore then leaves them alone)
+	if _, ok := b.Files[FileNames]; !ok {
+		b.Files[FileNames] = []byte("{}")
 	}
 	return b, nil
 }

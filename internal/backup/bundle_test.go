@@ -159,7 +159,11 @@ func TestCollectingFromARouter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(b.Files) != 5 || string(b.Files[FileNetwork]) != `{"wan_interface":"eth0"}` || b.Files["certificates/stray.txt"] != nil || b.Files[histPrefix+"wan_health.db"] != nil {
+	// the nicknames are always in it, empty when there are none
+	if string(b.Files[FileNames]) != "{}" {
+		t.Fatalf("nicknames: %q", b.Files[FileNames])
+	}
+	if len(b.Files) != 6 || string(b.Files[FileNetwork]) != `{"wan_interface":"eth0"}` || b.Files["certificates/stray.txt"] != nil || b.Files[histPrefix+"wan_health.db"] != nil {
 		t.Fatalf("%v", keys(b.Files))
 	}
 	enc, err := b.Encode()

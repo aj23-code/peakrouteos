@@ -10,13 +10,13 @@ restore chapter of the user documentation.
 
 | Section | Contents | When restored |
 |---|---|---|
-| **Settings** | `network.json`: networks, firewall, DNS, VPN (all keys, the OpenVPN authority, devices), DDNS passwords, Wi-Fi, host name, time and syslog settings | becomes the **draft**: reviewed and committed from the bar at the top, with the usual confirmation |
+| **Settings** | `network.json`: ports, networks and their subnets and DHCP servers, **reserved addresses**, routes, firewall, DNS, VPN (all keys, the OpenVPN authority, devices), DDNS passwords, Wi-Fi, host name, time and syslog settings; and `client_names.json`, the **nicknames** of the devices | `network.json` becomes the **draft**: reviewed and committed from the bar at the top, with the usual confirmation. The nicknames come back **at once** (they are only labels, there is nothing to commit) and replace the ones the router has; a backup made before nicknames existed has none and leaves the router's own alone |
 | **Administrators** | `auth.json` (accounts, password hashes, roles, session timeout) and the operating mode from `sys.json` | at once; **everyone is signed out** |
 | **Certificates** | the web authority and its key, the web certificate and its key, the custom marker and extra names (docs/certificates.md) | at once |
-| **History** (off unless asked for) | the traffic, internet quality and firewall log databases | when the router next starts |
+| **History** (off unless asked for) | the traffic, internet quality and firewall log databases, how much each device has used the internet (`client_usage.json`) and when each was last seen (`client_presence.json`) | when the router next starts |
 
 The settings in a backup are the ones that are **running** (the committed `network.json`), never changes still in the draft. Not in a
-backup: web sessions, DHCP leases, presence, the draft, and everything the router can make again from the settings (every generated
+backup: web sessions, DHCP leases, the draft, the update settings and history of this device, and everything the router can make again from the settings (every generated
 file under `/etc`). The machine's own identity (its build, kernel) is not restored.
 
 ## 2. The file

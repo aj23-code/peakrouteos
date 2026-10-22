@@ -16,6 +16,7 @@ import (
 
 	"peakroute/internal/auth"
 	"peakroute/internal/cert"
+	"peakroute/internal/clientnames"
 	"peakroute/internal/config"
 	"peakroute/internal/fsutil"
 )
@@ -37,6 +38,10 @@ type Env struct {
 	Radios func() []string
 	// Editable says whether changes may be made now (not while one is being applied or waits for its confirmation).
 	Editable func() bool
+	// Names holds the nicknames of the devices (nil: there are none to restore to).
+	Names interface {
+		Replace(map[string]string) error
+	}
 	Hostname func() string
 	Software string
 	Now      func() time.Time
@@ -120,6 +125,7 @@ type SettingsReport struct {
 	MissingPorts []string        `json:"missing_ports"` // ports of the backup that this router does not have
 	KeepPorts    bool            `json:"keep_ports"`    // this report is for keeping this router's own port assignments
 	DraftWaits   bool            `json:"draft_waits"`   // there are changes in the draft that restoring the settings replaces
+	Nicknames    int             `json:"nicknames"`     // device nicknames in the backup (restored at once: they are only labels)
 }
 
 // AdminAccount is an account in a backup.
@@ -437,8 +443,22 @@ func (s *Service) settingsReport(b *Bundle, keepPorts bool, choice *PortChoice) 
 	}
 	_, draft := s.Manager.StagedNetworkConfig()
 	r.DraftWaits = draft
+	if names, _, err := parseNames(b); err != nil {
+		r.Problems = append(r.Problems, err.Error())
+	} else {
+		r.Nicknames = len(names)
+	}
 	r.Valid = len(r.Problems) == 0
 	return r
+}
+
+// parseNames reads the nicknames of a backup (none, if it has no file: a backup from a version without them).
+func parseNames(b *Bundle) (map[string]string, int, error) {
+	body, ok := b.Files[FileNames]
+	if !ok {
+		return nil, 0, nil
+	}
+	return clientnames.ParseFile(body)
 }
 
 func parseAuth(b *Bundle) (config.AuthConfig, []Problem) {
@@ -681,6 +701,11 @@ func (s *Service) apply(b *Bundle, o Options, keepCopy bool) (*Result, error) {
 		}
 		restored = cfg
 	}
+	// the nicknames are checked with the settings (they are restored with them), before anything changes
+	names, _, nerr := parseNames(b)
+	if o.Settings && nerr != nil {
+		return nil, fmt.Errorf("the settings cannot be restored: %v", nerr)
+	}
 	var restoredAuth config.AuthConfig
 	if o.Admins {
 		a, problems := parseAuth(b)
@@ -738,6 +763,12 @@ func (s *Service) apply(b *Bundle, o Options, keepCopy bool) (*Result, error) {
 		}
 		res.DraftReplaced = hadDraft
 		res.Done = append(res.Done, Settings)
+		// the nicknames have no commit: they count at once. A backup without the file (an older version's) leaves the router's own alone.
+		if _, has := b.Files[FileNames]; has && s.Names != nil {
+			if err := s.Names.Replace(names); err != nil {
+				res.Done = append(res.Done, "nicknames failed: "+err.Error())
+			}
+		}
 	}
 	if o.History {
 		if err := s.stageHistory(b); err != nil {

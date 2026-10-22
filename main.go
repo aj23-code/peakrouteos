@@ -508,6 +508,7 @@ func main() {
 			return names
 		},
 		Editable: configSvc.Idle,
+		Names:    clientNames,
 		Hostname: func() string { h, _ := os.Hostname(); return h },
 		Software: cfgMgr.SysConfig().PeakRouteBuild,
 	}}
