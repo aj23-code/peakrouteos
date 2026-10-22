@@ -20,7 +20,7 @@ mode**, and it is a draft like every other change: review, commit, confirm.
 - **Wi-Fi works as on a router** (Wireless page): every Wi-Fi network joins the one bridge, whichever local network a leftover setting
   names. An access point can also hold a **link** to another access point over Wi-Fi (Wi-Fi client, *a link into a local network*): with
   no cable at all that is a wireless extender.
-- The pages that only a router has (Clients, Internet, Local Networks, Ports, Routes, Firewall, Services) are not in the menu.
+- The pages that only a router has (Clients and DHCP, Internet, Local Networks, Ports, Routes, Firewall, Services) are not in the menu.
 
 ## The home page
 

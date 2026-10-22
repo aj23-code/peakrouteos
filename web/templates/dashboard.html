@@ -33,7 +33,16 @@
           <a href="#" class="nav-item nav-top active" data-view="overview"><span class="banner-icon">📊</span> Overview</a>
           {{end}}
           {{if eq .SystemMode "ROUTER"}}
-          <a href="#" class="nav-item nav-top" data-view="dhcp"><span class="banner-icon">💻</span> Clients</a>
+          <details class="nav-banner-group">
+            <summary class="nav-banner">
+              <span class="banner-title"><span class="banner-icon">💻</span> Clients</span>
+              <span class="chevron">▸</span>
+            </summary>
+            <div class="folder-content">
+              <a href="#" class="nav-item" data-view="dhcp">Clients</a>
+              <a href="#" class="nav-item" data-view="dhcp-server">DHCP</a>
+            </div>
+          </details>
           {{end}}
 
           {{if eq .SystemMode "ROUTER"}}
@@ -656,6 +665,20 @@
         <datalist id="net-lease-options"><option value="30m"><option value="1h"><option value="6h"><option value="12h"><option value="1d"><option value="7d"></datalist>
       </div>
 
+      <!-- View: DHCP -->
+      <div id="view-dhcp-server" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>DHCP</h1>
+            <p class="subtitle">The server that gives addresses to the devices on each network. The devices that have one are on the <a href="#" data-goto="dhcp">Clients</a> page. Changes are saved as a draft until you commit them.</p>
+          </div>
+        </header>
+
+        <div id="dhcpsrv-message" class="form-message hidden" role="alert"></div>
+        <div id="dhcpsrv-list" class="net-list"></div>
+        <datalist id="dhcpsrv-lease-options"><option value="30m"><option value="1h"><option value="6h"><option value="12h"><option value="1d"><option value="7d"></datalist>
+      </div>
+
       <!-- View: Settings -->
       <div id="view-settings" class="view-section hidden">
         <header class="dash-header">
@@ -930,7 +953,7 @@
         <header class="dash-header">
           <div>
             <h1>Clients</h1>
-            <p class="subtitle">Complete active lease list, static assignments, and host resolution</p>
+            <p class="subtitle">Every device that has an address from this router. The server that gives them is on the <a href="#" data-goto="dhcp-server">DHCP</a> page.</p>
           </div>
         </header>
 
@@ -985,6 +1008,7 @@
   <script src="/static/scripts/internet.js"></script>
   <script src="/static/scripts/ports.js"></script>
   <script src="/static/scripts/networks.js"></script>
+  <script src="/static/scripts/dhcp_server.js"></script>
   <script src="/static/scripts/routes.js"></script>
   <script src="/static/scripts/wireless.js"></script>
   <script src="/static/scripts/settings.js"></script>

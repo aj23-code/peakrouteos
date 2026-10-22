@@ -269,6 +269,11 @@ function loadView(viewName) {
                 activeViewCleanup = window.NetworksModule.init();
             }
             break;
+        case 'dhcp-server':
+            if (window.DHCPServerModule) {
+                activeViewCleanup = window.DHCPServerModule.init();
+            }
+            break;
         default:
             console.warn(`No view module configured for: ${viewName}`);
     }
