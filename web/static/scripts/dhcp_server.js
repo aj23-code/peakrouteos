@@ -137,7 +137,7 @@ window.DHCPServerModule = (function () {
 
     // ---------------------------------------------------------------- reserved addresses
 
-    const blankRow = () => ({ name: '', mac: '', ip: '' });
+    const blankRow = () => ({ name: '', mac: '', ip: '', fresh: true });
     const rowOf = (r) => ({ name: r.name || '', mac: r.mac || '', ip: r.ip || '' });
     const rowNorm = (rows) => JSON.stringify(rows.map(r => [r.name.trim(), r.mac.trim().toLowerCase().replace(/-/g, ':'), r.ip.trim()]));
     const resvDirty = () => rowNorm(resv.rows.filter(r => !isBlank(r))) !== rowNorm(resv.server.map(rowOf));
@@ -185,7 +185,7 @@ window.DHCPServerModule = (function () {
         const dirty = resvDirty();
         const rows = resv.rows.map((r, i) => {
             const net = networkOf(r.ip);
-            return `<div class="route-row" data-resv-row="${i}">
+            return `<div class="route-row${r.fresh ? ' route-row--new' : ''}" data-resv-row="${i}">
                 <div class="route-fields">
                     ${resvFieldHtml(i, 'name', 'Name', r.name, ' placeholder="Optional, e.g. printer" maxlength="63"')}
                     ${resvFieldHtml(i, 'mac', 'Hardware address', r.mac, ' placeholder="f8:94:c2:a4:13:a7"')}
@@ -234,6 +234,7 @@ window.DHCPServerModule = (function () {
         if (l && l.ok) resv.devices = (await l.json()) || [];
         addPrefill();
         renderResv();
+        focusRow();
     }
 
     // the Clients page asked for an address for this device: it keeps the address it has now unless told otherwise
@@ -243,7 +244,7 @@ window.DHCPServerModule = (function () {
         prefill = null;
         const mac = (d.mac || '').toLowerCase();
         const have = resv.rows.findIndex(r => r.mac.trim().toLowerCase() === mac);
-        if (have < 0) resv.rows.push({ name: nameFrom(d.hostname), mac, ip: d.ip || '' });
+        if (have < 0) resv.rows.push({ name: nameFrom(d.hostname), mac, ip: d.ip || '', fresh: true });
         resv.focusRow = have < 0 ? resv.rows.length - 1 : have;
     }
 
@@ -252,6 +253,7 @@ window.DHCPServerModule = (function () {
         showResvMessage('');
         resv.saving = true;
         renderResv();
+        resv.rows.forEach(r => { delete r.fresh; });
         const body = { reservations: resv.rows.filter(r => !isBlank(r)).map(r => ({ name: r.name.trim(), mac: r.mac.trim(), ip: r.ip.trim() })) };
         const res = await apiFetch('/api/v1/dhcp/reservations', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         resv.saving = false;
@@ -312,12 +314,19 @@ window.DHCPServerModule = (function () {
         });
     }
 
+    // brings the row that was just added into view (the card is below the networks, so it would otherwise be off screen) and puts the
+    // cursor in the first thing left to fill in, or on Save when the row is complete
     function focusRow() {
         if (resv.focusRow === undefined) return;
         const i = resv.focusRow;
         resv.focusRow = undefined;
-        const el = $(`resv-${i}-${resv.rows[i] && resv.rows[i].mac ? 'ip' : 'mac'}`);
-        if (el) { el.scrollIntoView({ block: 'center' }); el.focus(); }
+        const row = resv.rows[i];
+        if (!row) return;
+        const missing = !row.name ? 'name' : (!row.mac ? 'mac' : (!row.ip ? 'ip' : ''));
+        const el = missing ? $(`resv-${i}-${missing}`) : $('resv-save');
+        const card = document.querySelector(`#dhcpsrv-reserved [data-resv-row="${i}"]`);
+        if (card) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        if (el) el.focus({ preventScroll: true });
     }
 
     // called by the Clients page: reserve an address for this device (it keeps the one it has)
