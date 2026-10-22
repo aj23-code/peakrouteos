@@ -124,7 +124,10 @@ function viewFromAddress() {
     return allowedView(name) ? name : '';
 }
 
+let currentView = '';   // the page being shown
+
 function loadView(viewName, fromHistory) {
+    currentView = viewName;
     // each page the person goes to is a step for the Back button (going Back itself, or the first page on load, is not)
     if (!fromHistory && allowedView(viewName) && viewFromAddress() !== viewName) {
         history.pushState(null, '', '#' + viewName);
@@ -461,9 +464,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // point's page for an access point
     loadView(viewFromAddress() || homeView(), true);
 
-    // the Back and Forward buttons. A bare "#" (a link that does nothing) is not a place to go to.
-    window.addEventListener('popstate', () => {
+    // the Back and Forward buttons, and an address typed over the current one (browsers send popstate, hashchange or both). A bare "#"
+    // (a link that does nothing) is not a place to go to, and the page that is already showing is left alone.
+    const followAddress = () => {
         if (location.hash === '#') return;
-        loadView(viewFromAddress() || homeView(), true);
-    });
+        const view = viewFromAddress() || homeView();
+        if (view !== currentView) loadView(view, true);
+    };
+    window.addEventListener('popstate', followAddress);
+    window.addEventListener('hashchange', followAddress);
 });

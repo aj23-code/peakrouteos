@@ -1389,7 +1389,7 @@ height: 260px;
     font-family: monospace;
     background: var(--bg-color);
 }
-.form-field a, .form-hint a { color: var(--accent-blue); }
+.form-field a, .form-hint a, .subtitle a, .card-subtitle a { color: var(--accent-blue); }
 
 .tag {
     display: inline-block;
@@ -1574,6 +1574,7 @@ height: 260px;
 .conn-icon { display: inline-flex; color: var(--text-muted); vertical-align: middle; }
 .conn-icon--wifi { color: var(--accent-blue); }
 /* the count over the Clients table: the header's size, green for the devices that are here and grey for the ones that are not */
+#dhcpsrv-reserved .route-row { margin-top: 0.9rem; }
 .route-row--new { outline: 2px solid var(--accent-blue); outline-offset: 4px; border-radius: 8px; }
 .lease-count { font-size: 1.125rem; font-weight: 600; display: flex; align-items: baseline; gap: 0.6rem; }
 .lease-count-online { color: var(--accent-green); }

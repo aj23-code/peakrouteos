@@ -277,7 +277,8 @@ window.DHCPServerModule = (function () {
             return;
         }
         resv.justSaved = true;
-        showMessage('Saved as a draft. Review and commit it from the bar at the top when you are ready.', 'ok');
+        // said in the card itself: the page's own message line is at the top, out of sight from down here
+        showResvMessage('Saved as a draft. Review and commit it from the bar at the top when you are ready.', 'ok');
         await loadResv();
         if (window.ConfigBanner) window.ConfigBanner.refresh();
     }
