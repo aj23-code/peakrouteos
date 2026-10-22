@@ -354,7 +354,7 @@ table ip nat {
     }
 }
 `
-	if got := content(t, netsCfg(open), PathNftables); got != want {
+	if got := withoutUsageTable(content(t, netsCfg(open), PathNftables)); got != want {
 		t.Errorf("nftables:\n%s\nwant:\n%s", got, want)
 	}
 }

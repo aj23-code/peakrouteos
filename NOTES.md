@@ -40,7 +40,7 @@ records what the system does, why it is built that way, and what was learned on 
 | `internal/auth` | sessions, CSRF, login (`Authenticate`), validators, rate limiter, security headers |
 | `internal/fsutil` | crash-safe atomic file writes |
 | `internal/system` | stats (CPU, memory, interfaces), traffic history DB, journal logs |
-| `internal/network` | physical interface discovery, DHCP leases, per-device traffic tracker |
+| `internal/network` | physical interface discovery, DHCP leases, per-device usage (nftables counters, `usage.go`) |
 | `internal/cert` | the web interface's certificate: built-in (own web authority) or uploaded; renewal; the Certificates API |
 | `web/` | HTML templates, CSS, JS (no framework; one module per view) |
 | `buildImage.sh`, `full_build.sh`, `image/` | the disk image (`full_build.sh` builds the binary then the image; `image/overlay` holds the files of the image, `image/run-qemu.sh` tries it in a virtual machine) |
@@ -132,31 +132,7 @@ records what the system does, why it is built that way, and what was learned on 
 - **The page is in the address (2026-10-21):** `loadView` (app.js) pushes `#<view>` (e.g. `#dhcp-server`) when a page is opened, so a refresh, a bookmark and the browser's Back and Forward buttons come back to it; the first load uses the page the address names, else the home page (overview, or the access point's page). Only pages that exist and are in the menu count (`allowedView`; Traffic is allowed on a router though it has no menu entry): anything else falls back to home. A bare `#` (a `href="#"` link that did nothing) is ignored; `popstate` and `hashchange` both go through one handler that leaves the page already showing alone. Checked in the built-in browser (see below).
 - **Looking at the pages in a browser (2026-10-21):** the built-in browser refuses the dev server's self-signed certificate and the Chrome extension was not connected, so a 30-line stand-in (an HTTP proxy on `localhost:8080` in front of `https://localhost:8443`, certificate unchecked, `Secure` dropped from the cookie, the scratch folder only) was used. Seen and working: login, Overview with the Traffic history link, `#dhcp` (Clients: network chips, online/offline count, filter, Reserve, "(reserved, draft)", Unreserve), Reserve opening the DHCP page scrolled to the new outlined row, Save to draft (Draft tag, banner), address-bar navigation. Fixed from what was seen: links in subtitles were dark blue on dark (`.subtitle a`), the outline touched the explanation, the save message was off screen at the top. Screenshots lag the action by a second or two: wait before judging.
 - **Traffic page (2026-10-21):** no longer a top-level sidebar entry (the user saw no use for it there). The page (`view-traffic`, `traffic.js`: per-interface download/upload charts, 5 minutes to 30 days) is unchanged and is reached by a "Traffic history" link on the Overview's internet card and on the Ports page (`data-goto="traffic"`, as the firewall logs are reached). The Internet page keeps its own usage table. To bring the entry back, restore the `nav-top` link in `dashboard.html`.
-- **Per-device usage** (`network/per_devicetraffic.go`) captures packets in userspace (AF_PACKET) and credits each IPv4 frame to the
-  MAC the ARP table gives for its source or destination. Fixed 2026-10-21 (every client showed 0 B on the first hardware boot): it was
-  started once with the LAN interface known *at that moment*, which on a new device is none, so no capture ever ran, and after
-  setup it was never started. Now every ten seconds the ARP table is read and a capture is started on each interface it names
-  (the default network's bridge or port, each network's bridge, the setup bridge), except the internet connection, loopback and
-  tunnels; a capture that loses its interface ends and is started again by the next look. IPv4 only, counts since the daemon
-  started, and it will not scale to gigabit (TODO #22). Tested for real in a namespace (a client on a virtual cable is counted).
-  The Overview's client table has no Status column (its rows never had that cell).
-
-## 7. The staged/commit pipeline (TODO #9, in progress)
-
-Agreed design (2026-10-06):
-
-1. Edits go to `network.json.staged`; a banner shows in every view while there are real uncommitted
-   changes (keyed off the diff, not the existence of a file).
-2. The Staged Changes page lists a field-by-field diff plus a plan: which files change and which
-   services restart.
-3. Commit validates the staged config, writes `network.json`, then the **translator** renders the system
-   files from the JSON and restarts only the services whose file changed.
-4. A **60-second commit-confirm** reverts automatically unless confirmed (needed for changes that
-   can lock the admin out: networking or firewall). Confirming after an IP change means logging in
-   again at the new address (cookies are per host).
-
-Built so far:
-
+- **Per-device usage** (`network/usage.go`; TODO #22, rebuilt 2026-10-21): counted by the kernel, read by the daemon. The nftables file ends with `table inet peakroute_acct` (`translator.renderAccounting`): four sets (`up4`, `down4`, `up6`, `down6`; `flags dynamic,timeout; timeout 10m; size 8192; counter`) and a forward-hook chain at priority 10 (after the firewall, so a dropped packet is not counted; before the masquerade, so a device still has its own address) that adds the sender of traffic going to the internet connection and the receiver of traffic coming from it; each element carries its own byte counter. `UsageTracker.Poll` (every 10 s) runs `nft -j list table inet peakroute_acct` and `ip -j neigh show`, finds each address's hardware address in the neighbour table and adds what the counter grew by (a counter lower than last time is a new one: the whole ruleset is flushed at every reload, and elements expire when idle; an address nobody knows yet is not advanced, so its bytes wait). Totals and the counters last seen are saved to `client_usage.json` (0600) about once a minute and at shutdown, so a daemon restart loses nothing and does not count the kernel's counters twice. It replaces the AF_PACKET capture (one raw socket per interface in the daemon): it covers every port, bridge and VLAN, counts IPv6, needs no capability, and survives restarts. What it counts is the traffic routed between a local network and the internet connection: traffic between local networks, to the router itself and between devices on one network is not (docs/dhcp.md does not promise it). Tests: the parsing and delta rules with a fake runner (`usage_test.go`), the ruleset text and that an access point has none (`translator/usage_test.go`), and real packets in the firewall tests' namespaces (`usage_e2e_test.go`: a device is counted, a blocked one is not, a second look adds nothing, a reload of the ruleset does not lose or double count). The earlier fix of the same day (interfaces from the ARP table) is gone with the capture.
 - **9a** `Validate`, `DHCPConfig`, `DiffNetwork`, `Manager.StagedChanges`.
 - **9b** `internal/translator`:
   - `Render(cfg, mode)` produces `/etc/network/interfaces`, `/etc/nftables.conf`,

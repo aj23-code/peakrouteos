@@ -139,6 +139,7 @@ table ip nat {
     }
 }
 `
+	got = withoutUsageTable(got)
 	if got != want {
 		t.Errorf("the ruleset differs:\n%s\nwant\n%s", got, want)
 	}

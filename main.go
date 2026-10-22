@@ -181,7 +181,10 @@ func main() {
 	loginLimiter = auth.NewRateLimiter(5, 2*time.Minute)
 
 	// Initialize traffic tracking & time-series database
-	network.InitTrafficTracker(cfgMgr, "")
+	// how much each device uses the internet: counted by the firewall's own table and read back here (network/usage.go)
+	usage := network.NewUsageTracker(runner, filepath.Join(configDir, "client_usage.json"))
+	usage.Load()
+	network.GlobalTracker = usage
 	dbPath := filepath.Join(configDir, "traffic_history.db")
 	trafficDB, err := system.NewTrafficDB(dbPath)
 	if err != nil {
@@ -193,6 +196,7 @@ func main() {
 	pollerCtx, cancelPoller := context.WithCancel(context.Background())
 	defer cancelPoller()
 	go startBackgroundNetworkPoller(pollerCtx)
+	go usage.Run(pollerCtx, 10*time.Second)
 
 	// Watch the internet connection: ping the upstream DNS resolver every few seconds
 	healthStore, err := wanhealth.Open(filepath.Join(configDir, "wan_health.db"))

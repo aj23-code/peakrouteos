@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"peakroute/internal/config"
+	"peakroute/internal/network"
 )
 
 // Files the translator owns on the appliance.
@@ -454,5 +455,32 @@ table ip nat {
         oifname "%[2]s" masquerade
     }
 }
-`, lan, cfg.WanDevice(), inputExtra, forwardExtra, mssClamp(cfg), fwParts.input, fwParts.forward, fwParts.preroute)
+%[9]s`, lan, cfg.WanDevice(), inputExtra, forwardExtra, mssClamp(cfg), fwParts.input, fwParts.forward, fwParts.preroute, renderAccounting(cfg))
+}
+
+// UsageTable is the nftables table the per-device usage is counted in (the daemon reads its sets, network/usage.go).
+const UsageTable = network.UsageTable
+
+// renderAccounting counts, in the kernel, how much each device uses the internet connection: one set of addresses for each direction
+// and family, each element with its own counter, filled by the traffic that is routed between a local network and the internet
+// connection. It runs after the firewall (priority 10: a packet the rules drop is not counted), before the masquerade (a device still
+// has its own address), and costs nothing per device until it sends something. The elements expire after ten idle minutes, which
+// bounds the sets; the daemon adds up the counters (and copes with them starting again from zero, which every reload of this file
+// does, as the whole ruleset is flushed first).
+func renderAccounting(cfg config.NetworkConfig) string {
+	wan := cfg.WanDevice()
+	set := func(name, typ string) string {
+		return fmt.Sprintf("    set %s { type %s; flags dynamic,timeout; timeout 10m; size 8192; counter; }\n", name, typ)
+	}
+	return fmt.Sprintf(`
+table inet %[1]s {
+%[2]s%[3]s%[4]s%[5]s    chain forward {
+        type filter hook forward priority 10; policy accept;
+        iifname != "%[6]s" oifname "%[6]s" add @up4 { ip saddr }
+        iifname "%[6]s" oifname != "%[6]s" add @down4 { ip daddr }
+        iifname != "%[6]s" oifname "%[6]s" add @up6 { ip6 saddr }
+        iifname "%[6]s" oifname != "%[6]s" add @down6 { ip6 daddr }
+    }
+}
+`, UsageTable, set("up4", "ipv4_addr"), set("down4", "ipv4_addr"), set("up6", "ipv6_addr"), set("down6", "ipv6_addr"), wan)
 }
