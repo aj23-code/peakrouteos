@@ -6,7 +6,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"peakroute/internal/config"
 )
 
 const leaseFile = `1999999999 aa:bb:cc:00:00:01 192.168.1.10 laptop *
@@ -73,5 +76,27 @@ func TestNoLeaseFileOrAnEmptyOneGivesAnEmptyListNotNull(t *testing.T) {
 		if body, _ := serve(t, paths, nil); body != "[]\n" {
 			t.Errorf("%s: %q", name, body)
 		}
+	}
+}
+
+func TestLeasesSayWhichLocalNetworkTheyAreOn(t *testing.T) {
+	cfg := config.NetworkConfig{
+		LanIP: "192.168.1.1", LanSubnet: "255.255.255.0",
+		Networks: []config.Network{
+			{ID: "net2", Name: "IoT", IP: "10.20.0.1", Netmask: "255.255.255.0"},
+			{ID: "net3", Name: "Guest", IP: "172.16.5.1", Netmask: "255.255.252.0"},
+		},
+	}
+	leases := []ClientLease{
+		{IPAddress: "192.168.1.119"}, {IPAddress: "10.20.0.44"}, {IPAddress: "172.16.7.200"},
+		{IPAddress: "172.16.8.1"}, {IPAddress: "not an address"},
+	}
+	LabelNetworks(leases, cfg)
+	var got []string
+	for _, l := range leases {
+		got = append(got, l.Network)
+	}
+	if want := []string{"LAN", "IoT", "Guest", "", ""}; !reflect.DeepEqual(got, want) {
+		t.Errorf("networks %q, want %q", got, want)
 	}
 }

@@ -5,12 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"peakroute/internal/config"
 )
 
 type ClientLease struct {
@@ -25,6 +29,8 @@ type ClientLease struct {
 	Connection string `json:"connection"`
 	SSID       string `json:"ssid,omitempty"`
 	Band       string `json:"band,omitempty"`
+	// Network is the name of the local network the device's address belongs to ("LAN", "IoT", "Guest"...); empty when it is in none.
+	Network string `json:"network,omitempty"`
 	// Whether the device is here now: "online", "offline" (the lease is still held, the device is gone) or
 	// "unknown" (it cannot be told on this system). LastSeen is when it was last seen, Unix seconds (0: never).
 	Status   string `json:"status"`
@@ -111,6 +117,43 @@ func ReadLeases(paths []string) []ClientLease {
 		return []ClientLease{}
 	}
 	return leases
+}
+
+// LabelNetworks says which local network each lease is on: the one whose subnet holds the address. The default network is called LAN.
+func LabelNetworks(leases []ClientLease, cfg config.NetworkConfig) {
+	type subnet struct {
+		name string
+		net  netip.Prefix
+	}
+	var subnets []subnet
+	add := func(name, ip, mask string) {
+		a, err := netip.ParseAddr(ip)
+		m := net.IPMask(net.ParseIP(mask).To4())
+		if err != nil || m == nil {
+			return
+		}
+		ones, bits := m.Size()
+		if bits == 0 {
+			return
+		}
+		subnets = append(subnets, subnet{name, netip.PrefixFrom(a, ones).Masked()})
+	}
+	add("LAN", cfg.LanIP, cfg.LanSubnet)
+	for _, n := range cfg.Networks {
+		add(n.Name, n.IP, n.Netmask)
+	}
+	for i := range leases {
+		a, err := netip.ParseAddr(leases[i].IPAddress)
+		if err != nil {
+			continue
+		}
+		for _, s := range subnets {
+			if s.net.Contains(a) {
+				leases[i].Network = s.name
+				break
+			}
+		}
+	}
 }
 
 // LeaseHandler serves the active DHCP leases. annotate, when given, fills in how each device is connected and

@@ -666,7 +666,10 @@ func main() {
 	mux.HandleFunc("/api/v1/config/discard", requireAuth(configSvc.HandleDiscard))
 
 	// System DHCP List Endpoint
-	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.LeaseHandler(presenceTracker.Annotate)))
+	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.LeaseHandler(func(ctx context.Context, leases []network.ClientLease) {
+		presenceTracker.Annotate(ctx, leases)
+		network.LabelNetworks(leases, cfgMgr.NetworkConfig())
+	})))
 
 	// Main application routing logic
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
