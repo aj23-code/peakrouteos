@@ -9,6 +9,8 @@ it hands out and the lease time. These are the same settings as on the Local Net
 pages save to the draft and both are committed from the bar at the top. The devices on your networks are listed on
 **Network > Clients**, with the network each is on and, for a device that has an address of its own, the tag **Static** (below).
 
+![The Clients page: networks, online and offline, a reserved address in the draft, and static devices](img/clients.jpg)
+
 ### Devices with an address of their own
 
 The Clients page lists the devices that have a DHCP lease, and also those the router can see on its networks that did not ask it for an
@@ -39,6 +41,8 @@ ports or Wi-Fi it comes in on. It takes the address the next time it asks (when 
   server switched off or be moved to another subnet while a device still has an address reserved in it: the edit is refused at once and
   names the address (change or remove the reservation first).
 - The Clients page shows *Reserved* from what is **committed**; a reservation in the draft is shown in the review and on the DHCP page.
+
+![A reserved address being added from the Clients page](img/reserved-addresses.jpg)
 
 ## 3. What is written
 

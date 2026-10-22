@@ -1,6 +1,6 @@
 # PeakRoute OS DNS
 
-Status (2026-10-11): **stages 1 to 5 built** (the model, the files dnsmasq reads, the API, the page and the lookup test; polish and screenshots are left). This file was written first and every stage's commit updates it. It is meant to become the DNS chapter of the user documentation.
+Status (2026-10-21): **all stages built** (the model, the files dnsmasq reads, the API, the page, the lookup test, and the polish and screenshots). This file was written first and every stage's commit updates it. It is meant to become the DNS chapter of the user documentation.
 
 Contents: 1 What exists today, 2 Two sides: what the router asks, what the devices are told, 3 What each network is told,
 4 The router's own DNS server, 5 The local domain, 6 Local names, 7 Domain forwarding, 8 Staying out of trouble, 9 Recipes,
@@ -106,8 +106,6 @@ under it go to the servers listed (up to three), instead of the upstream servers
 
 ## 9. Recipes
 
-*These become real screenshots and steps once the page exists.*
-
 1. **Use a Pi-hole for the Home network.** DNS page, Home: *Other servers*, `192.168.1.5`. The Pi-hole's own settings decide what
    it asks upstream.
 2. **Reach my server by its name from inside.** Local names: `home.example.com` to `192.168.1.50`.
@@ -116,6 +114,10 @@ under it go to the servers listed (up to three), instead of the upstream servers
 5. **Use short device names.** System, Settings: domain `lan`; then `laptop` works.
 
 ## 10. The page
+
+![The upstream and local DNS cards](img/dns-upstream.jpg)
+
+![The local names and domain forwarding cards](img/dns-names.jpg)
 
 **Services, DNS.** Top to bottom; every change is saved to the draft and applied when you commit, like the rest:
 
@@ -231,7 +233,7 @@ Each stage is its own commit with tests and updates this document.
 3. **API** (done): the DNS settings, the local names, the forwards, per-network choice, the domain on Settings.
 4. **DNS page** (done, Services, DNS) and the domain field on Settings.
 5. **Lookup test** (done), on the Diagnostics page: ask the router a name and see the answer and how long it took.
-6. Polish; screenshots in this document.
+6. Polish and screenshots (done 2026-10-21: the page was looked at in a browser, nothing needed changing; the screenshots are in section 10).
 
 ## 13. Not planned (yet)
 
