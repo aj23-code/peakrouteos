@@ -203,7 +203,7 @@ if (archMatch) {
 
         tbody.innerHTML = topClients.map(c => `
         <tr>
-        <td><strong>${escapeHtml(c.hostname || (c.static ? 'Static device' : 'Unknown'))}</strong></td>
+        <td><strong>${escapeHtml(c.nickname || c.hostname || (c.static ? 'Static device' : 'Unknown'))}</strong></td>
         <td>${escapeHtml(c.ip_address || c.ip || '--')}</td>
         <td><code>${escapeHtml(c.mac_address || c.mac || '--')}</code></td>
         <td>${formatBytes(c.total_bytes || 0)}</td>

@@ -244,7 +244,7 @@ window.DHCPServerModule = (function () {
         prefill = null;
         const mac = (d.mac || '').toLowerCase();
         const have = resv.rows.findIndex(r => r.mac.trim().toLowerCase() === mac);
-        if (have < 0) resv.rows.push({ name: nameFrom(d.hostname), mac, ip: d.ip || '', fresh: true });
+        if (have < 0) resv.rows.push({ name: nameFrom(d.nickname) || nameFrom(d.hostname), mac, ip: d.ip || '', fresh: true });
         resv.focusRow = have < 0 ? resv.rows.length - 1 : have;
     }
 

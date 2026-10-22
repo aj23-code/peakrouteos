@@ -4,6 +4,7 @@ window.DHCPModule = (function () {
     let pollInterval = null;
     let networkFilter = '';   // "" = every network
     let wired = false;
+    let editingMac = null;    // the device whose nickname is being typed: the table is not redrawn under the cursor
     let lastLeases = [];      // what the table shows now, for the Reserve links
     let shownNetworks = '';   // the options in the filter now (rebuilt only when they change, or an open list would close every poll)
 
@@ -21,6 +22,24 @@ window.DHCPModule = (function () {
             return `<span class="conn-icon" role="img" aria-label="Wired" title="Wired">${ICON_ETHERNET}</span>`;
         }
         return '<span class="form-hint" title="The Wi-Fi side could not be read" aria-label="Unknown">\u2013</span>';
+    }
+
+    // The first cell: the nickname (or the name the device gives itself), a pencil to change it, and while it is being changed an input.
+    // The device's own name stays underneath a nickname, small, so that the two can be told apart.
+    function nameCell(c) {
+        const mac = escapeHtml(c.mac_address);
+        if (editingMac === c.mac_address) {
+            return `<td><div class="client-name-edit">
+                <input type="text" class="client-name-input" data-name-input="${mac}" value="${escapeHtml(c.nickname || '')}" placeholder="${escapeHtml(c.hostname || 'Name this device')}" maxlength="40" autocomplete="off" spellcheck="false" aria-label="Nickname">
+                <a href="#" class="view-all-link" data-name-save="${mac}">Save</a> <a href="#" class="view-all-link" data-name-cancel="${mac}">Cancel</a></div></td>`;
+        }
+        const shown = c.nickname || (c.static ? '' : c.hostname);
+        let main = shown ? `<strong>${escapeHtml(shown)}</strong>` : '';
+        if (c.static) main = `<span class="tag" title="This device has an address of its own: it did not ask this router for one">Static</span>` + (shown ? ` ${main}` : '');
+        const sub = c.nickname && c.hostname && c.nickname !== c.hostname
+            ? `<div class="form-hint" title="The name the device gives itself">${escapeHtml(c.hostname)}</div>` : '';
+        const label = escapeHtml(shown || c.mac_address);
+        return `<td>${main} <button type="button" class="client-rename" data-rename="${mac}" title="${c.nickname ? 'Change the nickname' : 'Give this device a nickname'}" aria-label="Rename ${label}">&#9998;</button>${sub}</td>`;
     }
 
     // a device that was seen on another network than its address says (the wrong VLAN, or a wrong address of its own)
@@ -51,6 +70,32 @@ window.DHCPModule = (function () {
         box.textContent = text || '';
         box.classList.toggle('hidden', !text);
         box.classList.toggle('form-message--ok', kind === 'ok');
+    }
+
+    // Starts, ends or saves the typing of a nickname. A nickname is only a label: it is saved at once, and nothing else changes.
+    async function saveName(mac, name) {
+        showMessage('');
+        const res = await apiFetch('/api/v1/clients/' + encodeURIComponent(mac) + '/name', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+        });
+        if (!res || !res.ok) {
+            let err = {};
+            try { err = res ? await res.json() : {}; } catch (e) { /* not JSON */ }
+            showMessage(err.error || 'The nickname could not be saved.', 'error');
+            return false;
+        }
+        return true;
+    }
+
+    // saves what is typed in the nickname box, then shows the table again with the new name
+    async function finishName(body) {
+        const input = body.querySelector('[data-name-input]');
+        if (!input) return;
+        const mac = input.dataset.nameInput;
+        if (await saveName(mac, input.value)) {
+            editingMac = null;
+            await fetchAllLeases();
+        }
     }
 
     // takes the device out of the draft's list of reserved addresses (nothing changes until it is committed)
@@ -97,8 +142,12 @@ window.DHCPModule = (function () {
     async function fetchAllLeases() {
         const res = await apiFetch('/api/v1/dhcp/leases');
         if (!res || !res.ok) return;
+        draw((await res.json()) || [], false);
+    }
 
-        const all = (await res.json()) || [];
+    // Draws the table from a list. While a nickname is being typed the rows are left alone (they would be redrawn under the cursor every
+    // three seconds); starting and ending the typing redraws them from the last list that was read (force).
+    function draw(all, force) {
         // the filter lists the networks that have a device; one that no longer has any goes back to "all"
         const networks = [...new Set(all.map(c => c.network).filter(Boolean))].sort();
         if (networkFilter && !networks.includes(networkFilter)) networkFilter = '';
@@ -129,7 +178,7 @@ window.DHCPModule = (function () {
                 : `${leases.length} ${leases.length === 1 ? 'device' : 'devices'}`;
         }
 
-        if (!tbody) return;
+        if (!tbody || (editingMac && !force)) return;
 
         if (!leases || leases.length === 0) {
             tbody.innerHTML = `<tr><td colspan="7" class="table-placeholder">No devices have an address from this router yet.</td></tr>`;
@@ -139,7 +188,7 @@ window.DHCPModule = (function () {
         tbody.innerHTML = leases.map(c => `
         <tr${c.status === 'offline' ? ' class="row-offline"' : ''}>
         <td>${statusHtml(c)}</td>
-        <td>${c.static ? `<span class="tag" title="This device has an address of its own: it did not ask this router for one">Static</span>` : `<strong>${escapeHtml(c.hostname)}</strong>`}</td>
+        ${nameCell(c)}
         <td>${escapeHtml(c.ip_address)}${reservedHtml(c)}</td>
         <td><code>${escapeHtml(c.mac_address)}</code></td>
         <td>${connectionHtml(c)}${c.network ? ` <span class="chip" title="The local network this device is on">${escapeHtml(c.network)}</span>` : ''}${seenOnHtml(c)}</td>
@@ -150,19 +199,38 @@ window.DHCPModule = (function () {
     }
 
     function init() {
+        editingMac = null;
         if (!wired) {
             wired = true;
             const select = document.getElementById('lease-network');
             if (select) select.addEventListener('change', () => { networkFilter = select.value; fetchAllLeases(); });
             const body = document.getElementById('all-clients-table-body');
+            if (body) body.addEventListener('keydown', (e) => {
+                if (!e.target.matches || !e.target.matches('[data-name-input]')) return;
+                if (e.key === 'Enter') { e.preventDefault(); finishName(body); }
+                if (e.key === 'Escape') { e.preventDefault(); editingMac = null; draw(lastLeases, true); }
+            });
             if (body) body.addEventListener('click', (e) => {
+                const rn = e.target.closest('[data-rename]');
+                if (rn) {
+                    e.preventDefault();
+                    editingMac = rn.dataset.rename;
+                    draw(lastLeases, true);
+                    const input = body.querySelector('[data-name-input]');
+                    if (input) { input.focus(); input.select(); }
+                    return;
+                }
+                const cancel = e.target.closest('[data-name-cancel]');
+                if (cancel) { e.preventDefault(); editingMac = null; draw(lastLeases, true); return; }
+                const save = e.target.closest('[data-name-save]');
+                if (save) { e.preventDefault(); finishName(body); return; }
                 const un = e.target.closest('[data-unreserve]');
                 if (un) { e.preventDefault(); unreserve(un.dataset.unreserve); return; }
                 const link = e.target.closest('[data-reserve]');
                 if (!link) return;
                 e.preventDefault();
                 const c = lastLeases.find(x => x.mac_address === link.dataset.reserve);
-                if (c && window.DHCPServerModule) window.DHCPServerModule.reserve({ mac: c.mac_address, ip: c.ip_address, hostname: c.hostname });
+                if (c && window.DHCPServerModule) window.DHCPServerModule.reserve({ mac: c.mac_address, ip: c.ip_address, hostname: c.hostname, nickname: c.nickname });
             });
         }
         fetchAllLeases();

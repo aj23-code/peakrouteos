@@ -11,6 +11,16 @@ pages save to the draft and both are committed from the bar at the top. The devi
 
 ![The Clients page: networks, online and offline, a reserved address in the draft, and static devices](img/clients.jpg)
 
+### Nicknames
+
+The pencil beside a device's name on the Clients page gives it a **nickname**, shown first (and on the Overview's Top Clients), with the
+name the device gives itself underneath in small type. Type the name and press Enter (Escape cancels; an empty name removes the nickname).
+A nickname is only a label on the router's own pages: it is saved at once, with no draft and no commit, and it changes nothing in the
+system: it is not the DNS name (a reserved address has its own name for that) and is not sent to the device. It is kept by hardware
+address, so it follows the device whatever address it has, and a device that is not connected keeps it. Up to 40 characters, any script,
+no control characters; up to 2000 devices. Only administrators can set one. **Not in a backup** (it is in `client_names.json` in the
+router's configuration directory): a restore onto a new router starts without nicknames.
+
 ### Devices with an address of their own
 
 The Clients page lists the devices that have a DHCP lease, and also those the router can see on its networks that did not ask it for an

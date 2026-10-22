@@ -26,6 +26,7 @@ import (
 	"peakroute/internal/backup"
 	"peakroute/internal/bootstrap"
 	"peakroute/internal/cert"
+	"peakroute/internal/clientnames"
 	"peakroute/internal/config"
 	"peakroute/internal/console"
 	"peakroute/internal/ddns"
@@ -422,6 +423,11 @@ func main() {
 	}}
 	mux.HandleFunc("/api/v1/wireless", requireAuth(wifi.Handler))
 	stations := &wireless.StationCache{Detector: wifi, TTL: 2 * time.Second}
+	// Nicknames for the devices in the client list: only labels, saved at once, kept in a file of their own (internal/clientnames)
+	clientNames := clientnames.New(filepath.Join(configDir, "client_names.json"))
+	clientNames.Load()
+	mux.HandleFunc("/api/v1/clients/{mac}/name", requireAuth(routerOnly(clientNames.HandleName)))
+
 	// The devices to list: those with a DHCP lease, and those the router sees on its networks that have an address of their own (the
 	// neighbour table). -dev has no real neighbours, so it shows two samples: one with an address from the wrong network.
 	clientList := func(ctx context.Context) []network.ClientLease {
@@ -723,6 +729,9 @@ func main() {
 	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.LeaseHandler(func(ctx context.Context) []network.ClientLease { return clientList(ctx) }, func(ctx context.Context, leases []network.ClientLease) {
 		presenceTracker.Annotate(ctx, leases)
 		active := cfgMgr.NetworkConfig()
+		for i := range leases {
+			leases[i].Nickname = clientNames.Get(leases[i].MACAddress)
+		}
 		network.LabelNetworks(leases, active)
 		if draft, ok := cfgMgr.StagedNetworkConfig(); ok {
 			network.MarkReservationChanges(leases, active, draft)

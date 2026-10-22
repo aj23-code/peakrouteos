@@ -1576,6 +1576,11 @@ height: 260px;
 /* the count over the Clients table: the header's size, green for the devices that are here and grey for the ones that are not */
 #dhcpsrv-reserved .route-row { margin-top: 0.9rem; }
 .route-row--new { outline: 2px solid var(--accent-blue); outline-offset: 4px; border-radius: 8px; }
+.client-rename { background: none; border: 0; color: var(--text-muted); cursor: pointer; padding: 0 0.25rem; font-size: 0.9rem; opacity: 0.7; }
+.client-rename:hover, .client-rename:focus-visible { color: var(--accent-blue); opacity: 1; }
+.client-name-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.client-name-input { background: var(--bg-color); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 0.4rem; padding: 0.35rem 0.55rem; font-size: 0.9rem; width: 10rem; max-width: 100%; }
+.client-name-input:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 1px; }
 .lease-count { font-size: 1.125rem; font-weight: 600; display: flex; align-items: baseline; gap: 0.6rem; }
 .lease-count-online { color: var(--accent-green); }
 .lease-count-offline, .lease-count-sep { color: var(--text-muted); }

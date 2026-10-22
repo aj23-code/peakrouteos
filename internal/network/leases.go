@@ -21,6 +21,8 @@ type ClientLease struct {
 	MACAddress string `json:"mac_address"`
 	IPAddress  string `json:"ip_address"`
 	Hostname   string `json:"hostname"`
+	// Nickname is the name a person gave the device on the router (clientnames); the pages show it before the host name.
+	Nickname   string `json:"nickname,omitempty"`
 	Expiry     int64  `json:"expiry_epoch"`
 	ExpiryText string `json:"expiry_text"`
 	TotalBytes uint64 `json:"total_bytes"`
