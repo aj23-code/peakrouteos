@@ -35,6 +35,8 @@ type ClientLease struct {
 	// differ from the one it holds now until it asks again.
 	Reserved    bool   `json:"reserved,omitempty"`
 	Reservation string `json:"reservation,omitempty"`
+	// ReserveChange: what the draft does to the device's reservation, until it is committed ("added", "removed", "changed"; empty: nothing).
+	ReserveChange string `json:"reserve_change,omitempty"`
 	// Whether the device is here now: "online", "offline" (the lease is still held, the device is gone) or
 	// "unknown" (it cannot be told on this system). LastSeen is when it was last seen, Unix seconds (0: never).
 	Status   string `json:"status"`
@@ -164,6 +166,32 @@ func LabelNetworks(leases []ClientLease, cfg config.NetworkConfig) {
 				leases[i].Network = s.name
 				break
 			}
+		}
+	}
+}
+
+// MarkReservationChanges says, for each device, what the draft changes about its reserved address, so the page can show that a change
+// waits for a commit (the list itself follows what is committed).
+func MarkReservationChanges(leases []ClientLease, active, draft config.NetworkConfig) {
+	ip := func(rs []config.Reservation) map[string]string {
+		m := map[string]string{}
+		for _, r := range rs {
+			m[strings.ToLower(r.MAC)] = r.IP
+		}
+		return m
+	}
+	before, after := ip(active.Reservations), ip(draft.Reservations)
+	for i := range leases {
+		mac := strings.ToLower(leases[i].MACAddress)
+		b, had := before[mac]
+		a, has := after[mac]
+		switch {
+		case !had && has:
+			leases[i].ReserveChange = "added"
+		case had && !has:
+			leases[i].ReserveChange = "removed"
+		case had && has && a != b:
+			leases[i].ReserveChange = "changed"
 		}
 	}
 }

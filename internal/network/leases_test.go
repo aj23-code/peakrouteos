@@ -115,3 +115,18 @@ func TestLeasesSayWhetherTheDeviceHasAReservedAddress(t *testing.T) {
 		t.Errorf("%+v", leases)
 	}
 }
+
+func TestLeasesSayWhatTheDraftChangesAboutAReservation(t *testing.T) {
+	r := func(mac, ip string) config.Reservation { return config.Reservation{MAC: mac, IP: ip} }
+	active := config.NetworkConfig{Reservations: []config.Reservation{r("aa:00:00:00:00:01", "192.168.1.10"), r("aa:00:00:00:00:02", "192.168.1.11"), r("aa:00:00:00:00:03", "192.168.1.12")}}
+	draft := config.NetworkConfig{Reservations: []config.Reservation{r("aa:00:00:00:00:02", "192.168.1.99"), r("aa:00:00:00:00:03", "192.168.1.12"), r("aa:00:00:00:00:04", "192.168.1.13")}}
+	leases := []ClientLease{{MACAddress: "AA:00:00:00:00:01"}, {MACAddress: "aa:00:00:00:00:02"}, {MACAddress: "aa:00:00:00:00:03"}, {MACAddress: "aa:00:00:00:00:04"}, {MACAddress: "aa:00:00:00:00:05"}}
+	MarkReservationChanges(leases, active, draft)
+	var got []string
+	for _, l := range leases {
+		got = append(got, l.ReserveChange)
+	}
+	if want := []string{"removed", "changed", "", "added", ""}; !reflect.DeepEqual(got, want) {
+		t.Errorf("changes %q, want %q", got, want)
+	}
+}

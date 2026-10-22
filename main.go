@@ -682,7 +682,11 @@ func main() {
 	// System DHCP List Endpoint
 	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.LeaseHandler(func(ctx context.Context, leases []network.ClientLease) {
 		presenceTracker.Annotate(ctx, leases)
-		network.LabelNetworks(leases, cfgMgr.NetworkConfig())
+		active := cfgMgr.NetworkConfig()
+		network.LabelNetworks(leases, active)
+		if draft, ok := cfgMgr.StagedNetworkConfig(); ok {
+			network.MarkReservationChanges(leases, active, draft)
+		}
 	})))
 
 	// Main application routing logic

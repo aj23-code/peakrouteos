@@ -23,14 +23,49 @@ window.DHCPModule = (function () {
         return '<span class="form-hint" title="The Wi-Fi side could not be read" aria-label="Unknown">\u2013</span>';
     }
 
-    // whether the router keeps an address for the device; if not, a link to reserve the one it has
+    // whether the router keeps an address for the device, said in brackets after the address, with a link to reserve the one it has or to
+    // give the reservation up. What is in the draft but not committed yet is said so: the list itself follows what is committed.
     function reservedHtml(c) {
+        const note = (text) => ` <span class="form-hint">(${text})</span>`;
+        const link = (attr, label, title) => `<div><a href="#" class="view-all-link" ${attr}="${escapeHtml(c.mac_address)}" title="${title}">${label}</a></div>`;
+        const unreserve = link('data-unreserve', 'Unreserve', 'Stop keeping an address for this device');
         if (c.reserved) {
-            const moves = c.reservation && c.reservation !== c.ip_address
-                ? `<div class="form-hint">will move to ${escapeHtml(c.reservation)}</div>` : '';
-            return `<div><span class="tag" title="The router always gives this device the same address">Reserved</span></div>${moves}`;
+            const moves = c.reservation && c.reservation !== c.ip_address ? `<div class="form-hint">will move to ${escapeHtml(c.reservation)}</div>` : '';
+            if (c.reserve_change === 'removed') return note('reserved, removed in draft');
+            if (c.reserve_change === 'changed') return note('reserved, address changed in draft') + unreserve + moves;
+            return note('reserved') + unreserve + moves;
         }
-        return `<div><a href="#" class="view-all-link" data-reserve="${escapeHtml(c.mac_address)}" title="Always give this device this address">Reserve</a></div>`;
+        if (c.reserve_change === 'added') return note('reserved, draft') + unreserve;
+        return link('data-reserve', 'Reserve', 'Always give this device this address');
+    }
+
+    function showMessage(text, kind) {
+        const box = document.getElementById('clients-message');
+        if (!box) return;
+        box.textContent = text || '';
+        box.classList.toggle('hidden', !text);
+        box.classList.toggle('form-message--ok', kind === 'ok');
+    }
+
+    // takes the device out of the draft's list of reserved addresses (nothing changes until it is committed)
+    async function unreserve(mac) {
+        showMessage('');
+        const res = await apiFetch('/api/v1/dhcp/reservations');
+        if (!res || !res.ok) { showMessage('The reserved addresses could not be read.', 'error'); return; }
+        const list = ((await res.json()).reservations || []).filter(r => r.mac.toLowerCase() !== mac.toLowerCase());
+        const put = await apiFetch('/api/v1/dhcp/reservations', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reservations: list.map(r => ({ mac: r.mac, ip: r.ip, name: r.name })) }),
+        });
+        if (!put || !put.ok) {
+            let err = {};
+            try { err = put ? await put.json() : {}; } catch (e) { /* not JSON */ }
+            showMessage((err.errors || []).map(e => e.message).join(' ') || err.error || 'The reservation could not be removed.', 'error');
+            return;
+        }
+        showMessage('Removed from the draft. Review and commit it from the bar at the top when you are ready.', 'ok');
+        if (window.ConfigBanner) window.ConfigBanner.refresh();
+        fetchAllLeases();
     }
 
     // "5 minutes ago" for a time in Unix seconds
@@ -115,6 +150,8 @@ window.DHCPModule = (function () {
             if (select) select.addEventListener('change', () => { networkFilter = select.value; fetchAllLeases(); });
             const body = document.getElementById('all-clients-table-body');
             if (body) body.addEventListener('click', (e) => {
+                const un = e.target.closest('[data-unreserve]');
+                if (un) { e.preventDefault(); unreserve(un.dataset.unreserve); return; }
                 const link = e.target.closest('[data-reserve]');
                 if (!link) return;
                 e.preventDefault();
