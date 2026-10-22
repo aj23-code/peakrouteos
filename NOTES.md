@@ -223,7 +223,11 @@ Decisions for the remaining steps (9c to 9e):
   `systemctl reload nftables`, `systemctl restart dnsmasq`); and if an action fails restores the files and
   re-runs the actions so services return to the previous configuration. Rollback problems are reported
   in the result, never swallowed, and the rollback uses a fresh context so a cancelled apply (shutdown)
-  still puts things back. Applies are serialised. Everything goes through two interfaces so tests need no
+  still puts things back. An undo does not re-run `sysctl` or the time zone one-liner when their file did not exist before the
+  change (they read it and would report it missing: seen on the first boot of the image, where the first apply failed in
+  networking and the undo listed two more errors that meant nothing). A failed `networking`, `nftables` or `dnsmasq` action
+  adds the last 25 lines of the unit's journal to the step, because systemd's own message says nothing about the cause.
+  Applies are serialised. Everything goes through two interfaces so tests need no
   root: `FileSystem` (`RootFS` maps `/etc/...` into a directory) and `Runner` (`ExecRunner` runs real
   commands with a fixed `PATH` and no inherited environment, output capped, per-command timeouts;
   `LogRunner` only logs and is what `-dev` uses). The HTTP layer will run applies after the response is
@@ -341,7 +345,14 @@ servers that replace the provider's (the DNS servers moved to the DNS page, and 
   user name and password, plain printable ASCII without quotes or backslashes (they go into a quoted option file), up to 64
   characters; PPPoE settings are refused with another type. DNS servers (up to three) are checked for every type: required with a
   static address, optional (an override) otherwise.
-- **How it is written** (`translator/wan.go`; **plain DHCP and static configurations render byte-for-byte as before**):
+- **DHCP does not need a lease to apply (2026-10-20, found on the first boot of the image on hardware):** `inet dhcp` makes ifupdown
+  run `udhcpc -n`, so a WAN with no lease in about 8 seconds (uplink unplugged, provider slow) was a failed `ifup`, a failed
+  `networking.service`, and the whole commit rolled back, LAN changes included. The WAN's DHCP is now `inet manual` with
+  `up udhcpc -b -R -p /run/udhcpc.$IFACE.pid -i $IFACE [-x hostname:NAME]` and a `down` that kills it (`dhcpHooks`; after the
+  other options, so the cloned MAC and the MTU are set first). The port comes up at once, the client forks to the background and keeps
+  asking, so a cable plugged in later gets its lease. Checked with busybox `udhcpc` in a namespace: with no server it exits 0 and
+  leaves the pid file. Not changed: the access point's bridge (`inet dhcp` on `br0`) and a Wi-Fi client's own stanza.
+- **How it is written** (`translator/wan.go`; static configurations render as before, DHCP as described above):
   - *Options on the port's stanza:* `hwaddress ether` (MAC clone), `hostname` (read by udhcpc, which the image uses), and an MTU
     other than the usual one. **ifupdown's DHCP method has no `mtu` option and would silently ignore it**, so DHCP gets
     `post-up ip link set dev $IFACE mtu N`; a static address uses the native `mtu`. A VLAN interface cannot be larger than its

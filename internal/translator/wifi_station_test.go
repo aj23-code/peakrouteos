@@ -41,10 +41,10 @@ func TestAWifiUplinkIsTheInternetPortWithAWpaFile(t *testing.T) {
 	cfg := stationCfg(config.StationUplink, uplinkStation())
 	cfg.WanInterface = "wlan0"
 	ifaces := mustRenderFile(t, cfg, PathInterfaces)
-	if !strings.Contains(ifaces, "auto wlan0\niface wlan0 inet dhcp\n") || !strings.Contains(ifaces, "    wpa-conf /etc/peakroute/wpa/wlan0.conf\n") {
+	if !strings.Contains(ifaces, "auto wlan0\niface wlan0 inet manual\n") || !strings.Contains(ifaces, "    wpa-conf /etc/peakroute/wpa/wlan0.conf\n") {
 		t.Fatalf("%s", ifaces)
 	}
-	if strings.Contains(ifaces, "inet manual") || strings.Contains(ifaces, "4addr") {
+	if strings.Contains(ifaces, "4addr") {
 		t.Fatalf("an uplink has no stanza of its own:\n%s", ifaces)
 	}
 	want := `# Managed by PeakRoute OS. Do not edit: this file is rewritten on every commit.

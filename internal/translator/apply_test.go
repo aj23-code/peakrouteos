@@ -78,6 +78,31 @@ func (f *fakeRunner) reset() {
 	f.mu.Unlock()
 }
 
+func TestUndoOfAFirstApplyDoesNotReapplyFilesThatNeverExisted(t *testing.T) {
+	ap, root, run := newApplier(t)
+	d, plan := planFor(t, root, routerCfg())
+	// the first apply on a new device: no sysctl file yet, and networking fails to restart
+	run.fail["systemctl restart networking"] = "Job for networking.service failed because the control process exited with error code."
+	run.failOnce["systemctl restart networking"] = true
+	res := ap.Apply(context.Background(), d, plan)
+
+	if res.OK || !res.RolledBack {
+		t.Fatalf("expected a rollback: %+v", res)
+	}
+	if len(res.Problems) != 0 {
+		t.Errorf("the rollback has nothing to complain about: %v", res.Problems)
+	}
+	sysctls := 0
+	for _, c := range run.log() {
+		if strings.HasPrefix(c, "sysctl") {
+			sysctls++
+		}
+	}
+	if sysctls != 1 {
+		t.Errorf("sysctl ran %d times, want once (the undo has no file to read)\n%v", sysctls, run.log())
+	}
+}
+
 func newApplier(t *testing.T) (*Applier, RootFS, *fakeRunner) {
 	t.Helper()
 	root := RootFS(t.TempDir())

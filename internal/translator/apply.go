@@ -187,6 +187,23 @@ var serviceCommands = map[string]command{
 	SvcWifi: {"systemctl", []string{"restart", "peakroute-wifi"}},
 }
 
+// actionFile is the one file that decides what a service action does. When it did not exist before a change there is nothing to
+// re-apply after an undo (the action reads the file and would only complain that it is gone).
+var actionFile = map[string]string{
+	SvcSysctl:   PathSysctl,
+	SvcTimezone: PathTimezone,
+}
+
+// journalTail is the last of a failed service's log. systemd's own message ("the control process exited with error code") says
+// nothing about why, which the service's log does. Services that run through a one-liner have no unit to ask.
+func (a *Applier) journalTail(ctx context.Context, service string) string {
+	if service != SvcNetworking && service != SvcNftables && service != SvcDnsmasq {
+		return ""
+	}
+	out, _ := a.exec(context.WithoutCancel(ctx), checkTimeout, command{"journalctl", []string{"-u", service + ".service", "-n", "25", "--no-pager", "-o", "cat"}})
+	return strings.TrimSpace(out)
+}
+
 // routesCheckCommand syntax-checks the routes script. The script may be about to be removed (the
 // last route went away), in which case there is nothing to check.
 func routesCheckCommand(script string) command {
@@ -295,6 +312,7 @@ func (a *Applier) Apply(ctx context.Context, desired Desired, plan Plan) Result 
 		step := Step{Name: fmt.Sprintf("%s %s (%s)", act.Verb, act.Service, cmd.String()), OK: err == nil, Output: out}
 		if err != nil {
 			step.Error = err.Error()
+			step.Output = strings.TrimSpace(out + "\n" + a.journalTail(ctx, act.Service))
 			res.Steps = append(res.Steps, step)
 			return fail(fmt.Errorf("%s %s failed: %s", act.Verb, act.Service, firstLine(out, err)))
 		}
@@ -357,9 +375,18 @@ func (a *Applier) undo(ctx context.Context, snap Snapshot) []string {
 		}
 	}
 
+	// what was not there before has nothing to be brought back to
+	neverHad := map[string]bool{}
+	for _, b := range snap.Files {
+		neverHad[b.Path] = !b.Existed
+	}
+
 	// A fresh context: the one passed in may be the reason we are here
 	rbCtx := context.WithoutCancel(ctx)
 	for _, act := range snap.Actions {
+		if p, ok := actionFile[act.Service]; ok && neverHad[p] {
+			continue
+		}
 		cmd := serviceCommands[act.Service]
 		timeout := serviceTimeout
 		if act.Service == SvcNetworking {

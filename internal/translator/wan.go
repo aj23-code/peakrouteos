@@ -9,7 +9,7 @@ import (
 
 // How the internet connection is built (standard Debian packages: ifupdown, vlan, udhcpc, ppp):
 //
-//   - Plain DHCP or static: the port's own stanza, exactly as it has always been. A cloned MAC address
+//   - Static: the port's own stanza. DHCP: a manual stanza whose hooks run the client in the background (dhcpHooks). A cloned MAC address
 //     (hwaddress), an MTU other than the usual one and the host name sent to the provider (udhcpc's
 //     "hostname") are added to it only when set.
 //   - With a VLAN: a VLAN interface (eth0.835) holds the connection; the vlan package brings the port up
@@ -110,13 +110,24 @@ func writeWanStanza(b *strings.Builder, cfg config.NetworkConfig) {
 		}
 		stanza("static", extra...)
 	default:
-		var extra []string
-		if cfg.Hostname != "" && cfg.SendHostname {
-			extra = append(extra, "hostname "+cfg.Hostname)
-		}
-		stanza("dhcp", extra...)
+		// after the other options, so the address and the MTU are set before the client starts
+		opts = append(opts, dhcpHooks(cfg)...)
+		stanza("manual")
 	}
 	b.WriteString("\n")
+}
+
+// dhcpHooks start the DHCP client for the internet connection in the background. ifupdown's own "inet dhcp" runs udhcpc so that no
+// lease is a failed ifup, and a failed ifup fails networking.service, which rolls the whole change back: a router whose upstream cable is
+// out (or whose provider is slow to answer) could then not have its local network changed at all. Here the port comes up at once and the
+// client keeps asking until a lease arrives, whenever that is. Stopping it releases the lease.
+func dhcpHooks(cfg config.NetworkConfig) []string {
+	pid := "/run/udhcpc.$IFACE.pid"
+	start := "up udhcpc -b -R -p " + pid + " -i $IFACE"
+	if cfg.Hostname != "" && cfg.SendHostname {
+		start += " -x hostname:" + cfg.Hostname
+	}
+	return []string{start, "down [ ! -f " + pid + " ] || kill $(cat " + pid + ")"}
 }
 
 // renderPPPPeer writes the PPPoE login for pppd. The file holds the password, so it is written 0600.

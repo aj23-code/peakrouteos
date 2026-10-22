@@ -82,8 +82,8 @@ func TestInterfacesFileWithNetworks(t *testing.T) {
 iface lo inet loopback
 
 auto eth0
-iface eth0 inet dhcp
-
+iface eth0 inet manual
+` + dhcpUp("") + dhcpDown + `
 auto eth1.20
 iface eth1.20 inet manual
     vlan-raw-device eth1
@@ -120,8 +120,8 @@ func TestInterfacesFileWithSeveralDefaultPortsAndAnEmptyNetwork(t *testing.T) {
 iface lo inet loopback
 
 auto eth0
-iface eth0 inet dhcp
-
+iface eth0 inet manual
+` + dhcpUp("") + dhcpDown + `
 auto br0
 iface br0 inet static
     address 192.168.1.1

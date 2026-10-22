@@ -28,8 +28,8 @@ func TestOnlyAskedForTheHostNameGoesToTheProvider(t *testing.T) {
 		cfg  config.NetworkConfig
 		want string
 	}{
-		"named, not sent": {named(func(c *config.NetworkConfig) {}), "auto eth0\\niface eth0 inet dhcp\\n\\n"},
-		"named and sent":  {named(func(c *config.NetworkConfig) { c.SendHostname = true }), "auto eth0\\niface eth0 inet dhcp\\n    hostname gw\\n\\n"},
+		"named, not sent": {named(func(c *config.NetworkConfig) {}), "auto eth0\\niface eth0 inet manual\\n" + dhcpUp("") + dhcpDown + "\\n"},
+		"named and sent":  {named(func(c *config.NetworkConfig) { c.SendHostname = true }), "auto eth0\\niface eth0 inet manual\\n" + dhcpUp("gw") + dhcpDown + "\\n"},
 		"static, sent": {named(func(c *config.NetworkConfig) {
 			c.SendHostname = true
 			c.WanMode, c.WanIP, c.WanSubnet, c.WanGateway = "static", "203.0.113.10", "255.255.255.0", "203.0.113.1"

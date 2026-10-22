@@ -50,8 +50,19 @@ func wanStanzas(t *testing.T, cfg config.NetworkConfig) string {
 	return s
 }
 
+// The internet connection's DHCP client runs in the background (dhcpHooks): no lease must not fail networking.
+const dhcpDown = "    down [ ! -f /run/udhcpc.$IFACE.pid ] || kill $(cat /run/udhcpc.$IFACE.pid)\n"
+
+func dhcpUp(host string) string {
+	line := "    up udhcpc -b -R -p /run/udhcpc.$IFACE.pid -i $IFACE"
+	if host != "" {
+		line += " -x hostname:" + host
+	}
+	return line + "\n"
+}
+
 func TestPlainDHCPAndStaticStayExactlyAsTheyWere(t *testing.T) {
-	if got := wanStanzas(t, wanCfg(func(c *config.NetworkConfig) {})); got != "auto eth0\niface eth0 inet dhcp\n\n" {
+	if got := wanStanzas(t, wanCfg(func(c *config.NetworkConfig) {})); got != "auto eth0\niface eth0 inet manual\n"+dhcpUp("")+dhcpDown+"\n" {
 		t.Errorf("dhcp: %q", got)
 	}
 	static := wanCfg(func(c *config.NetworkConfig) {
@@ -70,38 +81,38 @@ func TestWanStanzas(t *testing.T) {
 		want string
 	}{
 		{"dhcp with a host name", wanCfg(func(c *config.NetworkConfig) { c.Hostname, c.SendHostname = "my-router", true }),
-			"auto eth0\niface eth0 inet dhcp\n    hostname my-router\n\n"},
+			"auto eth0\niface eth0 inet manual\n" + dhcpUp("my-router") + dhcpDown + "\n"},
 		{"static keeps the router's host name to itself", wanCfg(func(c *config.NetworkConfig) {
 			c.WanMode, c.WanIP, c.WanSubnet, c.WanGateway, c.Hostname, c.SendHostname = "static", "203.0.113.10", "255.255.255.0", "203.0.113.1", "gw", true
 		}), "auto eth0\niface eth0 inet static\n    address 203.0.113.10\n    netmask 255.255.255.0\n    gateway 203.0.113.1\n\n"},
 		{"dhcp with a cloned MAC", wanCfg(func(c *config.NetworkConfig) { c.WanMAC = "02:11:22:33:44:55" }),
-			"auto eth0\niface eth0 inet dhcp\n    hwaddress ether 02:11:22:33:44:55\n\n"},
+			"auto eth0\niface eth0 inet manual\n    hwaddress ether 02:11:22:33:44:55\n" + dhcpUp("") + dhcpDown + "\n"},
 		{"dhcp with a lower MTU", wanCfg(func(c *config.NetworkConfig) { c.WanMTU = 1400 }),
-			"auto eth0\niface eth0 inet dhcp\n    post-up ip link set dev $IFACE mtu 1400\n\n"},
+			"auto eth0\niface eth0 inet manual\n    post-up ip link set dev $IFACE mtu 1400\n" + dhcpUp("") + dhcpDown + "\n"},
 		{"dhcp with a jumbo MTU", wanCfg(func(c *config.NetworkConfig) { c.WanMTU = 9000 }),
-			"auto eth0\niface eth0 inet dhcp\n    post-up ip link set dev $IFACE mtu 9000\n\n"},
+			"auto eth0\niface eth0 inet manual\n    post-up ip link set dev $IFACE mtu 9000\n" + dhcpUp("") + dhcpDown + "\n"},
 		{"static with a lower MTU", wanCfg(func(c *config.NetworkConfig) {
 			c.WanMode, c.WanIP, c.WanSubnet, c.WanGateway, c.WanMTU = "static", "203.0.113.10", "255.255.255.0", "203.0.113.1", 1400
 		}), "auto eth0\niface eth0 inet static\n    address 203.0.113.10\n    netmask 255.255.255.0\n    gateway 203.0.113.1\n    mtu 1400\n\n"},
 		{"a jumbo MTU over a VLAN raises the port first", wanCfg(func(c *config.NetworkConfig) { c.WanVlan = 10; c.WanMTU = 9000 }),
-			"auto eth0.10\niface eth0.10 inet dhcp\n    vlan-raw-device eth0\n    pre-up ip link set dev eth0 mtu 9000\n    post-up ip link set dev $IFACE mtu 9000\n\n"},
+			"auto eth0.10\niface eth0.10 inet manual\n    vlan-raw-device eth0\n    pre-up ip link set dev eth0 mtu 9000\n    post-up ip link set dev $IFACE mtu 9000\n" + dhcpUp("") + dhcpDown + "\n"},
 		{"a smaller MTU over a VLAN leaves the port alone", wanCfg(func(c *config.NetworkConfig) { c.WanVlan = 10; c.WanMTU = 1400 }),
-			"auto eth0.10\niface eth0.10 inet dhcp\n    vlan-raw-device eth0\n    post-up ip link set dev $IFACE mtu 1400\n\n"},
+			"auto eth0.10\niface eth0.10 inet manual\n    vlan-raw-device eth0\n    post-up ip link set dev $IFACE mtu 1400\n" + dhcpUp("") + dhcpDown + "\n"},
 		{"dhcp with the usual MTU written out", wanCfg(func(c *config.NetworkConfig) { c.WanMTU = 1500 }),
-			"auto eth0\niface eth0 inet dhcp\n\n"},
+			"auto eth0\niface eth0 inet manual\n" + dhcpUp("") + dhcpDown + "\n"},
 		{"dhcp with everything", wanCfg(func(c *config.NetworkConfig) {
 			c.Hostname, c.SendHostname = "gw", true
 			c.WanMAC = "02:11:22:33:44:55"
 			c.WanMTU = 1400
 		}),
-			"auto eth0\niface eth0 inet dhcp\n    hostname gw\n    hwaddress ether 02:11:22:33:44:55\n    post-up ip link set dev $IFACE mtu 1400\n\n"},
+			"auto eth0\niface eth0 inet manual\n    hwaddress ether 02:11:22:33:44:55\n    post-up ip link set dev $IFACE mtu 1400\n" + dhcpUp("gw") + dhcpDown + "\n"},
 		{"dhcp over a VLAN", wanCfg(func(c *config.NetworkConfig) { c.WanVlan = 835 }),
-			"auto eth0.835\niface eth0.835 inet dhcp\n    vlan-raw-device eth0\n\n"},
+			"auto eth0.835\niface eth0.835 inet manual\n    vlan-raw-device eth0\n" + dhcpUp("") + dhcpDown + "\n"},
 		{"dhcp over a VLAN with a cloned MAC and host name", wanCfg(func(c *config.NetworkConfig) {
 			c.WanVlan = 10
 			c.WanMAC = "02:11:22:33:44:55"
 			c.Hostname, c.SendHostname = "gw", true
-		}), "auto eth0.10\niface eth0.10 inet dhcp\n    vlan-raw-device eth0\n    hostname gw\n    hwaddress ether 02:11:22:33:44:55\n\n"},
+		}), "auto eth0.10\niface eth0.10 inet manual\n    vlan-raw-device eth0\n    hwaddress ether 02:11:22:33:44:55\n" + dhcpUp("gw") + dhcpDown + "\n"},
 		{"static over a VLAN", wanCfg(func(c *config.NetworkConfig) {
 			c.WanVlan = 20
 			c.WanMode, c.WanIP, c.WanSubnet, c.WanGateway = "static", "203.0.113.10", "255.255.255.0", "203.0.113.1"
