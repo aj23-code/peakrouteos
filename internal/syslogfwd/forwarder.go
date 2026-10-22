@@ -43,13 +43,19 @@ func FollowJournal(ctx context.Context) (io.ReadCloser, error) {
 
 type journalProcess struct {
 	io.ReadCloser
-	cmd *exec.Cmd
+	cmd  *exec.Cmd
+	once sync.Once
 }
 
+// Close stops journalctl. It is called from the goroutine that reads and from the one that watches the context, possibly at the same
+// moment, and exec's Wait may only be called once: a second call waits forever for a result nobody sends, which hung Update (and with
+// it the commit that switched the system log off).
 func (p *journalProcess) Close() error {
-	p.cmd.Process.Kill()
-	p.ReadCloser.Close()
-	p.cmd.Wait()
+	p.once.Do(func() {
+		p.cmd.Process.Kill()
+		p.ReadCloser.Close()
+		p.cmd.Wait()
+	})
 	return nil
 }
 

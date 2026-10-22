@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -619,6 +620,35 @@ func TestTheWaitBetweenConnectionAttemptsDoublesUpToTheLongest(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i]*time.Second {
 			t.Fatalf("%v, want %v seconds", got, want)
+		}
+	}
+}
+
+// The journal follower is closed from two places at once when the system log is switched off (the one that reads it and the one that
+// notices the context has ended). Closing must be safe to do twice at the same time: exec's Wait may only be called once, and a second
+// call used to wait forever, which hung Update and with it the commit that switched the log off.
+func TestAJournalProcessCanBeClosedFromTwoPlacesAtOnce(t *testing.T) {
+	for i := 0; i < 40; i++ {
+		// with a context, as FollowJournal starts journalctl: that is what makes a second Wait block
+		cmd := exec.CommandContext(context.Background(), "sleep", "30")
+		out, err := cmd.StdoutPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := cmd.Start(); err != nil {
+			t.Skip("cannot start sleep: " + err.Error())
+		}
+		p := &journalProcess{ReadCloser: out, cmd: cmd}
+		done := make(chan struct{}, 2)
+		for j := 0; j < 2; j++ {
+			go func() { p.Close(); done <- struct{}{} }()
+		}
+		for j := 0; j < 2; j++ {
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatalf("round %d: Close did not return", i)
+			}
 		}
 	}
 }
