@@ -404,6 +404,22 @@ func main() {
 	}}
 	mux.HandleFunc("/api/v1/wireless", requireAuth(wifi.Handler))
 	stations := &wireless.StationCache{Detector: wifi, TTL: 2 * time.Second}
+	// The devices to list: those with a DHCP lease, and those the router sees on its networks that have an address of their own (the
+	// neighbour table). -dev has no real neighbours, so it shows two samples: one with an address from the wrong network.
+	clientList := func(ctx context.Context) []network.ClientLease {
+		leases := network.ReadLeases(network.LeasePaths)
+		cfg := cfgMgr.NetworkConfig()
+		var neighbours []network.Neighbour
+		if devMode {
+			neighbours = []network.Neighbour{
+				{IP: "192.168.1.200", MAC: "02:aa:bb:cc:dd:01", Dev: "br0"},
+				{IP: "10.20.0.77", MAC: "02:aa:bb:cc:dd:02", Dev: "br0"},
+			}
+		} else {
+			neighbours = network.ReadNeighbours(ctx, runner)
+		}
+		return append(leases, network.StaticClients(leases, neighbours, cfg, func(dev string) string { return translator.NetworkOfInterface(cfg, dev) })...)
+	}
 	// Who is here: Wi-Fi devices from the access points' station lists, the others asked with ARP, all remembered
 	presenceTracker := &presence.Tracker{
 		Path: filepath.Join(configDir, "client_presence.json"),
@@ -418,7 +434,9 @@ func main() {
 		Probe: presence.ARPProber{}.Probe,
 		Targets: func() []presence.Target {
 			var out []presence.Target
-			for _, l := range network.ReadLeases(network.LeasePaths) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			for _, l := range clientList(ctx) {
 				if ip, err := netip.ParseAddr(l.IPAddress); err == nil && ip.Is4() {
 					out = append(out, presence.Target{MAC: l.MACAddress, IP: ip})
 				}
@@ -684,7 +702,7 @@ func main() {
 	mux.HandleFunc("/api/v1/config/discard", requireAuth(configSvc.HandleDiscard))
 
 	// System DHCP List Endpoint
-	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.LeaseHandler(func(ctx context.Context, leases []network.ClientLease) {
+	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.LeaseHandler(func(ctx context.Context) []network.ClientLease { return clientList(ctx) }, func(ctx context.Context, leases []network.ClientLease) {
 		presenceTracker.Annotate(ctx, leases)
 		active := cfgMgr.NetworkConfig()
 		network.LabelNetworks(leases, active)

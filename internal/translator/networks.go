@@ -27,6 +27,21 @@ func vlanOf(cfg config.NetworkConfig, id string) int {
 
 func networkIface(n config.Network) string { return fmt.Sprintf("br%d", n.VLAN) }
 
+// NetworkOfInterface names the local network an interface carries ("LAN" for the default network, the others by their names), or "" when
+// the interface is none of their bridges or ports. It is how the Clients page tells that a device was seen on another network than its
+// address says.
+func NetworkOfInterface(cfg config.NetworkConfig, dev string) string {
+	if dev == LanTarget(cfg) {
+		return "LAN"
+	}
+	for _, n := range cfg.Networks {
+		if dev == networkIface(n) {
+			return n.Name
+		}
+	}
+	return ""
+}
+
 // defaultPorts are the LAN ports whose untagged network is the default one, then the Wi-Fi links that join it.
 func defaultPorts(cfg config.NetworkConfig) []string {
 	var out []string

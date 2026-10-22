@@ -37,6 +37,11 @@ type ClientLease struct {
 	Reservation string `json:"reservation,omitempty"`
 	// ReserveChange: what the draft does to the device's reservation, until it is committed ("added", "removed", "changed"; empty: nothing).
 	ReserveChange string `json:"reserve_change,omitempty"`
+	// Static: the device has an address of its own that it did not get from this router's DHCP server; the router only knows it from its
+	// neighbour table, so it is listed while the router can see it. SeenOn: the network of the interface it was seen on, when that is
+	// not the network its address is in (a device on the wrong VLAN, or with a wrong fixed address).
+	Static bool   `json:"static,omitempty"`
+	SeenOn string `json:"seen_on,omitempty"`
 	// Whether the device is here now: "online", "offline" (the lease is still held, the device is gone) or
 	// "unknown" (it cannot be told on this system). LastSeen is when it was last seen, Unix seconds (0: never).
 	Status   string `json:"status"`
@@ -125,14 +130,16 @@ func ReadLeases(paths []string) []ClientLease {
 	return leases
 }
 
-// LabelNetworks says which local network each lease is on (the one whose subnet holds the address; the default network is called LAN)
-// and whether the device has an address reserved.
-func LabelNetworks(leases []ClientLease, cfg config.NetworkConfig) {
-	type subnet struct {
-		name string
-		net  netip.Prefix
-	}
-	var subnets []subnet
+// localSubnet is one of the router's own networks.
+type localSubnet struct {
+	name   string
+	prefix netip.Prefix
+	router netip.Addr
+}
+
+// localSubnets lists the router's networks: the default one (called LAN) and the others by name.
+func localSubnets(cfg config.NetworkConfig) []localSubnet {
+	var subnets []localSubnet
 	add := func(name, ip, mask string) {
 		a, err := netip.ParseAddr(ip)
 		m := net.IPMask(net.ParseIP(mask).To4())
@@ -143,12 +150,19 @@ func LabelNetworks(leases []ClientLease, cfg config.NetworkConfig) {
 		if bits == 0 {
 			return
 		}
-		subnets = append(subnets, subnet{name, netip.PrefixFrom(a, ones).Masked()})
+		subnets = append(subnets, localSubnet{name, netip.PrefixFrom(a, ones).Masked(), a})
 	}
 	add("LAN", cfg.LanIP, cfg.LanSubnet)
 	for _, n := range cfg.Networks {
 		add(n.Name, n.IP, n.Netmask)
 	}
+	return subnets
+}
+
+// LabelNetworks says which local network each lease is on (the one whose subnet holds the address; the default network is called LAN)
+// and whether the device has an address reserved.
+func LabelNetworks(leases []ClientLease, cfg config.NetworkConfig) {
+	subnets := localSubnets(cfg)
 	reserved := map[string]string{}
 	for _, r := range cfg.Reservations {
 		reserved[strings.ToLower(r.MAC)] = r.IP
@@ -162,7 +176,7 @@ func LabelNetworks(leases []ClientLease, cfg config.NetworkConfig) {
 			continue
 		}
 		for _, s := range subnets {
-			if s.net.Contains(a) {
+			if s.prefix.Contains(a) {
 				leases[i].Network = s.name
 				break
 			}
@@ -196,15 +210,22 @@ func MarkReservationChanges(leases []ClientLease, active, draft config.NetworkCo
 	}
 }
 
-// LeaseHandler serves the active DHCP leases. annotate, when given, fills in how each device is connected and
-// whether it is online; without it those fields are "unknown".
-func LeaseHandler(annotate func(context.Context, []ClientLease)) http.HandlerFunc {
-	return leaseHandler(LeasePaths, annotate)
+// LeaseHandler serves the DHCP leases, and with source the devices that have no lease. annotate, when given, fills in how each device
+// is connected and whether it is online; without it those fields are "unknown".
+func LeaseHandler(source func(context.Context) []ClientLease, annotate func(context.Context, []ClientLease)) http.HandlerFunc {
+	if source == nil {
+		source = func(context.Context) []ClientLease { return ReadLeases(LeasePaths) }
+	}
+	return leaseHandlerFrom(source, annotate)
 }
 
 func leaseHandler(paths []string, annotate func(context.Context, []ClientLease)) http.HandlerFunc {
+	return leaseHandlerFrom(func(context.Context) []ClientLease { return ReadLeases(paths) }, annotate)
+}
+
+func leaseHandlerFrom(source func(context.Context) []ClientLease, annotate func(context.Context, []ClientLease)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		leases := ReadLeases(paths)
+		leases := source(r.Context())
 		if annotate != nil {
 			annotate(r.Context(), leases)
 		} else {

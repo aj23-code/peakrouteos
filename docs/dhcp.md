@@ -6,8 +6,18 @@ Contents: 1 The DHCP page, 2 Reserved addresses, 3 What is written, 4 Internals,
 
 **Services > DHCP.** One card for each local network (the default LAN and every VLAN): the DHCP server's switch, the first and last address
 it hands out and the lease time. These are the same settings as on the Local Networks page (each network's own card has them too); both
-pages save to the draft and both are committed from the bar at the top. The devices that have an address are listed on
-**Network > Clients**, with the network each is on.
+pages save to the draft and both are committed from the bar at the top. The devices on your networks are listed on
+**Network > Clients**, with the network each is on and, for a device that has an address of its own, the tag **Static** (below).
+
+### Devices with an address of their own
+
+The Clients page lists the devices that have a DHCP lease, and also those the router can see on its networks that did not ask it for an
+address: a printer or server set up with a fixed address on the device itself. They are marked **Static**, have no host name (the router
+was never told one) and no lease time, and are shown while the router's neighbour table has them (the router sees a device once it has
+exchanged ARP with it, so a device that has been silent for a while can drop off the list, and appears again when it talks). Online or
+offline is found the same way as for the others. A device whose address belongs to one network but that the router sees on another (a
+device plugged into the wrong VLAN, or with a wrong fixed address) shows an amber **Seen on <network>**. A static device can be given a
+reserved address too (below), after which it can be switched to DHCP on the device.
 
 ## 2. Reserved addresses
 

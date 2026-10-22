@@ -23,6 +23,12 @@ window.DHCPModule = (function () {
         return '<span class="form-hint" title="The Wi-Fi side could not be read" aria-label="Unknown">\u2013</span>';
     }
 
+    // a device that was seen on another network than its address says (the wrong VLAN, or a wrong address of its own)
+    function seenOnHtml(c) {
+        if (!c.seen_on) return '';
+        return ` <span class="tag tag-draft" title="The router sees this device on ${escapeHtml(c.seen_on)}, but its address belongs to ${escapeHtml(c.network)}">Seen on ${escapeHtml(c.seen_on)}</span>`;
+    }
+
     // whether the router keeps an address for the device, said in brackets after the address, with a link to reserve the one it has or to
     // give the reservation up. What is in the draft but not committed yet is said so: the list itself follows what is committed.
     function reservedHtml(c) {
@@ -133,10 +139,10 @@ window.DHCPModule = (function () {
         tbody.innerHTML = leases.map(c => `
         <tr${c.status === 'offline' ? ' class="row-offline"' : ''}>
         <td>${statusHtml(c)}</td>
-        <td><strong>${escapeHtml(c.hostname)}</strong></td>
+        <td>${c.static ? `<span class="tag" title="This device has an address of its own: it did not ask this router for one">Static</span>` : `<strong>${escapeHtml(c.hostname)}</strong>`}</td>
         <td>${escapeHtml(c.ip_address)}${reservedHtml(c)}</td>
         <td><code>${escapeHtml(c.mac_address)}</code></td>
-        <td>${connectionHtml(c)}${c.network ? ` <span class="chip" title="The local network this device is on">${escapeHtml(c.network)}</span>` : ''}</td>
+        <td>${connectionHtml(c)}${c.network ? ` <span class="chip" title="The local network this device is on">${escapeHtml(c.network)}</span>` : ''}${seenOnHtml(c)}</td>
         <td>${escapeHtml(c.expiry_text)}</td>
         <td>${formatBytes(c.total_bytes || 0)}</td>
         </tr>
