@@ -421,6 +421,19 @@ func main() {
 			return out
 		},
 	}
+	if devMode {
+		// a laptop cannot ask the devices on its network (a raw socket needs root, and the leases here are samples): pretend that all of
+		// them but the last answer, so that the Clients page can be looked at with both states
+		presenceTracker.Probe = func(_ context.Context, targets []presence.Target) (map[string]bool, error) {
+			here := map[string]bool{}
+			for i, t := range targets {
+				if i != len(targets)-1 {
+					here[t.MAC] = true
+				}
+			}
+			return here, nil
+		}
+	}
 	presenceTracker.Load()
 	go presenceTracker.Run(pollerCtx)
 	netAPI.Wireless = wifi.Detect
