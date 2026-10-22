@@ -32,18 +32,6 @@
           {{else}}
           <a href="#" class="nav-item nav-top active" data-view="overview"><span class="banner-icon">📊</span> Overview</a>
           {{end}}
-          {{if eq .SystemMode "ROUTER"}}
-          <details class="nav-banner-group">
-            <summary class="nav-banner">
-              <span class="banner-title"><span class="banner-icon">💻</span> Clients</span>
-              <span class="chevron">▸</span>
-            </summary>
-            <div class="folder-content">
-              <a href="#" class="nav-item" data-view="dhcp">Clients</a>
-              <a href="#" class="nav-item" data-view="dhcp-server">DHCP</a>
-            </div>
-          </details>
-          {{end}}
 
           {{if eq .SystemMode "ROUTER"}}
           <details class="nav-banner-group">
@@ -55,6 +43,7 @@
               <a href="#" class="nav-item" data-view="internet">Internet</a>
               <a href="#" class="nav-item" data-view="networks">Local Networks</a>
               <a href="#" class="nav-item" data-view="network-physical">Ports</a>
+              <a href="#" class="nav-item" data-view="dhcp">Clients</a>
               <a href="#" class="nav-item" data-view="wireless">Wireless</a>
               <a href="#" class="nav-item" data-view="routes">Routes</a>
             </div>
@@ -83,6 +72,7 @@
             </summary>
             <div class="folder-content">
               <a href="#" class="nav-item" data-view="dns">DNS</a>
+              <a href="#" class="nav-item" data-view="dhcp-server">DHCP</a>
               <a href="#" class="nav-item" data-view="vpn">VPN</a>
               <a href="#" class="nav-item" data-view="ddns">Dynamic DNS</a>
             </div>
