@@ -263,6 +263,15 @@ func TestTheCheckBeforeTheCommitReadsTheTunnelFilesLikeWgQuick(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Some machines (a CI runner with restricted user namespaces) do not let wg-quick, started in a user and network namespace, read
+	// the files this test has just written: that says nothing about the check, so the test is skipped there. The rule itself (a file
+	// wg-quick fails on stops the commit) is tested without the tools in TestTheWireGuardCheckFailsWhenWgQuickDoes.
+	if out, err := exec.Command("unshare", "-rn", filepath.Join(wgbin, "wg-quick"), "strip", filepath.Join(dir, "wgs1.conf")).CombinedOutput(); err != nil {
+		if strings.Contains(string(out), "Permission denied") {
+			t.Skipf("wg-quick cannot read a file just written, in a user and network namespace here: %s", out)
+		}
+		t.Fatalf("wg-quick refuses a file the router wrote: %v %s", err, out)
+	}
 	if out, err := run(); err != nil {
 		t.Fatalf("good files refused: %v %s", err, out)
 	}

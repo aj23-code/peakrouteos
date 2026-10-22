@@ -409,10 +409,13 @@ func firstLine(output string, err error) string {
 	return "unknown error"
 }
 
-// wgCheckCommand reads every tunnel file the way WireGuard will, before anything is touched: a scratch tunnel interface is made and
-// given each file in turn (wg-quick strip alone would pass a file with a broken key), then removed.
+// wgCheckCommand reads every tunnel file the way WireGuard will, before anything is touched: wg-quick turns the file into what the kernel
+// takes, and a scratch tunnel interface is made and given each in turn (wg-quick strip alone would pass a file with a broken key), then
+// removed. wg-quick's own result is taken before anything is piped on: in "wg-quick strip f | wg setconf ..." only the last command's
+// result counts, so a file wg-quick could not read or understand would have passed.
 func wgCheckCommand() command {
 	script := "trap 'ip link del wgchk 2>/dev/null' EXIT; for f in " + PathWireGuardDir + "/wg*.conf; do [ -e \"$f\" ] || continue; " +
-		"ip link add wgchk type wireguard || exit 1; wg-quick strip \"$f\" | wg setconf wgchk /dev/stdin || exit 1; ip link del wgchk; done"
+		"conf=$(wg-quick strip \"$f\") || exit 1; " +
+		"ip link add wgchk type wireguard || exit 1; printf '%s\\n' \"$conf\" | wg setconf wgchk /dev/stdin || exit 1; ip link del wgchk; done"
 	return command{"sh", []string{"-c", script}}
 }
