@@ -21,7 +21,9 @@ chooses another, which needs about 9 GB free. The script stops at the first erro
 `REUSE_ROOTFS=1 ./buildImage.sh` skips the download of Debian and builds the image again in about a minute (to try a change to the
 overlay, the scripts or the binary).
 
-## Why the image file is about 6.6 GB (decided 2026-10-20, to revisit after the first real boot)
+## Why the image file is about 6.6 GB (decided 2026-10-20; 2026-10-22: left as it is)
+
+After the first real boot and update (2026-10-22) the size was left as it is: it is only the disk space the first flash needs (8 GB or more), a release's image is 403 MB and an update file 389 MB to download whatever the layout, so a smaller layout would save little for the risk (TODO.md, "Deferred: a smaller image").
 
 The disk image is **much bigger than what is in it**: about 1.1 GB of system, in a file of about 6.6 GB. This is a choice, not an accident, and the
 reasoning is kept here so that it is not mistaken for waste:

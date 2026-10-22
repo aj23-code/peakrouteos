@@ -112,6 +112,8 @@ Effort: S = under an hour, M = one session, L = multi-session.
 
 ## Deferred: a smaller image
 
+**Decided 2026-10-22: not pursued.** The user does not mind the size: the disk layout only matters at the first flash (a disk of 8 GB or more), and what an update downloads does not depend on it (v0.9.5-alpha: the image is 403 MB and the update file 389 MB, both compressed). Both items below stay here as ideas, not as work to do; the second one still matters if a small flash target is ever wanted.
+
 - [ ] **Lay out the disk at the first start** (M/L): ship slot A at its real size (an image of about 1.4 GB instead of 6.6 GB) and let the initramfs
   stretch A, make B and the data partition to fit the disk, once, offline (`sfdisk`, `e2fsck`, `resize2fs` in the initramfs; B and the data
   are empty then). Slots could scale with the disk size. Risky (a mistake leaves a device unbootable) and untestable without booting
