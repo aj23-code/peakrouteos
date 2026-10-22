@@ -103,7 +103,33 @@ function formatUptime(seconds) {
  */
 let activeViewCleanup = null;
 
-function loadView(viewName) {
+// The page being shown is kept in the address (#dhcp-server), so a refresh, a bookmark and the browser's Back button all come back to it.
+// Only pages that are in the menu (or reached from one that is) count: a typed-in or stale name falls back to the home page.
+function pageMode() {
+    const mode = document.querySelector('meta[name="peakroute-mode"]');
+    return mode ? mode.content : '';
+}
+
+function homeView() { return pageMode() === 'AP' ? 'ap-home' : 'overview'; }
+
+function allowedView(name) {
+    if (!name || !document.getElementById(`view-${name}`)) return false;
+    // the Traffic page has no menu entry of its own: it is reached from the Overview and the Ports page, which only a router has
+    return !!document.querySelector(`.nav-item[data-view="${CSS.escape(name)}"]`) || (name === 'traffic' && pageMode() === 'ROUTER');
+}
+
+function viewFromAddress() {
+    let name = '';
+    try { name = decodeURIComponent(location.hash.replace(/^#\/?/, '')); } catch (e) { name = ''; }
+    return allowedView(name) ? name : '';
+}
+
+function loadView(viewName, fromHistory) {
+    // each page the person goes to is a step for the Back button (going Back itself, or the first page on load, is not)
+    if (!fromHistory && allowedView(viewName) && viewFromAddress() !== viewName) {
+        history.pushState(null, '', '#' + viewName);
+    }
+
     // Clean up timers/listeners from the previous view
     if (typeof activeViewCleanup === 'function') {
         activeViewCleanup();
@@ -431,8 +457,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initMobileNav();
 
-    // Load default initial view
-    // the home page of the device: the overview of a router, the access point's page for an access point
-    const mode = document.querySelector('meta[name="peakroute-mode"]');
-    loadView(mode && mode.content === 'AP' ? 'ap-home' : 'overview');
+    // The page the address names (a refresh, a bookmark), else the home page of the device: the overview of a router, the access
+    // point's page for an access point
+    loadView(viewFromAddress() || homeView(), true);
+
+    // the Back and Forward buttons. A bare "#" (a link that does nothing) is not a place to go to.
+    window.addEventListener('popstate', () => {
+        if (location.hash === '#') return;
+        loadView(viewFromAddress() || homeView(), true);
+    });
 });
