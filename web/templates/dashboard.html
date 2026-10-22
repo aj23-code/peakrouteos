@@ -949,10 +949,9 @@
 
         <section class="card card-nopadding">
           <div class="card-header">
-            <div class="card-header-group">
-              <h2>All Active DHCP Leases</h2>
-              <span class="card-subtitle" id="lease-count-badge">Parsing active lease table...</span>
-            </div>
+            <span class="card-subtitle" id="lease-count-badge">Reading the lease table&hellip;</span>
+            <label class="net-picker hidden" id="lease-network-picker"><span class="form-hint">Network</span>
+              <select id="lease-network" class="role-select" aria-label="Show the devices of one network"><option value="">All networks</option></select></label>
           </div>
           <div class="table-container">
             <table class="data-table">

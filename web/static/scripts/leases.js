@@ -2,6 +2,9 @@
 
 window.DHCPModule = (function () {
     let pollInterval = null;
+    let networkFilter = '';   // "" = every network
+    let wired = false;
+    let shownNetworks = '';   // the options in the filter now (rebuilt only when they change, or an open list would close every poll)
 
     // How the device is attached, as an icon: Wi-Fi, or an Ethernet plug, and the local network it is on (LAN, IoT, Guest...) beside it. The details (Wi-Fi name and band) are in
     // the tooltip and the accessible name; a dash means the Wi-Fi side could not be read, so a cable is not assumed.
@@ -43,7 +46,22 @@ window.DHCPModule = (function () {
         const res = await apiFetch('/api/v1/dhcp/leases');
         if (!res || !res.ok) return;
 
-        const leases = (await res.json()) || [];
+        const all = (await res.json()) || [];
+        // the filter lists the networks that have a device; one that no longer has any goes back to "all"
+        const networks = [...new Set(all.map(c => c.network).filter(Boolean))].sort();
+        if (networkFilter && !networks.includes(networkFilter)) networkFilter = '';
+        const picker = document.getElementById('lease-network-picker');
+        const select = document.getElementById('lease-network');
+        if (picker && select) {
+            picker.classList.toggle('hidden', networks.length < 2);
+            if (shownNetworks !== networks.join('\n')) {
+                shownNetworks = networks.join('\n');
+                select.innerHTML = '<option value="">All networks</option>' +
+                    networks.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+            }
+            select.value = networkFilter;
+        }
+        const leases = networkFilter ? all.filter(c => c.network === networkFilter) : all;
         // devices that are here come first
         leases.sort((a, b) => (b.status === 'online') - (a.status === 'online'));
         const tbody = document.getElementById('all-clients-table-body');
@@ -53,13 +71,13 @@ window.DHCPModule = (function () {
             const known = leases.some(c => c.status === 'online' || c.status === 'offline');
             const online = leases.filter(c => c.status === 'online').length;
             badge.textContent = known ? `${online} online \u00b7 ${leases.length - online} offline`
-                : `${leases.length} Active ${leases.length === 1 ? 'Lease' : 'Leases'}`;
+                : `${leases.length} ${leases.length === 1 ? 'device' : 'devices'}`;
         }
 
         if (!tbody) return;
 
         if (!leases || leases.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="table-placeholder">No active DHCP leases found.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="table-placeholder">No devices have an address from this router yet.</td></tr>`;
             return;
         }
 
@@ -77,6 +95,11 @@ window.DHCPModule = (function () {
     }
 
     function init() {
+        if (!wired) {
+            wired = true;
+            const select = document.getElementById('lease-network');
+            if (select) select.addEventListener('change', () => { networkFilter = select.value; fetchAllLeases(); });
+        }
         fetchAllLeases();
         // Polls full lease table every 3 seconds while active
         pollInterval = setInterval(fetchAllLeases, 3000);
