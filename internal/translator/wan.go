@@ -122,10 +122,19 @@ func writeWanStanza(b *strings.Builder, cfg config.NetworkConfig) {
 // out (or whose provider is slow to answer) could then not have its local network changed at all. Here the port comes up at once and the
 // client keeps asking until a lease arrives, whenever that is. Stopping it releases the lease.
 func dhcpHooks(cfg config.NetworkConfig) []string {
+	name := ""
+	if cfg.Hostname != "" && cfg.SendHostname {
+		name = cfg.Hostname
+	}
+	return dhcpClientHooks(name)
+}
+
+// dhcpClientHooks are the up and down lines for a DHCP client that sends the given host name ("" sends none).
+func dhcpClientHooks(hostname string) []string {
 	pid := "/run/udhcpc.$IFACE.pid"
 	start := "up udhcpc -b -R -p " + pid + " -i $IFACE"
-	if cfg.Hostname != "" && cfg.SendHostname {
-		start += " -x hostname:" + cfg.Hostname
+	if hostname != "" {
+		start += " -x hostname:" + hostname
 	}
 	return []string{start, "down [ ! -f " + pid + " ] || kill $(cat " + pid + ")"}
 }

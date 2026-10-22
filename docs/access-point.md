@@ -55,7 +55,7 @@ Wi-Fi networks can share a VLAN, and an extender with no cable gets the bridge w
 
 ## What it writes
 
-`/etc/network/interfaces`: `br0` as `inet dhcp` (with the host name as the DHCP name) or `inet static`, `bridge_ports` the cable ports
+`/etc/network/interfaces`: `br0` with its address from DHCP (`inet manual` with a background DHCP client, `up udhcpc -b -R ... -x hostname:<name>`, so that a main router that does not answer yet does not fail the change; the host name is the DHCP name) or `inet static`, `bridge_ports` the cable ports
 and links, and `post-up ip addr add 192.168.77.1/24 dev br0 label br0:setup`; `/etc/nftables.conf`: a short input policy (loopback,
 established, ping, DHCP replies, 443; drop the rest) and nothing forwarded; `net.ipv4.ip_forward=0`; and **removes** every file only a
 router has (the DHCP, DNS and VPN dnsmasq files, the routes script, the PPPoE login, the WireGuard and OpenVPN files). The hostapd and

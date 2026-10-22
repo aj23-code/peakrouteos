@@ -365,7 +365,7 @@ servers that replace the provider's (the DNS servers moved to the DNS page, and 
   `up udhcpc -b -R -p /run/udhcpc.$IFACE.pid -i $IFACE [-x hostname:NAME]` and a `down` that kills it (`dhcpHooks`; after the
   other options, so the cloned MAC and the MTU are set first). The port comes up at once, the client forks to the background and keeps
   asking, so a cable plugged in later gets its lease. Checked with busybox `udhcpc` in a namespace: with no server it exits 0 and
-  leaves the pid file. Not changed: the access point's bridge (`inet dhcp` on `br0`) and a Wi-Fi client's own stanza.
+  leaves the pid file. The access point's bridge `br0` got the same treatment the next day (`dhcpClientHooks`, listed before the recovery address `post-up`; the client's lease script (`/etc/udhcpc/default.script`, read from the Debian package) flushes addresses only when the client starts or stops, so the recovery address survives later leases). A Wi-Fi uplink is the WAN stanza, so it has it too.
 - **How it is written** (`translator/wan.go`; static configurations render as before, DHCP as described above):
   - *Options on the port's stanza:* `hwaddress ether` (MAC clone), `hostname` (read by udhcpc, which the image uses), and an MTU
     other than the usual one. **ifupdown's DHCP method has no `mtu` option and would silently ignore it**, so DHCP gets

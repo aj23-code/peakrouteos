@@ -64,13 +64,17 @@ func renderInterfacesAP(cfg config.NetworkConfig) string {
 			fmt.Fprintf(&b, "    dns-nameservers %s\n", strings.Join(ap.DNS, " "))
 		}
 	} else {
-		fmt.Fprintf(&b, "auto %s\niface %s inet dhcp\n", apBridge, apBridge)
-		// the main router lists the device under this name, which is how it is found
-		if cfg.Hostname != "" {
-			fmt.Fprintf(&b, "    hostname %s\n", cfg.Hostname)
-		}
+		// The address comes from the main router, and its client runs in the background (dhcpClientHooks): with the link or the main router
+		// not answering yet the bridge still comes up, with the recovery address below, instead of the whole change failing.
+		fmt.Fprintf(&b, "auto %s\niface %s inet manual\n", apBridge, apBridge)
 	}
 	fmt.Fprintf(&b, "    bridge_ports %s\n", portList(members))
+	if ap.Mode != config.APStatic {
+		// the main router lists the device under this name, which is how it is found
+		for _, l := range dhcpClientHooks(cfg.Hostname) {
+			fmt.Fprintf(&b, "    %s\n", l)
+		}
+	}
 	fmt.Fprintf(&b, "    post-up ip addr add %s dev %s label %s:setup || true\n", config.APRecoveryAddress, apBridge, apBridge)
 
 	// A tagged network for each VLAN a Wi-Fi network uses: the cable ports carry it tagged (a trunk, VLAN interface eth0.20), and its own

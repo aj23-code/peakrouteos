@@ -25,9 +25,10 @@ func TestAnAccessPointIsOneBridgeWithAnAddressFromDHCP(t *testing.T) {
 iface lo inet loopback
 
 auto br0
-iface br0 inet dhcp
-    hostname ap-hall
+iface br0 inet manual
     bridge_ports eth0 eth1
+    up udhcpc -b -R -p /run/udhcpc.$IFACE.pid -i $IFACE -x hostname:ap-hall
+    down [ ! -f /run/udhcpc.$IFACE.pid ] || kill $(cat /run/udhcpc.$IFACE.pid)
     post-up ip addr add 192.168.77.1/24 dev br0 label br0:setup || true
 `
 	if got != want {
@@ -217,8 +218,7 @@ func TestATaggedWifiNetworkGetsABridgeOfItsOwnOnTheTrunk(t *testing.T) {
 		"auto eth1.20\niface eth1.20 inet manual\n    vlan-raw-device eth1\n",
 		"auto br20\niface br20 inet manual\n    bridge_ports eth0.20 eth1.20\n",
 		"auto br30\niface br30 inet manual\n    bridge_ports eth0.30 eth1.30\n",
-		"auto br0\niface br0 inet dhcp\n",
-		"    bridge_ports eth0 eth1\n", // the untagged network is as it was
+		"auto br0\niface br0 inet manual\n    bridge_ports eth0 eth1\n    up udhcpc -b",
 	} {
 		if !strings.Contains(got, w) {
 			t.Errorf("lacks %q:\n%s", w, got)
@@ -227,8 +227,8 @@ func TestATaggedWifiNetworkGetsABridgeOfItsOwnOnTheTrunk(t *testing.T) {
 	if strings.Index(got, "br20") > strings.Index(got, "br30") {
 		t.Errorf("the VLANs are not in order:\n%s", got)
 	}
-	// only the untagged bridge has an address
-	if strings.Count(got, "inet dhcp") != 1 || strings.Contains(got, "br20 inet static") {
+	// only the untagged bridge has an address (and so a DHCP client)
+	if strings.Count(got, "up udhcpc") != 1 || strings.Contains(got, "br20 inet static") {
 		t.Errorf("%s", got)
 	}
 	h := hostapd(t, c, "wlan0")
