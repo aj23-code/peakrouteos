@@ -72,7 +72,7 @@ window.DHCPModule = (function () {
             const online = leases.filter(c => c.status === 'online').length;
             const offline = leases.length - online;
             badge.innerHTML = known
-                ? `<span class="lease-count-online">${online} online</span><span class="lease-count-sep">\u00b7</span><span class="${offline ? 'lease-count-offline' : 'lease-count-none'}">${offline} offline</span>`
+                ? `<span class="lease-count-online">${online} online</span><span class="lease-count-sep">\u00b7</span><span class="lease-count-offline">${offline} offline</span>`
                 : `${leases.length} ${leases.length === 1 ? 'device' : 'devices'}`;
         }
 
