@@ -1480,6 +1480,8 @@ height: 260px;
 .ov-row { display: flex; flex-direction: column; gap: 0.7rem; padding-top: 1rem; border-top: 1px solid var(--border-color); }
 .ov-card-head + .ov-row { padding-top: 0; border-top: 0; }
 .ov-row-title { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.ov-row-title .view-all-link { margin-left: auto; }
+.dash-header-actions { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .ov-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .ov-dhcp { margin-top: 0.2rem; }
 .ov-dhcp .metric-header { margin-bottom: 8px; }

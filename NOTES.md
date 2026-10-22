@@ -123,6 +123,7 @@ records what the system does, why it is built that way, and what was learned on 
   physical-only plus 60 s flush, 32 MB/day with per-minute rows. SQLite writes whole 4 KB pages per
   flush, so row count is not the only lever. Reading `/proc`, `/sys` or config JSON does not wear
   flash (virtual files / page cache); writes do.
+- **Traffic page (2026-10-21):** no longer a top-level sidebar entry (the user saw no use for it there). The page (`view-traffic`, `traffic.js`: per-interface download/upload charts, 5 minutes to 30 days) is unchanged and is reached by a "Traffic history" link on the Overview's internet card and on the Ports page (`data-goto="traffic"`, as the firewall logs are reached). The Internet page keeps its own usage table. To bring the entry back, restore the `nav-top` link in `dashboard.html`.
 - **Per-device usage** (`network/per_devicetraffic.go`) captures packets in userspace (AF_PACKET) and credits each IPv4 frame to the
   MAC the ARP table gives for its source or destination. Fixed 2026-10-21 (every client showed 0 B on the first hardware boot): it was
   started once with the LAN interface known *at that moment*, which on a new device is none, so no capture ever ran, and after

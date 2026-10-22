@@ -34,7 +34,6 @@
           {{end}}
           {{if eq .SystemMode "ROUTER"}}
           <a href="#" class="nav-item nav-top" data-view="dhcp"><span class="banner-icon">💻</span> Clients</a>
-          <a href="#" class="nav-item nav-top" data-view="traffic"><span class="banner-icon">📈</span> Traffic</a>
           {{end}}
 
           {{if eq .SystemMode "ROUTER"}}
@@ -172,7 +171,7 @@
               <div><dt>Uptime 24 h</dt><dd id="ov-uptime">&ndash;</dd></div>
             </dl>
             <div class="ov-row">
-              <div class="ov-row-title"><span class="traffic-badge wan">WAN</span><span id="ov-wan-port" class="chip">&ndash;</span><span id="ov-wan-link" class="form-hint"></span></div>
+              <div class="ov-row-title"><span class="traffic-badge wan">WAN</span><span id="ov-wan-port" class="chip">&ndash;</span><span id="ov-wan-link" class="form-hint"></span><a href="#" class="view-all-link" data-goto="traffic">Traffic history &rarr;</a></div>
               <dl class="ov-kv">
                 <div><dt>Address</dt><dd id="ov-wan-addr">&ndash;</dd></div>
                 <div><dt>Gateway</dt><dd id="ov-wan-gw">&ndash;</dd></div>
@@ -600,7 +599,7 @@
             <h1>Ports</h1>
             <p class="subtitle">Choose which port connects to the internet (WAN) and which belong to your LAN. Changes are saved as a draft until you commit them.</p>
           </div>
-          <button type="button" id="ports-refresh" class="cfg-btn">Refresh</button>
+          <span class="dash-header-actions"><a href="#" class="view-all-link" data-goto="traffic">Traffic history &rarr;</a> <button type="button" id="ports-refresh" class="cfg-btn">Refresh</button></span>
         </header>
 
         <div id="ports-message" class="form-message hidden" role="alert"></div>
