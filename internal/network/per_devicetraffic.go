@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -13,13 +14,16 @@ import (
 	"peakroute/internal/config"
 )
 
-// TrafficTracker manages per-MAC byte counts in a thread-safe map
+// TrafficTracker manages per-MAC byte counts in a thread-safe map. It listens on every LAN-side interface that has neighbours (the
+// default network's bridge or port, each other network's bridge, the setup network's bridge), found from the ARP table, so it follows
+// the committed settings instead of the ones at the time the daemon started (on a new device there are none yet).
 type TrafficTracker struct {
-	mu        sync.RWMutex
-	macBytes  map[string]uint64
-	ipToMac   map[string]string
-	ifaceName string
-	mgr       *config.Manager
+	mu       sync.RWMutex
+	macBytes map[string]uint64
+	ipToMac  map[string]string
+	capture  map[string]bool // interfaces a capture is running on
+	mgr      *config.Manager
+	arpPath  string
 }
 
 var GlobalTracker *TrafficTracker
@@ -29,31 +33,17 @@ func htons(i uint16) uint16 {
 	return (i<<8)&0xff00 | (i>>8)&0x00ff
 }
 
-// InitTrafficTracker initializes and starts the background traffic monitoring engine
+// InitTrafficTracker initializes and starts the background traffic monitoring engine. ifaceName is kept for the callers that name one
+// interface to watch; empty means every LAN-side interface.
 func InitTrafficTracker(mgr *config.Manager, ifaceName string) {
-	if ifaceName == "" {
-		if lans := mgr.NetworkConfig().LanInterfaces; len(lans) > 0 {
-			ifaceName = lans[0]
-		}
-	}
-
 	GlobalTracker = &TrafficTracker{
-		macBytes:  make(map[string]uint64),
-		ipToMac:   make(map[string]string),
-		ifaceName: ifaceName,
-		mgr:       mgr,
+		macBytes: make(map[string]uint64),
+		ipToMac:  make(map[string]string),
+		capture:  make(map[string]bool),
+		mgr:      mgr,
+		arpPath:  "/proc/net/arp",
 	}
-
-	// Always start polling ARP table so IP-to-MAC mappings build up
 	go GlobalTracker.pollARPTableLoop(10 * time.Second)
-
-	// Only launch packet capture if an interface is configured
-	if ifaceName != "" {
-		log.Printf("[+] Traffic Tracker initializing on interface: %s", ifaceName)
-		go GlobalTracker.startPacketCapture()
-	} else {
-		log.Printf("[!] Traffic Tracker: No LAN interface configured yet. Awaiting setup wizard completion.")
-	}
 }
 
 // GetBytesForMAC returns the accumulated byte count for a given MAC address
@@ -66,23 +56,60 @@ func (t *TrafficTracker) GetBytesForMAC(mac string) uint64 {
 	return t.macBytes[strings.ToLower(mac)]
 }
 
-// pollARPTableLoop parses /proc/net/arp to update IP-to-MAC mappings
+// pollARPTableLoop reads the ARP table for IP-to-MAC mappings and starts a capture on each LAN-side interface it finds
 func (t *TrafficTracker) pollARPTableLoop(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	// Initial parse
-	t.updateARPTable()
-
-	for range ticker.C {
-		t.updateARPTable()
+	for {
+		t.refresh()
+		<-ticker.C
 	}
 }
 
-func (t *TrafficTracker) updateARPTable() {
-	file, err := os.Open("/proc/net/arp")
+func (t *TrafficTracker) refresh() {
+	devs := t.updateARPTable()
+	var wan []string
+	if t.mgr != nil {
+		cfg := t.mgr.NetworkConfig()
+		wan = []string{cfg.WanInterface, cfg.WanLink(), cfg.WanDevice()}
+	}
+	for _, dev := range captureTargets(devs, wan) {
+		t.mu.Lock()
+		running := t.capture[dev]
+		t.capture[dev] = true
+		t.mu.Unlock()
+		if !running {
+			go t.startPacketCapture(dev)
+		}
+	}
+}
+
+// captureTargets are the interfaces to count on: those with neighbours, without the internet connection (all of its traffic is a client's
+// too, seen on the LAN side, and the router's own would be counted for nobody), the loopback and tunnels.
+func captureTargets(devs, wan []string) []string {
+	skip := map[string]bool{"": true, "lo": true}
+	for _, w := range wan {
+		skip[w] = true
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, d := range devs {
+		if skip[d] || seen[d] || strings.HasPrefix(d, "wg") || strings.HasPrefix(d, "tun") || strings.HasPrefix(d, "ppp") {
+			continue
+		}
+		seen[d] = true
+		out = append(out, d)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// updateARPTable replaces the IP-to-MAC mappings with the completed entries of the ARP table and returns the interfaces they are on.
+func (t *TrafficTracker) updateARPTable() []string {
+	file, err := os.Open(t.arpPath)
 	if err != nil {
-		return
+		return nil
 	}
 	defer file.Close()
 
@@ -93,6 +120,7 @@ func (t *TrafficTracker) updateARPTable() {
 	}
 
 	newMap := make(map[string]string)
+	var devs []string
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) < 6 {
@@ -102,23 +130,29 @@ func (t *TrafficTracker) updateARPTable() {
 		ip := fields[0]
 		hwFlags := fields[2]
 		mac := strings.ToLower(fields[3])
-		dev := fields[5]
 
-		// Filter for valid completed ARP entries on target interface or bridges
+		// only completed entries
 		if hwFlags != "0x0" && mac != "00:00:00:00:00:00" {
-			if t.ifaceName == "" || dev == t.ifaceName || strings.HasPrefix(dev, "br") {
-				newMap[ip] = mac
-			}
+			newMap[ip] = mac
+			devs = append(devs, fields[5])
 		}
 	}
 
 	t.mu.Lock()
 	t.ipToMac = newMap
 	t.mu.Unlock()
+	return devs
 }
 
-// startPacketCapture opens a raw AF_PACKET socket to accumulate frame lengths per IP/MAC
-func (t *TrafficTracker) startPacketCapture() {
+// startPacketCapture opens a raw AF_PACKET socket on one interface and accumulates frame lengths per client MAC until the interface
+// goes away.
+func (t *TrafficTracker) startPacketCapture(ifaceName string) {
+	defer func() {
+		t.mu.Lock()
+		delete(t.capture, ifaceName)
+		t.mu.Unlock()
+	}()
+
 	// Create raw AF_PACKET socket capturing all protocols (ETH_P_ALL)
 	sock, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, int(htons(syscall.ETH_P_ALL)))
 	if err != nil {
@@ -127,10 +161,9 @@ func (t *TrafficTracker) startPacketCapture() {
 	}
 	defer syscall.Close(sock)
 
-	// Bind raw socket directly to target LAN interface
-	iface, err := net.InterfaceByName(t.ifaceName)
+	iface, err := net.InterfaceByName(ifaceName)
 	if err != nil {
-		log.Printf("[!] Traffic Tracker failed to resolve interface %s: %v", t.ifaceName, err)
+		log.Printf("[!] Traffic Tracker failed to resolve interface %s: %v", ifaceName, err)
 		return
 	}
 
@@ -140,16 +173,24 @@ func (t *TrafficTracker) startPacketCapture() {
 	}
 
 	if err := syscall.Bind(sock, sll); err != nil {
-		log.Printf("[!] Traffic Tracker failed to bind socket to %s: %v", t.ifaceName, err)
+		log.Printf("[!] Traffic Tracker failed to bind socket to %s: %v", ifaceName, err)
 		return
 	}
 
-	log.Printf("[+] Traffic Tracker successfully capturing on interface: %s", t.ifaceName)
+	log.Printf("[+] Traffic Tracker counting on %s", ifaceName)
 
 	buf := make([]byte, 65535)
 	for {
 		n, _, err := syscall.Recvfrom(sock, buf, 0)
-		if err != nil || n < 34 { // Min size: 14 byte Ethernet header + 20 byte IPv4 header
+		if err != nil {
+			if err == syscall.EINTR || err == syscall.EAGAIN {
+				continue
+			}
+			// the interface was removed (a network was deleted, networking restarted): the next look at the ARP table starts a new capture
+			log.Printf("[+] Traffic Tracker stopped counting on %s: %v", ifaceName, err)
+			return
+		}
+		if n < 34 { // Min size: 14 byte Ethernet header + 20 byte IPv4 header
 			continue
 		}
 

@@ -123,8 +123,14 @@ records what the system does, why it is built that way, and what was learned on 
   physical-only plus 60 s flush, 32 MB/day with per-minute rows. SQLite writes whole 4 KB pages per
   flush, so row count is not the only lever. Reading `/proc`, `/sys` or config JSON does not wear
   flash (virtual files / page cache); writes do.
-- **Per-device usage** (`network/per_devicetraffic.go`) captures packets in userspace on the first LAN
-  interface. It will not scale to gigabit and misses extra LAN ports (TODO #22).
+- **Per-device usage** (`network/per_devicetraffic.go`) captures packets in userspace (AF_PACKET) and credits each IPv4 frame to the
+  MAC the ARP table gives for its source or destination. Fixed 2026-10-21 (every client showed 0 B on the first hardware boot): it was
+  started once with the LAN interface known *at that moment*, which on a new device is none, so no capture ever ran, and after
+  setup it was never started. Now every ten seconds the ARP table is read and a capture is started on each interface it names
+  (the default network's bridge or port, each network's bridge, the setup bridge), except the internet connection, loopback and
+  tunnels; a capture that loses its interface ends and is started again by the next look. IPv4 only, counts since the daemon
+  started, and it will not scale to gigabit (TODO #22). Tested for real in a namespace (a client on a virtual cable is counted).
+  The Overview's client table has no Status column (its rows never had that cell).
 
 ## 7. The staged/commit pipeline (TODO #9, in progress)
 
