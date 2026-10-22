@@ -154,3 +154,54 @@ func TestNoTableOrNoToolCountsNothingAndSaysNothing(t *testing.T) {
 	// something that is not JSON is survived too
 	NewUsageTracker(&fakeRunner{sets: "not json"}, "").Poll(t.Context())
 }
+
+// a runner whose table is missing until Ensure loads it
+type lateTable struct {
+	loaded bool
+	sets   string
+	neigh  string
+	lists  int
+}
+
+func (l *lateTable) Run(_ context.Context, name string, args ...string) (string, error) {
+	if name == "ip" {
+		return l.neigh, nil
+	}
+	l.lists++
+	if !l.loaded {
+		return "", errors.New("Error: No such file or directory")
+	}
+	return l.sets, nil
+}
+
+func TestAMissingTableIsLoadedByTheTrackerAndCountedFromThen(t *testing.T) {
+	r := &lateTable{neigh: neigh, sets: sets(map[string]map[string]int{"up4": {"192.168.1.50": 900}})}
+	tr := NewUsageTracker(r, "")
+	calls := 0
+	tr.Ensure = func(context.Context) error { calls++; r.loaded = true; return nil }
+	tr.Poll(t.Context())
+	if calls != 1 {
+		t.Fatalf("Ensure called %d times, want 1", calls)
+	}
+	if got := tr.GetBytesForMAC("f8:94:c2:a4:13:a7"); got != 900 {
+		t.Errorf("%d bytes counted right after the table was loaded, want 900", got)
+	}
+	// loaded: it is not asked again
+	tr.Poll(t.Context())
+	if calls != 1 {
+		t.Errorf("Ensure called again with the table there (%d)", calls)
+	}
+}
+
+func TestATableThatCannotBeLoadedIsNotTriedEveryPoll(t *testing.T) {
+	r := &lateTable{}
+	tr := NewUsageTracker(r, "")
+	calls := 0
+	tr.Ensure = func(context.Context) error { calls++; return errors.New("no nft here") }
+	for i := 0; i < 5; i++ {
+		tr.Poll(t.Context())
+	}
+	if calls != 1 {
+		t.Errorf("Ensure called %d times in five polls, want once a minute", calls)
+	}
+}

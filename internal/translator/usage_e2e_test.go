@@ -1,8 +1,10 @@
 package translator
 
 import (
+	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -89,6 +91,32 @@ func TestTheUsageCountersCountRealTraffic(t *testing.T) {
 		t.Errorf("a new connection did not raise the total: %d -> %d", before, got)
 	}
 
+	// a firewall file from an older version has no counting table (and a commit that rewrites it only comes with the next change): the
+	// tracker loads the table itself, and counting goes on
+	if out, err := exec.Command("nft", "delete", "table", "inet", network.UsageTable).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	cfg := fwConfig([]config.FirewallRule{block})
+	late := network.NewUsageTracker(ExecRunner{}, "")
+	loaded := 0
+	late.Ensure = func(ctx context.Context) error {
+		loaded++
+		f := filepath.Join(t.TempDir(), "usage.nft")
+		if err := os.WriteFile(f, []byte(AccountingRuleset(cfg)), 0600); err != nil {
+			return err
+		}
+		out, err := ExecRunner{}.Run(ctx, "nft", "-f", f)
+		if err != nil {
+			t.Logf("nft -f: %s", out)
+		}
+		return err
+	}
+	late.Poll(t.Context()) // the table is missing: it is loaded here
+	lab.expect("a connection with the table loaded by the tracker", lab.dial("lan", "tcp", "203.0.113.2:80"), "ok")
+	late.Poll(t.Context())
+	if loaded != 1 || late.GetBytesForMAC(lanMAC) < 2*60 {
+		t.Errorf("table loaded %d times; the lan device is credited %d bytes after it", loaded, late.GetBytesForMAC(lanMAC))
+	}
 	// loading the ruleset again starts the counters from zero; the total keeps growing from where it was
 	total := tr.GetBytesForMAC(lanMAC)
 	lab.apply(fwConfig([]config.FirewallRule{block}))

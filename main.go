@@ -184,6 +184,24 @@ func main() {
 	// how much each device uses the internet: counted by the firewall's own table and read back here (network/usage.go)
 	usage := network.NewUsageTracker(runner, filepath.Join(configDir, "client_usage.json"))
 	usage.Load()
+	// the counting table is part of the firewall file, but a file written by an older version has none and only a commit rewrites it:
+	// load the table directly when it is missing. An access point and a router with no internet port yet count nothing.
+	usage.Ensure = func(ctx context.Context) error {
+		cfg := cfgMgr.NetworkConfig()
+		if cfg.IsAP() || cfg.WanDevice() == "" {
+			return nil
+		}
+		dir := filepath.Join(systemRoot, "/run/peakroute")
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+		file := filepath.Join(dir, "usage.nft")
+		if err := os.WriteFile(file, []byte(translator.AccountingRuleset(cfg)), 0600); err != nil {
+			return err
+		}
+		_, err := runner.Run(ctx, "nft", "-f", file)
+		return err
+	}
 	network.GlobalTracker = usage
 	dbPath := filepath.Join(configDir, "traffic_history.db")
 	trafficDB, err := system.NewTrafficDB(dbPath)

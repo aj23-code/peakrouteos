@@ -38,12 +38,16 @@ type Runner interface {
 type UsageTracker struct {
 	run  Runner
 	path string
+	// Ensure loads the counting table into the kernel (nil: it is only read). It is called when the table is missing, at most once a
+	// minute: the firewall file of an older version has none, and a reload of the firewall by something else removes it.
+	Ensure func(ctx context.Context) error
 
 	mu     sync.RWMutex
 	totals map[string]uint64 // hardware address (lower case) -> bytes
 	seen   map[string]uint64 // "set|address" -> the counter at the last look
 	dirty  bool
 	warned bool
+	tried  time.Time // when Ensure was last called
 }
 
 // GlobalTracker is the tracker the lease list asks (nil: nobody counts, every device shows 0 B).
@@ -202,12 +206,31 @@ func parseNeighbours(out string) map[string]string {
 	return m
 }
 
+// shouldEnsure says whether the counting table may be loaded now: not more than once a minute, so that a machine that cannot load it
+// (no nft, an access point) is not asked every ten seconds.
+func (t *UsageTracker) shouldEnsure() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if time.Since(t.tried) < time.Minute {
+		return false
+	}
+	t.tried = time.Now()
+	return true
+}
+
 // Poll reads the counters once and adds what they grew by to the totals.
 func (t *UsageTracker) Poll(ctx context.Context) {
 	if t == nil || t.run == nil {
 		return
 	}
 	out, err := t.run.Run(ctx, "nft", "-j", "list", "table", "inet", UsageTable)
+	if err != nil && t.Ensure != nil && t.shouldEnsure() {
+		if eerr := t.Ensure(ctx); eerr != nil {
+			log.Printf("[!] Usage counters: the counting table could not be loaded: %v", eerr)
+		} else {
+			out, err = t.run.Run(ctx, "nft", "-j", "list", "table", "inet", UsageTable)
+		}
+	}
 	if err != nil {
 		// no table: an access point, or the firewall is not loaded yet. Nothing to count, nothing to complain about.
 		return

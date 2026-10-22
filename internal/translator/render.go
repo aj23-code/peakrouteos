@@ -461,6 +461,13 @@ table ip nat {
 // UsageTable is the nftables table the per-device usage is counted in (the daemon reads its sets, network/usage.go).
 const UsageTable = network.UsageTable
 
+// AccountingRuleset is the usage table on its own, ready for `nft -f`: whatever there is of it is replaced. The daemon loads it when the
+// table is missing (a firewall file written by an older version, or a ruleset flushed by something else), so counting does not wait for a
+// commit to rewrite /etc/nftables.conf.
+func AccountingRuleset(cfg config.NetworkConfig) string {
+	return "add table inet " + UsageTable + "\ndelete table inet " + UsageTable + "\n" + renderAccounting(cfg)
+}
+
 // renderAccounting counts, in the kernel, how much each device uses the internet connection: one set of addresses for each direction
 // and family, each element with its own counter, filled by the traffic that is routed between a local network and the internet
 // connection. It runs after the firewall (priority 10: a packet the rules drop is not counted), before the masquerade (a device still
