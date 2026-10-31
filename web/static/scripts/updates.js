@@ -140,7 +140,8 @@ window.UpdatesModule = (function () {
         return `<section class="card" id="up-versions">
             <div class="net-card-head"><h2>This ${thisDevice()}</h2>${st.on_trial ? '<span class="tag tag-draft">on trial</span>' : '<span class="tag tag-ok">kept</span>'}</div>
             <dl class="inet-live">
-                <div><dt>PeakRoute OS</dt><dd>${esc(r.version)}</dd></div>
+                <div><dt>${r.product === 'ap' ? 'PeakRoute AP' : 'PeakRoute OS'}</dt><dd>${esc(r.version)}</dd></div>
+                <div><dt>Built for</dt><dd>${r.board && r.board !== 'pc' ? esc(r.board) : 'x86 machines'}</dd></div>
                 <div><dt>Built</dt><dd>${esc(r.built ? dateOf(r.built) : '–')}</dd></div>
                 <div><dt>Debian</dt><dd>${esc(r.debian || '–')}</dd></div>
                 <div><dt>Kernel</dt><dd>${esc(r.kernel || '–')}</dd></div>
@@ -232,7 +233,7 @@ window.UpdatesModule = (function () {
         }
         return `<section class="card" id="up-upload">
             <div class="net-card-head"><h2>Install from a file</h2></div>
-            <p class="form-hint">An update file (<code>peakroute-os-….update</code>) made by the build, or downloaded from a release. It is written into the other slot like a download; the version that is running is not touched.</p>
+            <p class="form-hint">An update file (<code>${st.running.product === 'ap' ? `peakroute-ap-${esc(st.running.board)}-…` : 'peakroute-os-…'}.update</code>) made by the build, or downloaded from a release. It is written into the other slot like a download; the version that is running is not touched.</p>
             <div class="form-grid"><div class="form-field"><label for="up-file">Update file</label><input type="file" id="up-file" accept=".update,application/octet-stream"${up.sending ? ' disabled' : ''}></div></div>
             ${detail}
         </section>`;

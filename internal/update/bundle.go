@@ -39,6 +39,8 @@ type Manifest struct {
 	Version       string   `json:"version"`
 	Built         string   `json:"built"`
 	Arch          string   `json:"arch"`
+	Product       string   `json:"product,omitempty"` // "router" or "ap" (identity.go); empty in bundles from before: the router
+	Board         string   `json:"board,omitempty"`   // "pc" or an access point's model; empty in bundles from before: pc
 	Layout        int      `json:"layout"`
 	RootfsSize    int64    `json:"rootfs_size"`    // bytes of the file system once decompressed
 	RootfsSHA256  string   `json:"rootfs_sha256"`  // of the decompressed file system
@@ -60,6 +62,9 @@ func (m Manifest) Validate() error {
 	if m.Arch == "" {
 		return errors.New("the update file does not say which processors it is for")
 	}
+	if !(Identity{Product: m.Product, Board: m.Board}).withDefaults().valid() {
+		return errors.New("the update file names a product or board that is not a plain name")
+	}
 	if m.RootfsSize <= 0 || m.RootfsSize > maxRootfs {
 		return fmt.Errorf("the update file says its system is %d bytes", m.RootfsSize)
 	}
@@ -71,6 +76,7 @@ func (m Manifest) Validate() error {
 
 // Target is what a bundle has to fit.
 type Target struct {
+	Identity
 	Arch      string
 	Layout    int
 	SlotBytes int64  // the size of the partition that would be written; 0 when not known yet
@@ -79,6 +85,9 @@ type Target struct {
 
 // Compatible says whether the bundle can be written to the target; Same reports that it is the version already running.
 func (m Manifest) Compatible(t Target) error {
+	if err := compatibleIdentity(Identity{Product: m.Product, Board: m.Board}, t.Identity); err != nil {
+		return err
+	}
 	if m.Arch != t.Arch {
 		return fmt.Errorf("this update is for %s processors and this router has %s", m.Arch, t.Arch)
 	}
@@ -273,8 +282,8 @@ func WriteSlot(ctx context.Context, b *Bundle, dev string, progress Progress) er
 }
 
 // MakeBundle builds a bundle from a root file system image the way buildImage.sh does (used by the development run, which has no image
-// build, and by tests).
-func MakeBundle(version, notes string, rootfs []byte) ([]byte, error) {
+// build, and by tests), for the product of id on this machine's processors.
+func MakeBundle(id Identity, version, notes string, rootfs []byte) ([]byte, error) {
 	var gzb bytes.Buffer
 	zw := gzip.NewWriter(&gzb)
 	if _, err := zw.Write(rootfs); err != nil {
@@ -285,7 +294,7 @@ func MakeBundle(version, notes string, rootfs []byte) ([]byte, error) {
 	}
 	sum := func(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
 	m := Manifest{Format: FormatVersion, Version: version, Built: time.Now().UTC().Format(time.RFC3339), Arch: runtime.GOARCH, Layout: LayoutVersion,
-		RootfsSize: int64(len(rootfs)), RootfsSHA256: sum(rootfs), PayloadSHA256: sum(gzb.Bytes()), Notes: notes}
+		Product: id.Product, Board: id.Board, RootfsSize: int64(len(rootfs)), RootfsSHA256: sum(rootfs), PayloadSHA256: sum(gzb.Bytes()), Notes: notes}
 	raw, err := json.Marshal(m)
 	if err != nil {
 		return nil, err

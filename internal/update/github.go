@@ -126,6 +126,8 @@ func (s *Service) FindRelease(ctx context.Context, repo string, prerelease bool,
 		return nil, errors.New("GitHub's answer could not be read")
 	}
 	runningV, haveRunning := ParseVersion(running)
+	id := s.Identity()
+	pattern := id.assetPattern()
 
 	type cand struct {
 		v Version
@@ -136,13 +138,14 @@ func (s *Service) FindRelease(ctx context.Context, repo string, prerelease bool,
 		if gr.Draft || (gr.Prerelease && !prerelease) {
 			continue
 		}
-		v, ok := ParseVersion(gr.Tag)
+		// only this product's tags, and only this board's file in them
+		v, version, ok := id.tagVersion(gr.Tag)
 		if !ok {
 			continue
 		}
 		var asset *ghAsset
 		for i := range gr.Assets {
-			if assetRe.MatchString(gr.Assets[i].Name) {
+			if pattern.MatchString(gr.Assets[i].Name) {
 				asset = &gr.Assets[i]
 				break
 			}
@@ -150,7 +153,7 @@ func (s *Service) FindRelease(ctx context.Context, repo string, prerelease bool,
 		if asset == nil || !s.urlOK(asset.URL) {
 			continue
 		}
-		r := Release{Version: gr.Tag, Name: gr.Name, Notes: strings.TrimSpace(gr.Body), Prerelease: gr.Prerelease, Published: gr.Published,
+		r := Release{Version: version, Name: gr.Name, Notes: strings.TrimSpace(gr.Body), Prerelease: gr.Prerelease, Published: gr.Published,
 			AssetURL: asset.URL, AssetName: asset.Name, Size: asset.Size}
 		for _, a := range gr.Assets {
 			if a.Name == asset.Name+".sha256" && s.urlOK(a.URL) {
@@ -170,7 +173,7 @@ func (s *Service) FindRelease(ctx context.Context, repo string, prerelease bool,
 		found = append(found, cand{v, r})
 	}
 	if len(found) == 0 {
-		return nil, errors.New("no release of " + repo + " has an update file with a checksum")
+		return nil, errors.New("no release of " + repo + " has an update file for " + id.Describe() + " with a checksum")
 	}
 	sort.SliceStable(found, func(i, j int) bool { return found[i].v.Compare(found[j].v) > 0 })
 	r := found[0].r

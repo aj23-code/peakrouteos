@@ -664,3 +664,55 @@ func TestAMissingDownloadFails(t *testing.T) {
 		t.Fatalf("job: %+v", j)
 	}
 }
+
+const mixedReleasesJSON = `[
+ {"tag_name":"v0.10.0","draft":false,"prerelease":false,"assets":[{"name":"peakroute-os-v0.10.0.update","size":1,"browser_download_url":"@@/dl/r.update"},{"name":"peakroute-os-v0.10.0.update.sha256","browser_download_url":"@@/dl/r.sha256"}]},
+ {"tag_name":"v0.12.0","draft":false,"prerelease":false,"assets":[{"name":"peakroute-ap-ubnt-u6plus-v0.12.0.update","size":9,"browser_download_url":"@@/dl/misplaced.update"},{"name":"peakroute-ap-ubnt-u6plus-v0.12.0.update.sha256","browser_download_url":"@@/dl/misplaced.sha256"}]},
+ {"tag_name":"ap-v0.3.0","draft":false,"prerelease":false,"assets":[{"name":"peakroute-ap-ubnt-u7pro-v0.3.0.update","size":3,"browser_download_url":"@@/dl/u7.update"},{"name":"peakroute-ap-ubnt-u7pro-v0.3.0.update.sha256","browser_download_url":"@@/dl/u7.sha256"}]},
+ {"tag_name":"ap-v0.2.0","draft":false,"prerelease":false,"assets":[{"name":"peakroute-ap-ubnt-u6plus-v0.2.0.update","size":2,"browser_download_url":"@@/dl/u6.update"},{"name":"peakroute-ap-ubnt-u6plus-v0.2.0.update.sha256","browser_download_url":"@@/dl/u6.sha256"},{"name":"peakroute-os-v0.99.0.update","browser_download_url":"@@/dl/wrong.update"},{"name":"peakroute-os-v0.99.0.update.sha256","browser_download_url":"@@/dl/wrong.sha256"}]}
+]`
+
+// One repository holds the releases of every product: the router's tags are v*, PeakRoute AP's ap-v*, and each release has a file per
+// board. Each system looks only at its own product's tags and its own board's file.
+func TestEachProductAndBoardFindsOnlyItsOwnReleases(t *testing.T) {
+	g := newFakeGitHub(t)
+	g.releases = mixedReleasesJSON
+	l := newLab(t, SlotA, false, SlotA)
+	g.point(l)
+	rel, err := l.s.FindRelease(context.Background(), "owner/repo", false, "v0.9.5-alpha")
+	if err != nil || rel.Version != "v0.10.0" || rel.AssetName != "peakroute-os-v0.10.0.update" {
+		t.Fatalf("the router: %+v %v", rel, err)
+	}
+
+	if err := os.WriteFile(l.s.ReleasePath, []byte("PEAKROUTE_VERSION=v0.1.0\nPEAKROUTE_LAYOUT=1\nPEAKROUTE_ARCH=arm64\nPEAKROUTE_PRODUCT=ap\nPEAKROUTE_BOARD=ubnt-u6plus\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if id := l.s.Identity(); id != (Identity{Product: ProductAP, Board: "ubnt-u6plus"}) {
+		t.Fatalf("identity %+v", id)
+	}
+	// not the router's v0.10.0, not the U7 Pro's newer v0.3.0, not a router file put in an AP release by mistake, not an AP file put in
+	// the router's v0.12.0 by mistake
+	rel, err = l.s.FindRelease(context.Background(), "owner/repo", false, "v0.1.0")
+	if err != nil || rel.Version != "v0.2.0" || rel.AssetName != "peakroute-ap-ubnt-u6plus-v0.2.0.update" || !rel.Newer {
+		t.Fatalf("the U6+: %+v %v", rel, err)
+	}
+
+	if err := os.WriteFile(l.s.ReleasePath, []byte("PEAKROUTE_PRODUCT=ap\nPEAKROUTE_BOARD=ubnt-u6lite\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.s.FindRelease(context.Background(), "owner/repo", false, "v0.1.0"); err == nil || !strings.Contains(err.Error(), "ubnt-u6lite") {
+		t.Fatalf("a board with no release: %v", err)
+	}
+}
+
+// A system whose release file says nothing of the product (a development machine) is what the build is.
+func TestTheBuildSaysTheProductWhenTheSystemDoesNot(t *testing.T) {
+	l := newLab(t, SlotA, false, SlotA)
+	if id := l.s.Identity(); id != (Identity{Product: ProductRouter, Board: BoardPC}) {
+		t.Fatalf("an old router: %+v", id)
+	}
+	l.s.Product = ProductAP
+	if id := l.s.Identity(); id != (Identity{Product: ProductAP, Board: BoardPC}) {
+		t.Fatalf("the AP build on a system that does not say: %+v", id)
+	}
+}

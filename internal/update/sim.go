@@ -25,8 +25,8 @@ type sim struct {
 }
 
 // NewSimulated makes the update service of a development run. The files are in dir. The sample update files it makes are listed by
-// Samples.
-func NewSimulated(dir, version string, editable func() bool, backup func() (string, error)) (*Service, error) {
+// Samples. product is what the build is ("router" or "ap"): the samples are made for it.
+func NewSimulated(dir, version, product string, editable func() bool, backup func() (string, error)) (*Service, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
@@ -58,6 +58,7 @@ func NewSimulated(dir, version string, editable func() bool, backup func() (stri
 		}
 	}
 	s := New(dir, version, "", editable, backup)
+	s.Product = product
 	s.ConfigDir = dir
 	s.ReleasePath = filepath.Join(dir, "release")
 	s.CmdlinePath = filepath.Join(dir, "cmdline")
@@ -71,7 +72,7 @@ func NewSimulated(dir, version string, editable func() bool, backup func() (stri
 	s.Kernel = func() string { return "simulated" }
 	sm.s = s
 	s.Started(time.Now()) // the simulated machine has just started
-	if err := sm.samples(version); err != nil {
+	if err := sm.samples(s.Identity()); err != nil {
 		return nil, err
 	}
 	return s, nil
@@ -201,13 +202,13 @@ func (sm *sim) restart() {
 }
 
 // samples writes update files to try with: a newer version, and a damaged one.
-func (sm *sim) samples(running string) error {
+func (sm *sim) samples(id Identity) error {
 	rootfs := func(version string) []byte {
 		b := bytes.Repeat([]byte("PeakRoute simulated system.\n"), 40000)
 		return append([]byte(versionKey+version+"\n"), b...)
 	}
 	newer := "v99.0.0-sim"
-	data, err := MakeBundle(newer, "A simulated update: it only changes the version number the page shows.", rootfs(newer))
+	data, err := MakeBundle(id, newer, "A simulated update: it only changes the version number the page shows.", rootfs(newer))
 	if err != nil {
 		return err
 	}

@@ -196,6 +196,8 @@ PEAKROUTE_VERSION=${VERSION}
 PEAKROUTE_BUILT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 PEAKROUTE_LAYOUT=${LAYOUT_VERSION}
 PEAKROUTE_ARCH=amd64
+PEAKROUTE_PRODUCT=router
+PEAKROUTE_BOARD=pc
 DEBIAN_VERSION=13
 RELEASE
 
@@ -380,6 +382,8 @@ cat > "${BUNDLE_DIR}/manifest.json" << MANIFEST
   "version": "$(json_text "${VERSION}")",
   "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "arch": "amd64",
+  "product": "router",
+  "board": "pc",
   "layout": ${LAYOUT_VERSION},
   "rootfs_size": $(stat -c %s "${ROOTFS_IMG}"),
   "rootfs_sha256": "$(sha256sum "${ROOTFS_IMG}" | cut -d' ' -f1)",

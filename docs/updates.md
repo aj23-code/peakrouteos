@@ -72,7 +72,8 @@ The daemon changes `grubenv` with `grub-editenv` (the ESP is mounted read-only a
 
 1. **Find or receive a bundle** (§5): *Check for updates* asks GitHub, or the administrator uploads a file.
 2. **Look at it.** The bundle's manifest says the version, when it was built, its layout version and architecture, the size of its file
-   system and its checksums. The page shows it next to the running version. Refused: wrong architecture, other layout version (needs a
+   system and its checksums. The page shows it next to the running version. Refused: another product or board (a router's bundle on an
+   access point, one access point model's bundle on another: see "Product, board and processors" below), wrong architecture, other layout version (needs a
    fresh image), a file system bigger than the slot, the same version already running (unless the administrator says to install it
    again), and anything while a configuration change is waiting to be confirmed.
 3. **Copy.** The daemon streams the bundle into the *other* slot's partition: download (or upload) → checksum → decompress → checksum →
@@ -101,13 +102,29 @@ One file, `peakroute-os-<version>.update`, a tar archive:
 
 | Entry | Content |
 |---|---|
-| `manifest.json` (first) | `format` (1), `version` (`v0.10.0`), `built` (RFC 3339), `arch` (`amd64`), `layout` (1), `rootfs_size` (bytes of the file system), `rootfs_sha256` (of the decompressed file system), `payload_sha256` (of the next entry), `notes` (what changed, a few lines), `reset` (paths, see §2; none yet) |
+| `manifest.json` (first) | `format` (1), `version` (`v0.10.0`), `built` (RFC 3339), `arch` (`amd64`), `product` (`router` or `ap`), `board` (`pc` or an access point model such as `ubnt-u6plus`), `layout` (1), `rootfs_size` (bytes of the file system), `rootfs_sha256` (of the decompressed file system), `payload_sha256` (of the next entry), `notes` (what changed, a few lines), `reset` (paths, see §2; none yet) |
 | `rootfs.img.gz` | the root file system image (an ext4 file system, built by `buildImage.sh` and gzip-compressed) |
 
 A GitHub release has the file and `peakroute-os-<version>.update.sha256` (the checksum of the whole file, `sha256sum` format). The device
 checks the file it downloaded against it, and the payload and the file system against the manifest, so a truncated or corrupt download
 never gets as far as a slot. (A signature would be a third entry, `manifest.sig`, checked against a public key in the image: planned,
 not built.) The first image carries the same file system as slot A.
+
+**Product, board and processors (2026-10-30).** There are two builds of the software (the router and PeakRoute AP,
+`docs/access-point.md`), and an access point image is made for one model, whose kernel, device tree and disk are its own. So a bundle
+names three things and goes only onto a system that is the same in all three: its **product** (`router`, `ap`), its **board** (`pc` for
+any x86 machine, or the model) and its **processors** (`arch`). The system says what it is in `/usr/lib/peakroute/release`
+(`PEAKROUTE_PRODUCT`, `PEAKROUTE_BOARD`, `PEAKROUTE_ARCH`), written by the image build; the Updates page shows the product and board
+("Built for"). A bundle or a system from before these fields existed says neither and is the router on x86, which is what all of
+them were; a system whose release file does not say the product (a development run) is what the daemon was built as. The check is
+made for every bundle, downloaded or uploaded, before anything is written (`Manifest.Compatible`).
+
+**One repository, a release per product.** The router's tags are `v1.2.3` and its file is `peakroute-os-<version>.update`, as before;
+PeakRoute AP's tags are `ap-v1.2.3`, with one file per board, `peakroute-ap-<board>-<version>.update` (and its `.sha256`). A device
+looks only at its own product's tags and only at its own board's file in them, so a router never offers an access point's release and a
+U6+ never offers another model's (or a file put in the wrong release by mistake). Devices from before this look only for
+`peakroute-os-*.update` under tags that are version numbers, so they skip the access point's releases too. `full_build.sh` names a
+router build from `v*` tags only. Building and publishing the access point's releases is not done yet (it comes with its image).
 
 **Where releases come from.** One GitHub repository, `owner/name`, **fixed when the software is built** (`UPDATE_REPO`, linker flag
 `config.DefaultUpdateRepo`). The administrator cannot point a router at another one, so a router only follows its maker's releases (an

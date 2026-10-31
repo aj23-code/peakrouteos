@@ -243,3 +243,41 @@ func TestCompatibility(t *testing.T) {
 		t.Error("Same")
 	}
 }
+
+// A bundle goes only onto the same product and board: a router's onto a router on x86, PeakRoute AP's for one access point onto that
+// access point. A bundle or a system from before the fields existed is the router on x86.
+func TestTheProductAndBoardMustMatch(t *testing.T) {
+	router := Target{Arch: "amd64", Layout: LayoutVersion}
+	u6 := Target{Identity: Identity{Product: ProductAP, Board: "ubnt-u6plus"}, Arch: "arm64", Layout: LayoutVersion}
+	old := Manifest{Arch: "amd64", Layout: LayoutVersion, RootfsSize: 1}
+	if err := old.Compatible(router); err != nil {
+		t.Fatalf("an old router bundle onto a router: %v", err)
+	}
+	if err := (Manifest{Product: ProductRouter, Board: BoardPC, Arch: "amd64", Layout: LayoutVersion, RootfsSize: 1}).Compatible(router); err != nil {
+		t.Fatalf("a router bundle that says so: %v", err)
+	}
+	apU6 := Manifest{Product: ProductAP, Board: "ubnt-u6plus", Arch: "arm64", Layout: LayoutVersion, RootfsSize: 1}
+	if err := apU6.Compatible(u6); err != nil {
+		t.Fatalf("PeakRoute AP onto its board: %v", err)
+	}
+	for name, c := range map[string]struct {
+		m Manifest
+		t Target
+	}{
+		"an AP bundle onto a router":           {Manifest{Product: ProductAP, Board: BoardPC, Arch: "amd64", Layout: LayoutVersion, RootfsSize: 1}, router},
+		"a router bundle onto an access point": {Manifest{Arch: "arm64", Layout: LayoutVersion, RootfsSize: 1}, u6},
+		"another board of the same processors": {Manifest{Product: ProductAP, Board: "ubnt-u7pro", Arch: "arm64", Layout: LayoutVersion, RootfsSize: 1}, u6},
+		"the AP for x86 onto the U6+":          {Manifest{Product: ProductAP, Arch: "arm64", Layout: LayoutVersion, RootfsSize: 1}, u6},
+	} {
+		err := c.m.Compatible(c.t)
+		if err == nil || !strings.Contains(err.Error(), "cannot be installed here") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	bad := apU6
+	bad.Format, bad.Version, bad.RootfsSHA256, bad.PayloadSHA256 = FormatVersion, "v0.1.0", strings.Repeat("a", 64), strings.Repeat("b", 64)
+	bad.Board = "u6/../x"
+	if bad.Validate() == nil {
+		t.Error("a board that is not a plain name was accepted")
+	}
+}

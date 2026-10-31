@@ -680,6 +680,23 @@ runtime switch. What a build keeps is chosen when it is built: `go build .` is t
   browser on a throwaway `-dev` AP instance: wizard, login, commit and confirm, and all ten AP pages render with no script error and no
   "the/this router".
 
+### Product, board and processors in updates (2026-10-30)
+
+Agreed with the user: a bundle names three things and goes only onto a system that is the same in all three, so a router never installs an
+access point's system or one access point model another's. Rules and file names are in `docs/updates.md` ("Product, board and processors",
+"One repository, a release per product"). Code: `internal/update/identity.go` (`Identity{Product, Board}`, defaults router and `pc` for
+what came before, `assetPattern`, `tagVersion`, `compatibleIdentity`); `Manifest.Product/Board`, `Target.Identity`, `Running.Identity`
+(the Updates page shows "PeakRoute AP"/"PeakRoute OS" and "Built for"); `Service.Identity()` reads `PEAKROUTE_PRODUCT`/`PEAKROUTE_BOARD`
+from the release file, else `Env.Product` (set by `internal/daemon` from the build); `FindRelease` takes only the product's tags (`v*` for
+the router, `ap-v*` for the AP) and only the board's file (`peakroute-os-*.update` for the router on pc, as before;
+`peakroute-ap-<board>-*.update` otherwise), and `Release.Version` is the version without the product prefix. `MakeBundle` and
+`NewSimulated` take the product, so a development run's samples fit it. `buildImage.sh` writes `router`/`pc` into the release file and the
+manifest; `full_build.sh` names a build from `v[0-9]*` tags only (an `ap-v*` tag would otherwise be taken). Devices already in the field
+(v0.9.x) look only for `peakroute-os-*.update` under version-number tags, so they skip AP releases. Tests: `TestTheProductAndBoardMustMatch`,
+`TestEachProductAndBoardFindsOnlyItsOwnReleases` (a router file put in an AP release and an AP file put in a router release are both
+skipped), `TestTheBuildSaysTheProductWhenTheSystemDoesNot`; each check was removed once to see its test fail. Not done: the AP's release
+workflow and image (they come with the U6+ image profile).
+
 ## 7t. The disk image (built 2026-10-12; first real boot reached the welcome page)
 
 Rules and how to use it: **`docs/image.md`**. `buildImage.sh` replaces `buildISO.sh`, `first_boot.sh` and the installer (all removed; the

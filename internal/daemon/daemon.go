@@ -401,10 +401,16 @@ func Start(o Options) *Core {
 	mux.HandleFunc("/api/v1/backup/copies/{id}/restore", requireAuth(backupSvc.HandleCopyRestore))
 	// Updates: a new version is written into the other of the two system slots, started on trial and kept (or not) from the web
 	// interface (docs/updates.md)
+	product := update.ProductRouter
+	if o.APOnly {
+		product = update.ProductAP
+	}
 	updateSvc := update.New(o.ConfigDir, config.BuildVersion, config.DefaultUpdateRepo, configSvc.Idle, backupSvc.SaveCopy)
+	// a system whose release file does not say what it is (a development machine, or an image from before) is taken for this build
+	updateSvc.Product = product
 	if o.Dev {
 		// no disk with two slots here: a simulated one in the development folder, with sample update files to try the page with
-		if sim, err := update.NewSimulated(filepath.Join(o.ConfigDir, "update-sim"), config.BuildVersion, configSvc.Idle, backupSvc.SaveCopy); err != nil {
+		if sim, err := update.NewSimulated(filepath.Join(o.ConfigDir, "update-sim"), config.BuildVersion, product, configSvc.Idle, backupSvc.SaveCopy); err != nil {
 			log.Printf("Warning: the simulated update slots could not be made: %v", err)
 		} else {
 			updateSvc = sim

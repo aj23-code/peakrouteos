@@ -17,9 +17,10 @@ PKG="peakroute/internal/config"
 # the name of this build: given, or from git (never a number typed into a file)
 git_version() {
     local tag dirty=""
-    tag="$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)"
+    # the router's tags only (v1.2.3): PeakRoute AP's are ap-v1.2.3
+    tag="$(git describe --tags --match 'v[0-9]*' --abbrev=0 2>/dev/null || echo v0.0.0)"
     [ -z "$(git status --porcelain 2>/dev/null)" ] || dirty=".dirty"
-    if [ "$(git describe --tags --exact-match 2>/dev/null)" = "${tag}" ] && [ -z "${dirty}" ]; then
+    if [ "$(git describe --tags --match 'v[0-9]*' --exact-match 2>/dev/null)" = "${tag}" ] && [ -z "${dirty}" ]; then
         echo "${tag}"
     else
         echo "${tag}-dev.g$(git rev-parse --short HEAD 2>/dev/null || echo unknown)${dirty}"

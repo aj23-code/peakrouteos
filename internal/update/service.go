@@ -81,8 +81,10 @@ type Env struct {
 	Backup func() (string, error)
 	Now    func() time.Time
 	// Version is the version of the running daemon, used when the release file says nothing (a build run by hand).
-	Version     string
-	Arch        string
+	Version string
+	Arch    string
+	// Product is what this build is ("router" or "ap"), for a system whose release file does not say (identity.go).
+	Product     string
 	Kernel      func() string
 	DefaultRepo string
 	// RebootDelay is how long after the answer the machine restarts (2 s when zero)
@@ -232,7 +234,17 @@ func (s *Service) version() string {
 	return "unknown"
 }
 
-// Release reads the file the image build wrote (the version, when it was built, the layout and the architecture).
+// Identity is the product and board of the running system: what its release file says, else what this build is, on x86.
+func (s *Service) Identity() Identity {
+	rel := s.Release()
+	id := Identity{Product: rel["PEAKROUTE_PRODUCT"], Board: rel["PEAKROUTE_BOARD"]}
+	if id.Product == "" {
+		id.Product = s.Product
+	}
+	return id.withDefaults()
+}
+
+// Release reads the file the image build wrote (the version, when it was built, the layout, the architecture, the product and the board).
 func (s *Service) Release() map[string]string {
 	out := map[string]string{}
 	if s.ReleasePath == "" {
@@ -432,7 +444,7 @@ func (s *Service) persistent() bool {
 
 // target is what a bundle has to fit on this device.
 func (s *Service) target(running Slot) Target {
-	t := Target{Arch: s.Arch, Layout: LayoutVersion, Running: s.version()}
+	t := Target{Identity: s.Identity(), Arch: s.Arch, Layout: LayoutVersion, Running: s.version()}
 	if l := s.Release()["PEAKROUTE_LAYOUT"]; l != "" {
 		fmt.Sscanf(l, "%d", &t.Layout)
 	}
@@ -897,6 +909,7 @@ func (s *Service) GoBack(ctx context.Context) error {
 
 // Running describes the system that is running.
 type Running struct {
+	Identity
 	Version string `json:"version"`
 	Built   string `json:"built,omitempty"`
 	Layout  int    `json:"layout,omitempty"`
@@ -942,7 +955,7 @@ func (s *Service) State(ctx context.Context) StateView {
 		HasSource:  s.DefaultRepo != "",
 		Editable:   s.editable(),
 		History:    append([]Entry{}, s.st.History...),
-		Running: Running{Version: s.version(), Built: rel["PEAKROUTE_BUILT"], Arch: s.Arch, Debian: rel["DEBIAN_VERSION"],
+		Running: Running{Identity: s.Identity(), Version: s.version(), Built: rel["PEAKROUTE_BUILT"], Arch: s.Arch, Debian: rel["DEBIAN_VERSION"],
 			Slot: boot.Running, Kept: boot.Kept},
 	}
 	if s.Kernel != nil {
