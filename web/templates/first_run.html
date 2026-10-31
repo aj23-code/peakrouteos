@@ -3,19 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PeakRoute OS — Set up this router</title>
+    <title>{{.Product}} — Set up this {{if .APOnly}}access point{{else}}router{{end}}</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
     <div class="login-wrapper wiz-wrapper">
         <div class="login-card wiz-card">
             <div class="header">
-                <h1>PeakRoute OS</h1>
-                <p id="wiz-sub">Set up this router</p>
+                <h1>{{.Product}}</h1>
+                <p id="wiz-sub">Set up this {{if .APOnly}}access point{{else}}router{{end}}</p>
             </div>
             <ol class="wiz-steps hidden" id="wiz-steps" aria-label="Progress"></ol>
             <div id="wiz-body"><p class="form-hint">Loading…</p></div>
-            <noscript><p class="error-msg">Setting up the router needs JavaScript.</p></noscript>
+            <noscript><p class="error-msg">Setting up the {{if .APOnly}}access point{{else}}router{{end}} needs JavaScript.</p></noscript>
         </div>
     </div>
     <script src="/static/scripts/first_run.js"></script>

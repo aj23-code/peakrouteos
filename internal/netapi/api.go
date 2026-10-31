@@ -36,6 +36,8 @@ type API struct {
 	// Editable reports whether edits are allowed right now. They are not while a change is being
 	// applied or waiting for confirmation: a revert would overwrite a newer draft. Nil means always.
 	Editable func() bool
+	// APOnly is set by the access point build (cmd/peakroute-ap): the operation mode cannot be switched to a router.
+	APOnly bool
 	// Live reports how the internet connection of the given (active) configuration is up right now: its
 	// address, gateway and DNS servers. Nil means it is not reported.
 	Live func(active config.NetworkConfig) *Live

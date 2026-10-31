@@ -24,7 +24,7 @@ window.CertificatesModule = (function () {
     }
 
     async function errorText(res, fallback) {
-        if (!res) return 'The router did not answer. Try again.';
+        if (!res) return `The ${thisDevice()} did not answer. Try again.`;
         try { const e = await res.json(); return e.error || fallback; } catch (e) { return fallback; }
     }
 
@@ -54,13 +54,13 @@ window.CertificatesModule = (function () {
         const custom = web.mode === 'custom';
         if (!w) return '<section class="card"><div class="net-card-head"><h2>Web interface</h2></div><p class="form-hint net-warn">The certificate cannot be read.</p></section>';
         const missing = (web.missing || []).length
-            ? `<p class="form-hint net-warn">${custom ? 'This certificate is not good for' : 'The certificate is not yet good for'} ${web.missing.map(code).join(', ')}, which ${custom ? 'this router has: a browser would complain when you use them.' : 'this router has. It is made again within the day, or press <em>Make a new one</em>.'}</p>` : '';
+            ? `<p class="form-hint net-warn">${custom ? 'This certificate is not good for' : 'The certificate is not yet good for'} ${web.missing.map(code).join(', ')}, which ${custom ? `this ${thisDevice()} has: a browser would complain when you use them.` : `this ${thisDevice()} has. It is made again within the day, or press <em>Make a new one</em>.`}</p>` : '';
         const sug = suggestions();
         return `<section class="card">
             <div class="net-card-head"><h2>Web interface</h2>${custom ? '<span class="tag">Custom</span>' : '<span class="tag tag-ok">Built-in</span>'}${w.days_left < 30 ? '<span class="tag tag-draft">Runs out soon</span>' : ''}</div>
             <p class="form-hint">${custom
-                ? 'A certificate you uploaded is in use. It is never replaced or renewed by the router: put in a new one before it runs out.'
-                : 'Made by this router\'s own web authority, for its names and addresses, and renewed by itself a month before it runs out. A browser warns until it trusts the authority (see the authority certificate below).'}</p>
+                ? `A certificate you uploaded is in use. It is never replaced or renewed by the ${thisDevice()}: put in a new one before it runs out.`
+                : `Made by this ${thisDevice()}'s own web authority, for its names and addresses, and renewed by itself a month before it runs out. A browser warns until it trusts the authority (see the authority certificate below).`}</p>
             <h3 class="form-section">Certificate in use (the web interface's SSL certificate)</h3>
             <dl class="vpn-dl">
                 <dt>Good for</dt><dd>${(w.names || []).map(code).join(', ') || 'nothing'}</dd>
@@ -74,14 +74,14 @@ window.CertificatesModule = (function () {
             </div>
             ${authoritySectionHtml()}
             <h3 class="form-section">More names for the built-in certificate</h3>
-            <p class="form-hint">The router's own names and the addresses of its networks are in it already. Add a name or address you also use to reach the router, such as the name from <a href="#" data-goto="ddns">Dynamic DNS</a>, so that a browser does not complain there. Separate with commas.</p>
+            <p class="form-hint">The ${thisDevice()}'s own names and the addresses of its networks are in it already. Add a name or address you also use to reach the ${thisDevice()}, such as the name from <a href="#" data-goto="ddns">Dynamic DNS</a>, so that a browser does not complain there. Separate with commas.</p>
             <div class="form-grid"><div class="form-field form-field--wide"><label for="certs-names">Names and addresses</label>
                 <input type="text" id="certs-names" value="${escapeHtml(names)}" placeholder="router.example.com, 203.0.113.9" autocomplete="off" spellcheck="false" autocapitalize="off"${busy ? ' disabled' : ''}></div></div>
             ${sug.length ? `<p class="form-hint">Suggested: ${sug.map(s => `<button type="button" class="cfg-btn cfg-btn--ghost certs-sug" data-name="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join(' ')}</p>` : ''}
             <div class="form-actions"><button type="button" class="cfg-btn cfg-btn--primary" id="certs-names-save"${busy ? ' disabled' : ''}>Save${custom ? '' : ' and make a new certificate'}</button></div>
             ${custom ? '<p class="form-hint">These names are used when the built-in certificate is in use again.</p>' : ''}
             <h3 class="form-section">Use your own certificate</h3>
-            <p class="form-hint">Upload a certificate and its private key (PEM files), for example one from a public authority for a name that points at this router. If the certificate file holds a chain, the router's certificate must come first. It is checked (it must be valid and the key must belong to it) before anything is replaced, and it is served at once.${custom ? ' The one in use now is replaced.' : ' The built-in certificate is replaced until you switch back.'}</p>
+            <p class="form-hint">Upload a certificate and its private key (PEM files), for example one from a public authority for a name that points at this ${thisDevice()}. If the certificate file holds a chain, the ${thisDevice()}'s certificate must come first. It is checked (it must be valid and the key must belong to it) before anything is replaced, and it is served at once.${custom ? ' The one in use now is replaced.' : ' The built-in certificate is replaced until you switch back.'}</p>
             <div class="form-grid">
                 <div class="form-field"><label for="certs-file-cert">Certificate (.crt, .pem)</label><input type="file" id="certs-file-cert" accept=".crt,.pem,.cer,text/plain"${busy ? ' disabled' : ''}></div>
                 <div class="form-field"><label for="certs-file-key">Private key (.key, .pem)</label><input type="file" id="certs-file-key" accept=".key,.pem,text/plain"${busy ? ' disabled' : ''}></div>
@@ -92,8 +92,8 @@ window.CertificatesModule = (function () {
 
     function authoritySectionHtml() {
         const a = web.authority;
-        return `<h3 class="form-section">Authority certificate (to make your devices trust this router)</h3>
-            <p class="form-hint">The router's built-in certificate is made by its own web authority. Browsers do not know it, so they warn. Install the authority's certificate once on each computer or phone you use, and the warnings stop. It is a public file: it lets a device recognise this router; the key that makes certificates never leaves the router. It is separate from the VPN's authority, so nothing made for a VPN device is trusted for the web interface. Only install it on devices of your own.</p>
+        return `<h3 class="form-section">Authority certificate (to make your devices trust this ${thisDevice()})</h3>
+            <p class="form-hint">The ${thisDevice()}'s built-in certificate is made by its own web authority. Browsers do not know it, so they warn. Install the authority's certificate once on each computer or phone you use, and the warnings stop. It is a public file: it lets a device recognise this ${thisDevice()}; the key that makes certificates never leaves the ${thisDevice()}. It is separate from the VPN's authority, so nothing made for a VPN device is trusted for the web interface. Only install it on devices of your own.</p>
             ${a ? `<dl class="vpn-dl">
                 <dt>Authority</dt><dd>${escapeHtml(a.subject)}</dd>
                 <dt>Valid until</dt><dd>${expiryHtml(a)}</dd>
@@ -122,16 +122,16 @@ window.CertificatesModule = (function () {
         if (!ca) {
             return `<section class="card">
                 <div class="net-card-head"><h2>VPN (OpenVPN)</h2><span class="tag">Not used</span></div>
-                <p class="form-hint">OpenVPN needs certificates. This router makes its own certificate authority the first time you set up an OpenVPN server or a tunnel that waits (<a href="#" data-goto="vpn">VPN</a>). WireGuard uses keys, not certificates.</p>
+                <p class="form-hint">OpenVPN needs certificates. This ${thisDevice()} makes its own certificate authority the first time you set up an OpenVPN server or a tunnel that waits (<a href="#" data-goto="vpn">VPN</a>). WireGuard uses keys, not certificates.</p>
             </section>`;
         }
         const soon = (ms) => ms && ms < Date.now() + 60 * 864e5;
         const rows = [];
         if (vpn.ov_remote) (vpn.ov_remote.clients || []).forEach(c => rows.push({ name: c.name, kind: 'Remote access device', ms: c.not_after }));
-        (vpn.sites || []).forEach(s => { if (s.engine === 'openvpn' && s.role === 'client' && s.cert_expires) rows.push({ name: s.name, kind: 'Site tunnel (this router connects)', ms: s.cert_expires }); });
+        (vpn.sites || []).forEach(s => { if (s.engine === 'openvpn' && s.role === 'client' && s.cert_expires) rows.push({ name: s.name, kind: `Site tunnel (this ${thisDevice()} connects)`, ms: s.cert_expires }); });
         return `<section class="card">
             <div class="net-card-head"><h2>VPN (OpenVPN)</h2><span class="tag tag-ok">In use</span></div>
-            <p class="form-hint">This router is the certificate authority of its OpenVPN servers: it makes and signs the certificates of the servers and of each device, and keeps a list of the ones that are no longer accepted. This authority is separate from the web interface's. Devices are managed on <a href="#" data-goto="vpn">VPN</a>.</p>
+            <p class="form-hint">This ${thisDevice()} is the certificate authority of its OpenVPN servers: it makes and signs the certificates of the servers and of each device, and keeps a list of the ones that are no longer accepted. This authority is separate from the web interface's. Devices are managed on <a href="#" data-goto="vpn">VPN</a>.</p>
             <dl class="vpn-dl">
                 <dt>Authority</dt><dd>${escapeHtml(ca.subject)}, valid until ${escapeHtml(dateOf(ca.not_after))}</dd>
                 <dt>Server certificate</dt><dd>valid until ${escapeHtml(dateOf(ca.server_not_after))}${soon(ca.server_not_after) ? ' <span class="net-warn">Runs out soon: renew it.</span>' : ''}</dd>

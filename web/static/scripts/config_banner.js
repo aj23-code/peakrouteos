@@ -104,7 +104,7 @@ window.ConfigBanner = (function () {
             case 'applying':
                 return `<div class="config-bar config-bar--applying" role="status">
                     <span class="config-bar-text"><strong>Applying changes&hellip;</strong>
-                    The router may be unreachable for a moment.</span></div>`;
+                    The ${thisDevice()} may be unreachable for a moment.</span></div>`;
             case 'confirm':
                 return `<div class="config-bar config-bar--confirm" role="alert">
                     <span class="config-bar-text"><strong>Confirm this change.</strong>
@@ -118,7 +118,7 @@ window.ConfigBanner = (function () {
                     ? `If you changed the router's LAN address, open <strong>${esc(p.newUrl)}</strong>, log in, and confirm there before the time runs out. Otherwise the change reverts by itself.`
                     : 'Retrying&hellip;';
                 return `<div class="config-bar config-bar--lost" role="alert">
-                    <span class="config-bar-text"><strong>Lost contact with the router.</strong> ${where}</span></div>`;
+                    <span class="config-bar-text"><strong>Lost contact with the ${thisDevice()}.</strong> ${where}</span></div>`;
             }
         }
         return '';
@@ -229,7 +229,7 @@ window.ConfigBanner = (function () {
 
     async function post(path) {
         const res = await apiFetch(path, { method: 'POST' });
-        if (!res) return { ok: false, error: 'Could not reach the router.' };
+        if (!res) return { ok: false, error: `Could not reach the ${thisDevice()}.` };
         let body = null;
         try { body = await res.json(); } catch (e) { /* no body */ }
         return { ok: res.ok, status: res.status, body };

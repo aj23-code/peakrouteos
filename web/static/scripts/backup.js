@@ -23,7 +23,7 @@ window.BackupModule = (function () {
     }
 
     async function errorText(res, fallback) {
-        if (!res) return 'The router did not answer. Try again.';
+        if (!res) return `The ${thisDevice()} did not answer. Try again.`;
         try { const e = await res.json(); return e.error || fallback; } catch (e) { return fallback; }
     }
 
@@ -80,11 +80,11 @@ window.BackupModule = (function () {
         if (r.settings) {
             const st = r.settings;
             const portsNote = (st.missing_ports || []).length
-                ? `<p class="form-hint net-warn">This router does not have the ports ${st.missing_ports.map(p => `<code>${escapeHtml(p)}</code>`).join(', ')} that the backup uses (it comes from a router with other ports).</p>` : '';
+                ? `<p class="form-hint net-warn">This ${thisDevice()} does not have the ports ${st.missing_ports.map(p => `<code>${escapeHtml(p)}</code>`).join(', ')} that the backup uses (it comes from a router with other ports).</p>` : '';
             parts.push(`<div class="bk-part"><label class="toggle toggle--block"><input type="checkbox" data-pick="settings"${pick.settings ? ' checked' : ''}${st.valid ? '' : ' disabled'}><span><strong>Settings</strong><span class="form-hint">Ports, networks, DHCP and reserved addresses, firewall, DNS, VPN and the rest. They become the <strong>draft</strong>: you review and commit them from the bar at the top, with the usual confirmation, so a mistake can still be undone.${st.nicknames ? ` The ${st.nicknames} device nickname${st.nicknames === 1 ? '' : 's'} in it come back at once, as they are only labels.` : ''}${st.draft_waits ? ' <span class="net-warn">The changes now waiting in the draft are replaced.</span>' : ''}</span></span></label>
                 ${portsNote}
-                <label class="toggle toggle--block bk-sub"><input type="checkbox" id="bk-keep-ports"${rs.keepPorts ? ' checked' : ''}><span><strong>Keep this router's own ports</strong><span class="form-hint">Which port is the internet connection, which are LAN ports and what each carries, and the Wi-Fi adapters stay as they are here; everything else comes from the backup. ${(st.missing_ports || []).length ? 'Recommended: the ports differ.' : 'Use it when restoring onto other hardware.'}</span></span></label>
-                ${st.valid ? '' : `<div class="form-message" role="alert">These settings cannot be restored${rs.keepPorts ? '' : ' as they are (try keeping this router\'s own ports)'}:<ul>${(st.problems || []).map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul></div>`}
+                <label class="toggle toggle--block bk-sub"><input type="checkbox" id="bk-keep-ports"${rs.keepPorts ? ' checked' : ''}><span><strong>Keep this ${thisDevice()}'s own ports</strong><span class="form-hint">Which port is the internet connection, which are LAN ports and what each carries, and the Wi-Fi adapters stay as they are here; everything else comes from the backup. ${(st.missing_ports || []).length ? 'Recommended: the ports differ.' : 'Use it when restoring onto other hardware.'}</span></span></label>
+                ${st.valid ? '' : `<div class="form-message" role="alert">These settings cannot be restored${rs.keepPorts ? '' : ` as they are (try keeping this ${thisDevice()}'s own ports)`}:<ul>${(st.problems || []).map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul></div>`}
                 <details class="vpn-details"${(st.changes || []).length && (st.changes || []).length <= 6 ? ' open' : ''}><summary>What would change (${(st.changes || []).length})</summary>${reviewHtml(st)}</details></div>`);
         }
         if (r.admins) {
@@ -98,10 +98,10 @@ window.BackupModule = (function () {
                 ${c.valid ? '' : `<div class="form-message" role="alert"><ul>${c.problems.map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul></div>`}</div>`);
         }
         if ((r.history || []).length) {
-            parts.push(`<div class="bk-part"><label class="toggle toggle--block"><input type="checkbox" data-pick="history"${pick.history ? ' checked' : ''}><span><strong>History</strong><span class="form-hint">${r.history.map(h => escapeHtml(h.name) + ' (' + sizeText(h.size) + ')').join(', ')}. It replaces the history here and comes back <strong>when the router next starts</strong>.</span></span></label></div>`);
+            parts.push(`<div class="bk-part"><label class="toggle toggle--block"><input type="checkbox" data-pick="history"${pick.history ? ' checked' : ''}><span><strong>History</strong><span class="form-hint">${r.history.map(h => escapeHtml(h.name) + ' (' + sizeText(h.size) + ')').join(', ')}. It replaces the history here and comes back <strong>when the ${thisDevice()} next starts</strong>.</span></span></label></div>`);
         }
         const any = Object.values(pick).some(Boolean);
-        return `<div class="bk-open"><p class="form-hint">A backup of <strong>${escapeHtml(r.hostname || 'a router')}</strong> made ${escapeHtml(dateOf(r.created))}${r.software ? ' by ' + escapeHtml(r.software) : ''}. Choose what to restore. Before anything is changed the router keeps a copy of what it has now (below), so a restore can be undone.</p>
+        return `<div class="bk-open"><p class="form-hint">A backup of <strong>${escapeHtml(r.hostname || 'a router')}</strong> made ${escapeHtml(dateOf(r.created))}${r.software ? ' by ' + escapeHtml(r.software) : ''}. Choose what to restore. Before anything is changed the ${thisDevice()} keeps a copy of what it has now (below), so a restore can be undone.</p>
             ${parts.join('')}
             ${rs.error ? `<div class="form-message" role="alert">${escapeHtml(rs.error)}</div>` : ''}
             ${!info.editable ? '<p class="form-hint net-warn">A change is being applied or waits for confirmation: confirm or revert it before restoring.</p>' : ''}
@@ -114,12 +114,12 @@ window.BackupModule = (function () {
         const what = r.done.map(d => SECTION[d] || d).join(', ');
         const lines = [];
         if (r.done.includes('settings')) lines.push(`The settings are in the draft${r.draft_replaced ? ' (they replaced the changes that were waiting)' : ''}. <strong>Review and commit them from the bar at the top.</strong>`);
-        if (r.done.includes('certificates')) lines.push('The certificates are in use. A browser may warn once if the router\'s certificate changed.');
+        if (r.done.includes('certificates')) lines.push(`The certificates are in use. A browser may warn once if the ${thisDevice()}'s certificate changed.`);
         if (r.signed_out) lines.push('The administrators were replaced and everyone is signed out. <a href="/login">Sign in again</a> with an account from the backup.');
-        if (r.needs_restart) lines.push('The history comes back the next time the router starts (System, Settings, Power: restart).');
+        if (r.needs_restart) lines.push(`The history comes back the next time the ${thisDevice()} starts (System, Settings, Power: restart).`);
         return `<section class="card"><div class="net-card-head"><h2>Restored</h2><span class="tag tag-ok">${escapeHtml(what)}</span></div>
             <ul class="bk-list">${lines.map(l => `<li>${l}</li>`).join('')}</ul>
-            <p class="form-hint">A copy of what this router had before is kept under <em>Copies on this router</em>, below.</p>
+            <p class="form-hint">A copy of what this ${thisDevice()} had before is kept under <em>Copies on this ${thisDevice()}</em>, below.</p>
             <div class="form-actions"><button type="button" class="cfg-btn cfg-btn--ghost" id="bk-result-close">OK</button></div></section>`;
     }
 
@@ -127,7 +127,7 @@ window.BackupModule = (function () {
         if (rs.result) return resultHtml();
         return `<section class="card" id="bk-restore-card">
             <div class="net-card-head"><h2>Restore from a backup</h2></div>
-            <p class="form-hint">Choose a backup file and its passphrase. The router opens it and shows what is in it and what would change; <strong>nothing is changed until you press Restore</strong>. Use it to set up a replacement router, or to go back.</p>
+            <p class="form-hint">Choose a backup file and its passphrase. The ${thisDevice()} opens it and shows what is in it and what would change; <strong>nothing is changed until you press Restore</strong>. Use it to set up a replacement router, or to go back.</p>
             ${rs.report ? reportHtml() : `<div class="form-grid">
                 <div class="form-field"><label for="bk-file">Backup file (.prbackup)</label><input type="file" id="bk-file" accept=".prbackup,application/octet-stream"${rs.busy ? ' disabled' : ''}></div>
                 <div class="form-field"><label for="bk-rpass">Passphrase</label><input type="password" id="bk-rpass" value="${escapeHtml(rs.pass)}" autocomplete="off"${rs.busy ? ' disabled' : ''}></div>
@@ -189,8 +189,8 @@ window.BackupModule = (function () {
             <div class="form-hint fw-text">${escapeHtml(sectionsText(c.sections))} · ${sizeText(c.size)}</div></div>
             <div class="fw-actions"><button type="button" class="cfg-btn cfg-btn--ghost bk-copy-restore" data-id="${escapeHtml(c.id)}"${info.editable ? '' : ' disabled'}>${confirmCopy === 'restore:' + c.id ? 'Click again' : 'Restore this'}</button>
             <button type="button" class="cfg-btn cfg-btn--danger bk-copy-delete" data-id="${escapeHtml(c.id)}">${confirmCopy === 'delete:' + c.id ? 'Click again' : 'Delete'}</button></div></div>`).join('');
-        return `<section class="card"><div class="net-card-head"><h2>Copies on this router</h2><span class="tag">${info.copies.length}</span></div>
-            <p class="form-hint">Before a restore changes anything, the router keeps a copy of what it had: the settings that were running, the administrators and the certificates (not the history). The last three are kept, here, and cannot be downloaded. <em>Restore this</em> puts one back: the settings become the draft, the rest is at once, and everyone is signed out.</p>
+        return `<section class="card"><div class="net-card-head"><h2>Copies on this ${thisDevice()}</h2><span class="tag">${info.copies.length}</span></div>
+            <p class="form-hint">Before a restore changes anything, the ${thisDevice()} keeps a copy of what it had: the settings that were running, the administrators and the certificates (not the history). The last three are kept, here, and cannot be downloaded. <em>Restore this</em> puts one back: the settings become the draft, the rest is at once, and everyone is signed out.</p>
             <div class="fw-list">${rows || '<div class="fw-row fw-empty">No copies yet: one is made the first time you restore.</div>'}</div></section>`;
     }
 

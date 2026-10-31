@@ -184,3 +184,22 @@ func TestAnAccessPointHasNoInternetConnectionToMake(t *testing.T) {
 		t.Fatalf("%d %s", code, raw)
 	}
 }
+
+// The access point build (cmd/peakroute-ap) has no router to switch to: the page is told so and the switch is refused.
+func TestTheAccessPointBuildCannotBecomeARouter(t *testing.T) {
+	e := wifiEnv(t)
+	e.api.APOnly = true
+	if code, v, raw := e.ap(http.MethodGet, ""); code != 200 || !v.APOnly {
+		t.Fatalf("%d %s", code, raw)
+	}
+	if code, _, raw := e.ap(http.MethodPut, `{"mode":"ap"}`); code != 200 {
+		t.Fatalf("%d %s", code, raw)
+	}
+	code, _, raw := e.ap(http.MethodPut, `{"mode":"router"}`)
+	if code != 400 || !strings.Contains(raw, config.APOnlyMessage) {
+		t.Fatalf("%d %s", code, raw)
+	}
+	if !e.draft().IsAP() {
+		t.Fatal("the refused switch changed the draft")
+	}
+}

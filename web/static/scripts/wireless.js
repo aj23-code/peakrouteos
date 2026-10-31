@@ -32,7 +32,7 @@ window.WirelessModule = (function () {
     }
 
     async function errorOf(res, fallback) {
-        if (!res) return { general: 'The router did not answer. Try again.', fields: [] };
+        if (!res) return { general: `The ${thisDevice()} did not answer. Try again.`, fields: [] };
         let err = {};
         try { err = await res.json(); } catch (e) { /* not JSON */ }
         return { general: err.error || fallback, fields: err.errors || [] };
@@ -157,7 +157,7 @@ window.WirelessModule = (function () {
     // ---------------------------------------------------------------- adapters: use as a Wi-Fi client
 
     const ROLES = [
-        ['uplink', 'The internet connection', 'Wireless uplink: this adapter becomes the internet port. The router joins another Wi-Fi network (a hotel, a café, a neighbour) and shares it. A cable port that was the internet port is left unassigned.'],
+        ['uplink', 'The internet connection', `Wireless uplink: this adapter becomes the internet port. The ${thisDevice()} joins another Wi-Fi network (a hotel, a café, a neighbour) and shares it. A cable port that was the internet port is left unassigned.`],
         ['bridge', 'A link into a local network', 'The far end of a point-to-point link, or a wireless extender: the adapter joins a local network like a cable port, over the air, and devices behind it keep their own addresses. The other end must accept point-to-point links.'],
     ];
 
@@ -233,7 +233,7 @@ window.WirelessModule = (function () {
             </div>
             ${wifi.ap_mode ? '<p class="form-hint">An access point has no internet connection of its own: a link joins the main Wi-Fi (or the other end of a point-to-point link) and the cable ports and Wi-Fi networks of this device become part of that network.</p>' : ''}
             ${err('role')}
-            ${f.role === 'bridge' ? `<div class="form-grid"><div class="form-field"><label for="st-${key}-network">Local Network</label>
+            ${f.role === 'bridge' && !wifi.ap_mode ? `<div class="form-grid"><div class="form-field"><label for="st-${key}-network">Local Network</label>
                 <select id="st-${key}-network" class="role-select" data-st="${key}" data-stf="network"${off ? ' disabled' : ''}>${netOptions}</select>${err('network')}</div></div>` : ''}
             ${notUsed ? `<p class="form-hint net-warn">Not in use: the internet port is <strong>${escapeHtml(wifi.wan_port || '?')}</strong> now. Save again to make this adapter the internet port.</p>` : ''}
             ${(!wifi.country && f.enabled) ? '<p class="form-hint net-warn">A country must be chosen in Settings before this can be committed.</p>' : ''}
@@ -579,7 +579,7 @@ window.WirelessModule = (function () {
                 </div>
             </div>
             ${capable ? '' : '<p class="form-hint">None of the adapters in this machine can act as an access point, so there is nothing to host a Wi-Fi network.</p>'}
-            ${c ? '' : '<p class="form-hint">No Wi-Fi network yet. Add one to give a Local Network a Wi-Fi name and password.</p>'}
+            ${c ? '' : `<p class="form-hint">No Wi-Fi network yet. Add one to give ${wifi.ap_mode ? 'the network' : 'a Local Network'} a Wi-Fi name and password.</p>`}
         </section>${c ? ssidCardHtml(c) : ''}`;
     }
 

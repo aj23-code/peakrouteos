@@ -993,3 +993,26 @@ func TestScanningFromTheWizard(t *testing.T) {
 		t.Fatalf("%d", r.Status)
 	}
 }
+
+// The access point build (cmd/peakroute-ap) tells the wizard it has no router, refuses one at the first step, and still sets up
+// every way of being an access point.
+func TestTheAccessPointBuildOffersAndAcceptsNoRouter(t *testing.T) {
+	e := newEnv(t)
+	if r := e.do(e.svc.HandleInfo, http.MethodGet, nil); r.Body["ap_only"] != false {
+		t.Fatalf("the router build says ap_only: %v", r.Body["ap_only"])
+	}
+	e.svc.APOnly = true
+	if r := e.do(e.svc.HandleInfo, http.MethodGet, nil); r.Body["ap_only"] != true {
+		t.Fatalf("ap_only: %v", r.Body["ap_only"])
+	}
+	if r := e.check("region", good()); r.Status != 400 || r.Errors["mode"] != config.APOnlyMessage {
+		t.Fatalf("a router was not refused at the first step: %d %v", r.Status, r.Errors)
+	}
+	if r := e.apply(good()); r.Status != 400 || r.Errors["mode"] == "" {
+		t.Fatalf("a router was set up: %d %v", r.Status, r.Errors)
+	}
+	e.nothingSaved()
+	if r := e.apply(goodAP()); r.Status != 200 {
+		t.Fatalf("an access point was refused: %d %v %v", r.Status, r.Body, r.Errors)
+	}
+}

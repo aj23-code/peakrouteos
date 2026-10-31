@@ -5,10 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{.CSRFToken}}">
   <meta name="peakroute-mode" content="{{.SystemMode}}">
-  <title>PeakRoute — Dashboard</title>
+  <title>{{.Product}} — Dashboard</title>
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
+  {{/* what this device is called on the pages */}}{{$dev := "router"}}{{if eq .SystemMode "AP"}}{{$dev = "access point"}}{{end}}
   <div class="dashboard-layout">
 
     <!-- Sidebar Navigation -->
@@ -16,7 +17,7 @@
       <div class="sidebar-top">
         <div class="brand">
           <div class="brand-badge">PR</div>
-          <span class="brand-title">PeakRoute OS</span>
+          <span class="brand-title">{{.Product}}</span>
           <button type="button" class="nav-close" id="nav-close" aria-label="Close menu">&times;</button>
         </div>
 
@@ -27,7 +28,7 @@
           <div id="nav-empty" class="nav-empty hidden">No matches</div>
 
           {{if eq .SystemMode "AP"}}
-          <a href="#" class="nav-item nav-top active" data-view="ap-home"><span class="banner-icon">📡</span> Access point</a>
+          <a href="#" class="nav-item nav-top active" data-view="ap-home"><span class="banner-icon">📡</span> Overview</a>
           <a href="#" class="nav-item nav-top" data-view="wireless"><span class="banner-icon">📶</span> Wireless</a>
           {{else}}
           <a href="#" class="nav-item nav-top active" data-view="overview"><span class="banner-icon">📊</span> Overview</a>
@@ -497,13 +498,13 @@
         <header class="dash-header">
           <div>
             <h1>Wireless</h1>
-            <p class="subtitle">The Wi-Fi adapters in this machine, and the Wi-Fi networks they host for your Local Networks. Changes are saved as a draft until you commit them.</p>
+            <p class="subtitle">The Wi-Fi adapters in this machine, and the Wi-Fi networks they host for {{if eq .SystemMode "AP"}}the network this access point is part of{{else}}your Local Networks{{end}}. Changes are saved as a draft until you commit them.</p>
           </div>
         </header>
 
         <section id="wifi-empty" class="card wifi-empty hidden" role="status">
           <h2>No wireless adapter found</h2>
-          <p class="form-hint">Plug in a Wi-Fi adapter, or use a machine that has one. Adapters that can act as an access point are the ones that can host Wi-Fi networks for your Local Networks. This page checks again every few seconds.</p>
+          <p class="form-hint">Plug in a Wi-Fi adapter, or use a machine that has one. Adapters that can act as an access point are the ones that can host Wi-Fi networks{{if eq .SystemMode "AP"}}{{else}} for your Local Networks{{end}}. This page checks again every few seconds.</p>
         </section>
 
         <div id="wifi-message" class="form-message hidden" role="alert"></div>
@@ -514,10 +515,10 @@
           <details class="card wifi-section" id="wifi-sec-ap">
             <summary><span class="wifi-section-title">Wi-Fi networks: wireless router or access point</span><span class="form-hint wifi-section-sum" id="wifi-sec-ap-sum"></span></summary>
             <div class="wifi-section-body">
-              <p class="wifi-explain"><strong>The usual indoor Wi-Fi.</strong> This device hosts Wi-Fi networks that phones, laptops and other devices join, like the wireless router or access point in a home, office or shop. Each Wi-Fi network has a name and a password, and belongs to one of your Local Networks (so a Guest network can have its own Wi-Fi). This works the same whether the device is a router or only an access point (System, Operation mode).</p>
+              <p class="wifi-explain"><strong>The usual indoor Wi-Fi.</strong> This device hosts Wi-Fi networks that phones, laptops and other devices join, like the wireless router or access point in a home, office or shop. {{if eq .SystemMode "AP"}}Each Wi-Fi network has a name and a password, and its devices are on the same network as the cable ports, or on a tagged network (a VLAN ID) of their own.{{else}}Each Wi-Fi network has a name and a password, and belongs to one of your Local Networks (so a Guest network can have its own Wi-Fi). This works the same whether the device is a router or only an access point (System, Operation mode).{{end}}</p>
               <ol class="wifi-steps">
                 <li><strong>Switch on an adapter</strong> for a band below (2.4 GHz reaches further, 5 GHz is faster).</li>
-                <li><strong>Add a Wi-Fi network:</strong> its name, password and the Local Network it joins.</li>
+                <li><strong>Add a Wi-Fi network:</strong> its name, password and {{if eq .SystemMode "AP"}}a VLAN ID if it has one{{else}}the Local Network it joins{{end}}.</li>
               </ol>
               <div id="wifi-ssids"></div>
               <h3 class="form-section">Adapters that host Wi-Fi</h3>
@@ -526,13 +527,13 @@
           </details>
 
           <details class="card wifi-section" id="wifi-sec-link">
-            <summary><span class="wifi-section-title">Point-to-point links and wireless uplink</span><span class="form-hint wifi-section-sum" id="wifi-sec-link-sum"></span></summary>
+            <summary><span class="wifi-section-title">Point-to-point links{{if eq .SystemMode "AP"}} and extending Wi-Fi{{else}} and wireless uplink{{end}}</span><span class="form-hint wifi-section-sum" id="wifi-sec-link-sum"></span></summary>
             <div class="wifi-section-body">
               <p class="wifi-explain"><strong>For radios that link places together, or use someone else's Wi-Fi.</strong> Outdoor point-to-point radios (the kind mounted on a building to reach another one) work in pairs: one end <em>hosts</em> the link and the other end <em>joins</em> it as a client. Here an adapter can be that client end. You do not need this for ordinary Wi-Fi at home.</p>
               <ul class="wifi-uses">
                 <li><strong>Link two buildings or sites.</strong> At the near end, turn on <em>Accept point-to-point links</em> on a Wi-Fi network (in the section above, under that network's Point-to-point link). At the far end, set an adapter here as a client and choose <em>A link into a local network</em>. Both ends are then one network, and devices keep their own addresses.</li>
-                <li><strong>Wireless extender.</strong> Set the device to access point mode (System, Operation mode) and link it to the main Wi-Fi here: it repeats that network where the cable does not reach.</li>
-                <li><strong>Wireless internet connection.</strong> Join a hotel, café or neighbour's Wi-Fi and choose <em>The internet connection</em>: the adapter becomes the internet port and the router shares it.</li>
+                <li><strong>Wireless extender.</strong> {{if eq .SystemMode "AP"}}Link this access point{{else}}Set the device to access point mode (System, Operation mode) and link it{{end}} to the main Wi-Fi here: it repeats that network where the cable does not reach.</li>
+                {{if eq .SystemMode "ROUTER"}}<li><strong>Wireless internet connection.</strong> Join a hotel, café or neighbour's Wi-Fi and choose <em>The internet connection</em>: the adapter becomes the internet port and the router shares it.</li>{{end}}
               </ul>
               <div id="wifi-links"></div>
             </div>
@@ -675,7 +676,7 @@
         <header class="dash-header">
           <div>
             <h1>Settings</h1>
-            <p class="subtitle">Choices that apply to the whole router. Changes are saved as a draft until you commit them.</p>
+            <p class="subtitle">Choices that apply to the whole {{$dev}}. Changes are saved as a draft until you commit them.</p>
           </div>
         </header>
 
@@ -754,7 +755,7 @@
         <header class="dash-header">
           <div>
             <h1>Administrators</h1>
-            <p class="subtitle">Who can sign in to this router&rsquo;s web interface, with what role. Unlike most pages, changes here take effect at once: they are not part of the draft you commit.</p>
+            <p class="subtitle">Who can sign in to this {{$dev}}&rsquo;s web interface, with what role. Unlike most pages, changes here take effect at once: they are not part of the draft you commit.</p>
           </div>
         </header>
 
@@ -820,7 +821,7 @@
         <header class="dash-header">
           <div>
             <h1>Backup and restore</h1>
-            <p class="subtitle">One encrypted file with everything needed to set this router up again, and a way to put it back. Restoring shows what is in the file first and puts the settings in the draft.</p>
+            <p class="subtitle">One encrypted file with everything needed to set this {{$dev}} up again, and a way to put it back. Restoring shows what is in the file first and puts the settings in the draft.</p>
           </div>
         </header>
 
@@ -833,7 +834,7 @@
         <header class="dash-header">
           <div>
             <h1>Updates</h1>
-            <p class="subtitle">The version this router runs, and how to change it. A new version is written beside the one that runs, started once on trial, and only kept when you say so: until then the old one is one restart away.</p>
+            <p class="subtitle">The version this {{$dev}} runs, and how to change it. A new version is written beside the one that runs, started once on trial, and only kept when you say so: until then the old one is one restart away.</p>
           </div>
         </header>
 
@@ -845,7 +846,7 @@
         <header class="dash-header">
           <div>
             <h1>Certificates</h1>
-            <p class="subtitle">The certificate of this router's web interface, how to make your computers and phones trust it, and the certificates of the VPN. Certificates apply at once; they are not part of the draft.</p>
+            <p class="subtitle">The certificate of this {{$dev}}'s web interface{{if .APOnly}} and how to make your computers and phones trust it.{{else}}, how to make your computers and phones trust it, and the certificates of the VPN.{{end}} Certificates apply at once; they are not part of the draft.</p>
           </div>
         </header>
 
@@ -883,7 +884,7 @@
       <div id="view-ap-home" class="view-section hidden">
         <header class="dash-header">
           <div>
-            <h1>Access point</h1>
+            <h1>Overview</h1>
             <p class="subtitle">How this access point is doing: its place on the network, its Wi-Fi and the devices connected to it.</p>
           </div>
         </header>
@@ -895,7 +896,7 @@
         <header class="dash-header">
           <div>
             <h1>Operation mode</h1>
-            <p class="subtitle">Whether this device is a router or an access point on a network that another router runs. Changes are saved as a draft until you commit them.</p>
+            <p class="subtitle">{{if .APOnly}}What this device is, and how it joins the network that another router runs.{{else}}Whether this device is a router or an access point on a network that another router runs.{{end}} Changes are saved as a draft until you commit them.</p>
           </div>
         </header>
 
@@ -919,7 +920,7 @@
         <header class="dash-header">
           <div>
             <h1>System logs</h1>
-            <p class="subtitle">What the system itself is saying: its services, the kernel and the router daemon (the systemd journal), live. The traffic your firewall rules matched is on <a href="#" data-goto="firewall-log">Firewall, Logs</a>.</p>
+            <p class="subtitle">What the system itself is saying: its services, the kernel and the PeakRoute daemon (the systemd journal), live.{{if eq .SystemMode "ROUTER"}} The traffic your firewall rules matched is on <a href="#" data-goto="firewall-log">Firewall, Logs</a>.{{end}}</p>
           </div>
           <div class="status-badge">
             <span class="status-dot"></span> Live Tail

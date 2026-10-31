@@ -26,7 +26,7 @@ window.UpdatesModule = (function () {
     // ---------------------------------------------------------------- talking to the router
 
     async function errorText(res, fallback) {
-        if (!res) return 'The router did not answer. Try again.';
+        if (!res) return `The ${thisDevice()} did not answer. Try again.`;
         try { const e = await res.json(); return e.error || fallback; } catch (e) { return fallback; }
     }
 
@@ -116,7 +116,7 @@ window.UpdatesModule = (function () {
             else { error = (body && body.error) || 'The update could not be installed.'; }
             render();
         };
-        xhr.onerror = () => { up.sending = false; error = 'The router did not answer. The upload was cut off; try again.'; render(); };
+        xhr.onerror = () => { up.sending = false; error = `The ${thisDevice()} did not answer. The upload was cut off; try again.`; render(); };
         xhr.send(f);
         schedule(); // the router shows what it is writing
     }
@@ -138,7 +138,7 @@ window.UpdatesModule = (function () {
         const other = st.other_slot
             ? (st.other_version ? esc(st.other_version) : '<span class="form-hint">nothing yet</span>') : '';
         return `<section class="card" id="up-versions">
-            <div class="net-card-head"><h2>This router</h2>${st.on_trial ? '<span class="tag tag-draft">on trial</span>' : '<span class="tag tag-ok">kept</span>'}</div>
+            <div class="net-card-head"><h2>This ${thisDevice()}</h2>${st.on_trial ? '<span class="tag tag-draft">on trial</span>' : '<span class="tag tag-ok">kept</span>'}</div>
             <dl class="inet-live">
                 <div><dt>PeakRoute OS</dt><dd>${esc(r.version)}</dd></div>
                 <div><dt>Built</dt><dd>${esc(r.built ? dateOf(r.built) : '–')}</dd></div>
@@ -149,7 +149,7 @@ window.UpdatesModule = (function () {
                 <div><dt>Starts from</dt><dd>slot ${esc((r.kept || r.slot).toUpperCase())}${kept === 'this slot' ? '' : ''}</dd></div>
                 <div><dt>Other slot (${esc(st.other_slot.toUpperCase())})</dt><dd>${other}</dd></div>` : ''}
             </dl>
-            ${!st.persistent ? '<div class="form-message" role="alert">This router could not use its data partition at the last start, so its settings are kept in memory only and are lost at a restart. Updating is not safe like this.</div>' : ''}
+            ${!st.persistent ? `<div class="form-message" role="alert">This ${thisDevice()} could not use its data partition at the last start, so its settings are kept in memory only and are lost at a restart. Updating is not safe like this.</div>` : ''}
         </section>`;
     }
 
@@ -157,7 +157,7 @@ window.UpdatesModule = (function () {
         const left = trialLeft();
         return `<section class="card" id="up-trial">
             <div class="net-card-head"><h2>${esc(st.running.version)} is on trial</h2><span class="tag tag-draft">${left > 0 ? clock(left) + ' left' : 'time is up'}</span></div>
-            <p class="form-hint">This is the new version, started once. If everything works (the internet, the Wi-Fi, the pages), <strong>keep it</strong>. If you do nothing, or the router fails to start, it goes back to the version before by itself ${left > 0 ? 'in <strong id="up-left">' + clock(left) + '</strong>' : 'about now'}.</p>
+            <p class="form-hint">This is the new version, started once. If everything works (the internet, the Wi-Fi, the pages), <strong>keep it</strong>. If you do nothing, or the ${thisDevice()} fails to start, it goes back to the version before by itself ${left > 0 ? 'in <strong id="up-left">' + clock(left) + '</strong>' : 'about now'}.</p>
             ${error ? `<div class="form-message" role="alert">${esc(error)}</div>` : ''}
             <div class="form-actions">${btn('up-go-back', sure('go-back', 'Go back to the old version', 'Click again to restart'), 'cfg-btn--danger', busy)}
                 ${btn('up-keep', busy === 'keep' ? 'Keeping…' : 'Keep this version', 'cfg-btn--primary', busy)}</div>
@@ -168,11 +168,11 @@ window.UpdatesModule = (function () {
         const s = st.staged;
         return `<section class="card" id="up-staged">
             <div class="net-card-head"><h2>${esc(s.version)} is ready</h2><span class="tag tag-ok">written</span></div>
-            <p class="form-hint">It is written into slot ${esc(s.slot.toUpperCase())} and checked. Starting it restarts the router: a minute or two without internet. It starts <strong>on trial</strong>: you have ten minutes to keep it, and otherwise the router goes back to ${esc(st.running.version)} by itself. A copy of the settings is kept first.</p>
+            <p class="form-hint">It is written into slot ${esc(s.slot.toUpperCase())} and checked. Starting it restarts the ${thisDevice()}: a minute or two without internet. It starts <strong>on trial</strong>: you have ten minutes to keep it, and otherwise the ${thisDevice()} goes back to ${esc(st.running.version)} by itself. A copy of the settings is kept first.</p>
             ${s.notes ? `<p class="form-hint">${esc(s.notes)}</p>` : ''}
             ${!st.editable ? '<p class="form-hint net-warn">A change is being applied or waits for confirmation: confirm or revert it first.</p>' : ''}
             ${error ? `<div class="form-message" role="alert">${esc(error)}</div>` : ''}
-            <div class="form-actions">${btn('up-restart', busy === 'restart' ? 'Restarting…' : sure('restart', 'Restart into ' + esc(s.version), 'Click again to restart the router'), 'cfg-btn--primary', busy || !st.editable)}</div>
+            <div class="form-actions">${btn('up-restart', busy === 'restart' ? 'Restarting…' : sure('restart', 'Restart into ' + esc(s.version), `Click again to restart the ${thisDevice()}`), 'cfg-btn--primary', busy || !st.editable)}</div>
         </section>`;
     }
 
@@ -242,7 +242,7 @@ window.UpdatesModule = (function () {
         return `<section class="card" id="up-source">
             <div class="net-card-head"><h2>Update settings</h2></div>
             <div class="net-access"><label class="toggle toggle--block"><input type="checkbox" id="up-pre"${src.prereleases ? ' checked' : ''}><span><strong>Include pre-releases</strong><span class="form-hint">Alpha and beta versions. Off: only full releases are offered.</span></span></label>
-                <label class="toggle toggle--block"><input type="checkbox" id="up-auto"${src.auto_check ? ' checked' : ''}><span><strong>Look once a day</strong><span class="form-hint">The router asks GitHub if there is a newer release and says so here. <strong>Nothing is installed by itself.</strong></span></span></label></div>
+                <label class="toggle toggle--block"><input type="checkbox" id="up-auto"${src.auto_check ? ' checked' : ''}><span><strong>Look once a day</strong><span class="form-hint">The ${thisDevice()} asks GitHub if there is a newer release and says so here. <strong>Nothing is installed by itself.</strong></span></span></label></div>
             <div class="form-actions">${btn('up-save', busy === 'source' ? 'Saving…' : 'Save', 'cfg-btn--primary', busy || !src.dirty)}</div>
         </section>`;
     }
@@ -258,22 +258,22 @@ window.UpdatesModule = (function () {
         if (st.on_trial || !st.supported || !st.other_version || st.staged) return '';
         return `<section class="card" id="up-back">
             <div class="net-card-head"><h2>Go back</h2></div>
-            <p class="form-hint">The other slot still holds <strong>${esc(st.other_version)}</strong>. Starting it restarts the router and runs it on trial, like an update.</p>
+            <p class="form-hint">The other slot still holds <strong>${esc(st.other_version)}</strong>. Starting it restarts the ${thisDevice()} and runs it on trial, like an update.</p>
             ${error ? `<div class="form-message" role="alert">${esc(error)}</div>` : ''}
-            <div class="form-actions">${btn('up-back-go', sure('go-back', 'Start ' + esc(st.other_version), 'Click again to restart the router'), 'cfg-btn--ghost', busy || !st.editable)}</div></section>`;
+            <div class="form-actions">${btn('up-back-go', sure('go-back', 'Start ' + esc(st.other_version), `Click again to restart the ${thisDevice()}`), 'cfg-btn--ghost', busy || !st.editable)}</div></section>`;
     }
 
     function restartingHtml() {
         const secs = Math.floor((Date.now() - restarting.since) / 1000);
         return `<section class="card"><div class="net-card-head"><h2>Restarting…</h2></div>
-            <p class="form-hint">The router is restarting${restarting.kind === 'restart' ? ' into the new version' : ''}. This takes a minute or two (${secs} s so far). This page comes back by itself; you may have to sign in again.</p>
+            <p class="form-hint">The ${thisDevice()} is restarting${restarting.kind === 'restart' ? ' into the new version' : ''}. This takes a minute or two (${secs} s so far). This page comes back by itself; you may have to sign in again.</p>
             <div class="progress-track"><div class="progress-fill fill-blue" style="width:${Math.min(95, 8 + secs / 1.5)}%"></div></div></section>`;
     }
 
     function render() {
         const body = $('updates-body');
         if (!body) return;
-        if (!st) { body.innerHTML = `<section class="card"><p class="form-hint">${lost ? 'The router did not answer.' : 'Loading…'}</p></section>`; return; }
+        if (!st) { body.innerHTML = `<section class="card"><p class="form-hint">${lost ? `The ${thisDevice()} did not answer.` : 'Loading…'}</p></section>`; return; }
         // the old version answers for a few seconds after the restart was asked for: that is not the new one
         if (restarting && (lost || Date.now() - restarting.since < 15000)) { body.innerHTML = restartingHtml(); return; }
         const parts = [];
@@ -369,7 +369,7 @@ window.UpdatesModule = (function () {
         if (!state || !state.on_trial) { el.classList.add('hidden'); el.innerHTML = ''; return; }
         const left = Math.max(0, (state.trial_seconds_left || 0));
         el.classList.remove('hidden');
-        el.innerHTML = `<div class="config-bar config-bar--confirm"><div class="config-bar-text"><strong>${esc(state.running.version)} is on trial.</strong> Keep it if everything works, or the router goes back to the old version${left > 0 ? ' in about ' + clock(left) : ' about now'}.</div>
+        el.innerHTML = `<div class="config-bar config-bar--confirm"><div class="config-bar-text"><strong>${esc(state.running.version)} is on trial.</strong> Keep it if everything works, or the ${thisDevice()} goes back to the old version${left > 0 ? ' in about ' + clock(left) : ' about now'}.</div>
             <div class="config-bar-actions"><button type="button" class="cfg-btn cfg-btn--primary" id="up-bar-open">Open Updates</button></div></div>`;
         const open = $('up-bar-open');
         if (open) open.onclick = () => loadView('updates');

@@ -61,6 +61,17 @@ func (c NetworkConfig) APSettings() APConfig {
 // IsAP reports whether the device is an access point rather than a router.
 func (c NetworkConfig) IsAP() bool { return c.AP != nil && c.AP.Enabled }
 
+// APOnlyMessage is why the access point build (cmd/peakroute-ap) refuses the settings of a router.
+const APOnlyMessage = "this is PeakRoute AP: it can only be an access point (the router is a separate build)"
+
+// RequireAP is the access point build's check of settings before they are applied: it has no router in it.
+func RequireAP(c NetworkConfig) error {
+	if !c.IsAP() {
+		return ValidationError{{Field: "mode", Message: APOnlyMessage}}
+	}
+	return nil
+}
+
 // OperationMode is "AP" or "ROUTER".
 func (c NetworkConfig) OperationMode() string {
 	if c.IsAP() {

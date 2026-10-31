@@ -116,9 +116,9 @@
         const canLink = nClient >= 1 || nHost >= 1;
         const choice = (flowName, title, text, ok, why) => `<button type="button" class="wiz-choice" data-flow="${flowName}"${ok ? '' : ' disabled'}><strong>${title}</strong><span>${ok ? text : why}</span></button>`;
         return `<div class="wiz-body"><h2>What is this device?</h2>
-            <p class="form-hint">Choose how it is used. Everything except a router becomes part of a network that another router runs.</p>
+            <p class="form-hint">${info && info.ap_only ? 'Choose how it joins the network that another router runs.' : 'Choose how it is used. Everything except a router becomes part of a network that another router runs.'}</p>
             <div class="wiz-choices">
-                ${choice('new', 'A router', 'Connects to the internet and runs your network: addresses, firewall, Wi-Fi. The usual way.', true)}
+                ${info && info.ap_only ? '' : choice('new', 'A router', 'Connects to the internet and runs your network: addresses, firewall, Wi-Fi. The usual way.', true)}
                 ${choice('ap', 'An access point', 'Joins a network that another router runs, and adds cable ports and Wi-Fi to it.', true)}
                 ${choice('extender', 'A wireless extender', 'Joins the main Wi-Fi by Wi-Fi and repeats it, where a cable does not reach.', canExtend, `Needs two Wi-Fi adapters: one joins the main Wi-Fi and the other repeats it. This device has ${((info && info.wifi) || []).length}.`)}
                 ${choice('ptp', 'A point-to-point link', 'One end of a wireless link between two buildings or sites. You choose which end.', canLink, 'Needs a Wi-Fi adapter.')}

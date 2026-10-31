@@ -39,6 +39,7 @@ type apResponse struct {
 	Recovery  string   `json:"recovery_address"`
 	Pending   bool     `json:"pending"`
 	Editable  bool     `json:"editable"`
+	APOnly    bool     `json:"ap_only"` // the access point build: there is no router to switch to
 }
 
 func modeWord(c config.NetworkConfig) string {
@@ -80,7 +81,7 @@ func (a *API) apView() apResponse {
 	staged, hasDraft := a.Manager.StagedNetworkConfig()
 	resp := apResponse{ShownMode: config.ShownMode(active, staged, hasDraft), Mode: modeWord(draft), ActiveMode: modeWord(active), AP: apSetupOf(draft), Ports: []APPort{},
 		Recovery: config.APRecoveryAddress, Pending: modeWord(draft) != modeWord(active) || apSetupOf(draft).Mode != apSetupOf(active).Mode ||
-			strings.Join(draft.APSettings().Ports, ",") != strings.Join(active.APSettings().Ports, ",") || draft.APSettings().IP != active.APSettings().IP, Editable: a.editable()}
+			strings.Join(draft.APSettings().Ports, ",") != strings.Join(active.APSettings().Ports, ",") || draft.APSettings().IP != active.APSettings().IP, Editable: a.editable(), APOnly: a.APOnly}
 	for _, p := range a.wiredPorts() {
 		resp.Ports = append(resp.Ports, APPort{Name: p.Name, MAC: p.MAC, State: p.State})
 	}
@@ -140,6 +141,10 @@ func (a *API) HandleAPSet(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Mode != nil && *req.Mode != "router" && *req.Mode != "ap" {
 		fieldErrors(w, http.StatusBadRequest, "Choose router or access point.", []config.FieldError{{Field: "mode", Message: `must be "router" or "ap"`}})
+		return
+	}
+	if a.APOnly && req.Mode != nil && *req.Mode == "router" {
+		fieldErrors(w, http.StatusBadRequest, "This device cannot be a router.", []config.FieldError{{Field: "mode", Message: config.APOnlyMessage}})
 		return
 	}
 	wired := a.wiredPorts()

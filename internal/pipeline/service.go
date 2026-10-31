@@ -59,6 +59,9 @@ type Options struct {
 	// if no real network is left (docs/setup.md). Both may be nil.
 	Before  func()
 	Settled func()
+	// Allow refuses settings this build cannot apply (an access point build and the settings of a router), before anything is
+	// saved or touched. Nil allows everything valid.
+	Allow func(config.NetworkConfig) error
 }
 
 // Outcome describes how the most recent commit ended.
@@ -116,6 +119,7 @@ type Service struct {
 	mode     func() string
 	before   func()
 	settled  func()
+	allow    func(config.NetworkConfig) error
 	now      func() time.Time
 	after    func(d time.Duration, f func()) Timer
 
@@ -155,6 +159,7 @@ func New(o Options) *Service {
 		mode:     o.Mode,
 		before:   o.Before,
 		settled:  o.Settled,
+		allow:    o.Allow,
 		now:      o.Now,
 		after:    o.AfterFunc,
 		ctx:      ctx,
@@ -272,6 +277,11 @@ func (s *Service) Commit() error {
 	candidate, _ := s.mgr.StagedNetworkConfig()
 	if err := candidate.Validate(); err != nil {
 		return err
+	}
+	if s.allow != nil {
+		if err := s.allow(candidate); err != nil {
+			return err
+		}
 	}
 	p, err := s.plan(candidate)
 	if err != nil {

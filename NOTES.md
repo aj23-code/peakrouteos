@@ -2,7 +2,7 @@
 
 Living notes for the eventual documentation. Updated with every meaningful change, so it
 records what the system does, why it is built that way, and what was learned on the way.
-`TODO.md` is the work list; this file is the knowledge. Last updated: 2026-10-20.
+`TODO.md` is the work list; this file is the knowledge. Last updated: 2026-10-30.
 
 > Status: alpha. A router appliance OS (Debian base) with a Go daemon and web UI. The daemon is
 > a monitoring dashboard plus a safe configuration pipeline that is being built (see section 7).
@@ -34,7 +34,9 @@ records what the system does, why it is built that way, and what was learned on 
 
 | Path | Purpose |
 |---|---|
-| `main.go` | wiring: flags, config manager, routes, handlers for setup/login/logout |
+| `main.go` | the router build: the router's own parts on top of `internal/daemon` (7v) |
+| `cmd/peakroute-ap` | the access point build, PeakRoute AP: `internal/daemon` and nothing of the router (7v) |
+| `internal/daemon` | what every build runs: flags, config manager, pipeline, sign-in, certificate, Wi-Fi, backup, updates, wizard, the web server |
 | `internal/config` | the configuration model, `Manager` (single owner of config), validation, diff |
 | `internal/translator` | renders system files from `network.json`, plans what must change |
 | `internal/auth` | sessions, CSRF, login (`Authenticate`), validators, rate limiter, security headers |
@@ -627,6 +629,56 @@ bands from the adapters' reports); the Wi-Fi network joins the default network a
 config (validation, review), translator (every rendered shape, router to AP and back as plans, the real `nft`), netapi (the endpoint),
 setup (the flow, checks per page, the connected port protected, Wi-Fi making), bootstrap. Checked in the browser (wizard end to end, the
 page, commit of the mode in the sandbox: files written, menu cut down). Not possible here: a real bridge with a Wi-Fi member.
+
+## 7v. Two builds from one repository: the router and PeakRoute AP (2026-10-30)
+
+Decided with the user for the U6+ (an MT7981A access point with 256 MB of RAM): the access point is a **second build of the same code**,
+not a fork (about 60% of the daemon is shared: sign-in, certificates, backup, updates, Wi-Fi, the wizard, the commit pipeline) and not a
+runtime switch. What a build keeps is chosen when it is built: `go build .` is the router, `go build ./cmd/peakroute-ap` the access point.
+
+- **`internal/daemon`** is the old `main.go` minus the router: `ParseFlags`, `Start` (in the same order as before: pending restore,
+  manager, adopt, sweep, pipeline, sessions, traffic DB and its poller, syslog, janitor, certificate, templates, the shared API, wizard,
+  config endpoints, `/`), `Serve` (server, signal, shutdown, then the `OnClose` functions in order). The embedded web files moved to the
+  `web` package (`web.Files`; `go:embed` cannot reach a parent folder). A build adds handlers to `Core.Mux`, fields to `Core.NetAPI` and
+  background work under `Core.Ctx`. **The API is the same in both builds** (the shared endpoints are registered once), which keeps the
+  door open for a controller (1b): one API for routers and access points.
+- **`main.go`** (the router) adds usage counting, the internet health check, Dynamic DNS, the firewall log, nicknames, presence and
+  the client list, routes, firewall, DNS, VPN, uplinks, ports and networks, as before.
+- **`cmd/peakroute-ap`** sets `Options.APOnly` and adds nothing but a 409 for the router's API paths ("This is PeakRoute AP, an access
+  point: that belongs to a router"). `APOnly` means: the wizard's info says `ap_only` and the page leaves out "A router" (`setup.Service.APOnly`,
+  a router form is refused at the first step with `config.APOnlyMessage`); `GET /api/v1/ap` says `ap_only` and the Operation mode page shows
+  only "Access point"; `PUT /api/v1/ap {"mode":"router"}` is refused (`netapi.API.APOnly`); and the pipeline refuses to commit settings
+  that are not an access point's (`pipeline.Options.Allow` = `config.RequireAP`, checked after `Validate` and before anything is saved or
+  touched, so a restored router backup stays a draft).
+- **The guard** (`check.sh`): `go list -deps ./cmd/peakroute-ap` must not contain the router's packages (`ROUTER_ONLY`: clientnames, ddns,
+  fwlog, ovpn, presence, wanhealth, wg), except the ones shared code still names for types or small helpers (`AP_KNOWN`: netapi uses
+  ddns.Status, fwlog's query types, ovpn and wg for the VPN pages; config uses wg.ValidKey; translator ovpn.StatusDir and wg.ValidKey;
+  backup clientnames.ParseFile). A new one fails the check and names who imports it; one that stops being pulled in prints a note to take it
+  off the list. Checked by importing presence into the AP: it failed. Both binaries are built by `check.sh`. Splitting those packages
+  further would take them out of the binary, but linked code that never runs costs almost no RAM (it is paged in only when touched).
+- **Memory in the router's access point mode:** the router's own background work (usage counting, the health check, Dynamic DNS,
+  the firewall log collector, presence) now runs under `daemon.RunWhile(ctx, 10s, isRouter, work)`: started while the device is a router,
+  stopped (context cancelled and waited for) when it becomes an access point, started again when it is a router once more, and restarted
+  if it returns by itself. The firewall log collector is a `journalctl -k -f` child that was measured at **about 60 MB RSS** on a laptop
+  (the daemon itself is about 22 MB), and before this it ran in access point mode too; the health check and Dynamic DNS also ran there
+  with a router's leftover settings. Measured in `-dev` after 40 s: router build as a router 22.6 MB + journalctl 60 MB; router build as an
+  access point 20.7 MB, no child; AP build 21.8 MB, no child (the difference between the last two is GC timing). Binaries: 26.0 MB and 25.0 MB.
+- Tests: `daemon/runwhile_test.go` (start, stop, start again, waits for the work at the end; restarts work that returned),
+  `pipeline/allow_test.go`, `setup` `TestTheAccessPointBuildOffersAndAcceptsNoRouter`, `netapi` `TestTheAccessPointBuildCannotBecomeARouter`
+  (all three fail with their check removed). **Not done yet:** the AP image profile (arm64, U6+ boot), a `product` in the update bundle so a
+  router never installs an AP bundle and the reverse, `GOMEMLIMIT` in the AP's unit.
+- **The pages name the device (same day, after the user looked at the AP build):** the templates get `Product` ("PeakRoute AP" or
+  "PeakRoute OS": titles, the login page, the sidebar brand) and `APOnly`; `dashboard.html` sets `{{$dev}}` ("access point" when
+  `.SystemMode` is AP, else "router") for the subtitles of the pages an access point has; the scripts call `thisDevice()` (`app.js`, from
+  the `peakroute-mode` meta) in "The router did not answer", "Restart the router", "this router's certificate" and the like (rewritten by a
+  one-off script over settings, backup, updates, certificates, admins, config_banner, diagnostics and wireless; "the other router" and
+  "another router" left alone). An access point's Wireless page says nothing of Local Networks (a link has no network to choose, the
+  wireless uplink use is not described); its Settings has no "Tell my internet provider this name" and no local domain. The access point's
+  home menu entry and page are called **Overview** (asked by the user), like the router's. The AP build's wizard does not offer a router
+  and its Operation mode subtitle does not offer a switch. Test: `daemon/pages_test.go` renders the templates for the AP build, the router in
+  AP mode and the router, and reads only the views an access point's menu reaches for "router" and "Local Networks". Checked in the
+  browser on a throwaway `-dev` AP instance: wizard, login, commit and confirm, and all ten AP pages render with no script error and no
+  "the/this router".
 
 ## 7t. The disk image (built 2026-10-12; first real boot reached the welcome page)
 

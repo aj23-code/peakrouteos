@@ -112,6 +112,9 @@ function pageMode() {
 
 function homeView() { return pageMode() === 'AP' ? 'ap-home' : 'overview'; }
 
+// What the pages call this device: a router, or an access point (PeakRoute AP, or a router in access point mode).
+function thisDevice() { return pageMode() === 'AP' ? 'access point' : 'router'; }
+
 function allowedView(name) {
     if (!name || !document.getElementById(`view-${name}`)) return false;
     // the Traffic page has no menu entry of its own: it is reached from the Overview and the Ports page, which only a router has

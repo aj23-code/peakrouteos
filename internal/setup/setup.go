@@ -47,6 +47,8 @@ type Service struct {
 	Scan     func(ctx context.Context, adapter string) ([]wireless.Network, bool, error)
 	// Hostname is the machine's own name, suggested for the router.
 	Hostname func() string
+	// APOnly is set by the access point build: the wizard does not offer a router and refuses one.
+	APOnly bool
 
 	mu sync.Mutex // one setup at a time
 }
@@ -128,6 +130,7 @@ type InfoResponse struct {
 	MinPassword  int               `json:"min_password"`
 	MaxPassword  int               `json:"max_password"`
 	BackupFormat int               `json:"backup_schema"`
+	APOnly       bool              `json:"ap_only"` // the access point build: no router to choose
 }
 
 func (s *Service) wiredPorts(r *http.Request) []PortInfo {
@@ -207,7 +210,7 @@ func (s *Service) HandleInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, http.StatusOK, InfoResponse{Wifi: s.wifiAdapters(), Ports: ports, Countries: config.Countries, Timezones: config.Timezones, Hostname: host, Country: base.Country, Timezone: base.Timezone,
 		Defaults:   Defaults{LanIP: "192.168.1.1", LanSubnet: "255.255.255.0", DHCPStart: "192.168.1.100", DHCPEnd: "192.168.1.200"},
-		SuggestWan: wan, SuggestLan: lan, NTPServers: config.DefaultNTPServers, MinPassword: auth.MinPasswordLength, MaxPassword: auth.MaxPasswordBytes, BackupFormat: backup.SchemaVersion})
+		SuggestWan: wan, SuggestLan: lan, NTPServers: config.DefaultNTPServers, MinPassword: auth.MinPasswordLength, MaxPassword: auth.MaxPasswordBytes, BackupFormat: backup.SchemaVersion, APOnly: s.APOnly})
 }
 
 // HandleScan: GET /api/v1/setup/wifi/scan?adapter=wlan0 lists the Wi-Fi networks an adapter can see, for an extender or the far end of a
@@ -316,7 +319,7 @@ func stepIndex(name string) int {
 // which step each field belongs to
 func stepOf(field string) string {
 	switch {
-	case field == "hostname" || field == "country" || field == "timezone" || strings.HasPrefix(field, "ntp") || field == "send_hostname":
+	case field == "mode" || field == "hostname" || field == "country" || field == "timezone" || strings.HasPrefix(field, "ntp") || field == "send_hostname":
 		return "region"
 	case strings.HasPrefix(field, "wan") || strings.HasPrefix(field, "pppoe"):
 		return "internet"
@@ -385,6 +388,8 @@ func (s *Service) build(f Form, r *http.Request) (config.NetworkConfig, []config
 	}
 	if isAPMode(f.Mode) {
 		s.buildAP(f, r, &cfg, add)
+	} else if s.APOnly {
+		add("mode", config.APOnlyMessage)
 	} else {
 		s.buildRouter(f, r, &cfg, add)
 	}

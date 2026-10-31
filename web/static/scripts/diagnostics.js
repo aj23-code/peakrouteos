@@ -46,11 +46,11 @@ window.DiagnosticsModule = (function () {
         const running = st.job && st.job.running;
         const lock = st.busy || running;
         const isPing = tool === 'ping';
-        const missing = !meta.tools[tool] ? `<p class="form-hint net-warn">${isPing ? 'ping' : 'tracepath'} is not installed on this router.</p>` : '';
+        const missing = !meta.tools[tool] ? `<p class="form-hint net-warn">${isPing ? 'ping' : 'tracepath'} is not installed on this ${thisDevice()}.</p>` : '';
         return `<section class="card" id="diag-${tool}">
             <div class="net-card-head"><h2>${isPing ? 'Ping' : 'Traceroute'}</h2></div>
             <p class="form-hint">${isPing
-                ? 'Sends a few small packets to a name or an address and says how many came back and how long they took: the quickest way to find out whether something can be reached. You can send them from the router\'s own address on one of its networks, or from the internet connection, to test that side of the router.'
+                ? `Sends a few small packets to a name or an address and says how many came back and how long they took: the quickest way to find out whether something can be reached. You can send them from the ${thisDevice()}'s own address on one of its networks, or from the internet connection, to test that side of the ${thisDevice()}.`
                 : 'Shows the routers a packet passes on its way to a name or an address, one line for each, and how long each took. Use it to see where a connection stops. It leaves the way the routing table says (it cannot be sent from one network\'s address). A line of <code>no reply</code> is a router that does not answer these probes, which is often normal.'}</p>
             ${missing}
             <div class="diag-ask">
@@ -68,7 +68,7 @@ window.DiagnosticsModule = (function () {
     async function errorOf(res, fallback) {
         let err = {};
         try { err = res ? await res.json() : {}; } catch (e) { /* not JSON */ }
-        return err.error || (res ? fallback : 'The router did not answer. Try again.');
+        return err.error || (res ? fallback : `The ${thisDevice()} did not answer. Try again.`);
     }
 
     async function startJob(tool) {
@@ -175,7 +175,7 @@ window.DiagnosticsModule = (function () {
         }).join('');
         return `<section class="card" id="diag-dns">
             <div class="net-card-head"><h2>DNS lookup</h2></div>
-            <p class="form-hint">Asks this router&rsquo;s own DNS server for a name, the way a device on your network would, and shows what it answered and how long it took. Use it to check a local name, a forwarded domain, or whether the upstream servers are answering at all. Type a name such as <code>nas</code> or <code>www.example.com</code>, or an address to see its name. It asks what is running now: changes still in the draft are not included, so commit them first. The servers and names are set on the <a href="#" data-goto="dns">DNS</a> page.</p>
+            <p class="form-hint">Asks this ${thisDevice()}&rsquo;s own DNS server for a name, the way a device on your network would, and shows what it answered and how long it took. Use it to check a local name, a forwarded domain, or whether the upstream servers are answering at all. Type a name such as <code>nas</code> or <code>www.example.com</code>, or an address to see its name. It asks what is running now: changes still in the draft are not included, so commit them first. The servers and names are set on the <a href="#" data-goto="dns">DNS</a> page.</p>
             <div class="diag-ask">
                 <input type="text" id="diag-dns-text" value="${escapeHtml(lk.text)}" placeholder="nas, www.example.com or 192.168.1.50" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="Name or address to look up"${lk.busy ? ' disabled' : ''}>
                 <button type="button" class="cfg-btn cfg-btn--primary" id="diag-dns-ask"${lk.busy || !lk.text.trim() ? ' disabled' : ''}>${lk.busy ? 'Asking…' : 'Ask'}</button>
@@ -213,7 +213,7 @@ window.DiagnosticsModule = (function () {
         } else {
             let err = {};
             try { err = res ? await res.json() : {}; } catch (e) { /* not JSON */ }
-            sl.error = err.error || (res ? 'The test could not be run.' : 'The router did not answer. Try again.');
+            sl.error = err.error || (res ? 'The test could not be run.' : `The ${thisDevice()} did not answer. Try again.`);
         }
         render();
     }
@@ -230,7 +230,7 @@ window.DiagnosticsModule = (function () {
         } else {
             let err = {};
             try { err = res ? await res.json() : {}; } catch (e) { /* not JSON */ }
-            lk.error = err.error || (res ? 'The lookup failed.' : 'The router did not answer. Try again.');
+            lk.error = err.error || (res ? 'The lookup failed.' : `The ${thisDevice()} did not answer. Try again.`);
         }
         render();
         const box = $('diag-dns-text');

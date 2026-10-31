@@ -121,7 +121,7 @@ window.SettingsModule = (function () {
 
     function timeStatusText() {
         const t = settings.time;
-        if (!t) return 'The router cannot tell right now whether its clock is set from a time server.';
+        if (!t) return `The ${thisDevice()} cannot tell right now whether its clock is set from a time server.`;
         if (!t.ntp_enabled) return 'The time service is switched off: the clock is not being kept right.';
         if (t.synchronized) return `The clock is set from a time server${t.server ? ` (${t.server})` : ''}.`;
         return 'The clock has not been set from a time server yet. That takes a minute or so after the internet connection comes up.';
@@ -131,7 +131,7 @@ window.SettingsModule = (function () {
         const on = ntpNow();
         return `<section class="card" id="settings-time">
             <div class="net-card-head"><h2>Time</h2>${draftTag(settings.time_pending)}</div>
-            ${settings.time ? `<p class="settings-clock"><span class="form-hint">The router&rsquo;s clock</span> <strong id="settings-clock"></strong></p>` : ''}
+            ${settings.time ? `<p class="settings-clock"><span class="form-hint">The ${thisDevice()}&rsquo;s clock</span> <strong id="settings-clock"></strong></p>` : ''}
             <p class="form-hint" id="settings-time-status">${escapeHtml(timeStatusText())}</p>
             <div class="form-grid"><div class="form-field"><label for="settings-tz">Time zone</label>
                 <select id="settings-tz" class="role-select"${locked() ? ' disabled' : ''}>${zoneOptions()}</select>
@@ -174,10 +174,10 @@ window.SettingsModule = (function () {
         const s = syslogNow();
         return `<section class="card" id="settings-syslog">
             <div class="net-card-head"><h2>Syslog forwarding</h2>${draftTag(settings.syslog_pending)}</div>
-            <p class="form-hint">Send this router&rsquo;s logs to a syslog server, so that they are kept somewhere else and for longer than the router keeps them. UDP sends each message once and does not know whether it arrived; TCP keeps a connection open and sends what waited while the server was away. Messages are RFC 5424, one line each; firewall messages name the rule and what it does. There is no encryption: send them only to a server on a network you trust.</p>
+            <p class="form-hint">Send this ${thisDevice()}&rsquo;s logs to a syslog server, so that they are kept somewhere else and for longer than the ${thisDevice()} keeps them. UDP sends each message once and does not know whether it arrived; TCP keeps a connection open and sends what waited while the server was away. Messages are RFC 5424, one line each; firewall messages name the rule and what it does. There is no encryption: send them only to a server on a network you trust.</p>
             <div class="settings-sl-rows">${syslogRows()}</div>
             <div class="settings-sl-add"><button type="button" class="cfg-btn" id="sl-add"${locked() || s.servers.length >= 3 ? ' disabled' : ''}>Add a server</button></div>
-            <label class="toggle toggle--block settings-send"><input type="checkbox" id="sl-system"${s.system ? ' checked' : ''}${locked() ? ' disabled' : ''}><span><strong>Send the system log</strong><span class="form-hint">What the router&rsquo;s services and the kernel say (the System logs page), without the firewall&rsquo;s lines.</span></span></label>
+            <label class="toggle toggle--block settings-send"><input type="checkbox" id="sl-system"${s.system ? ' checked' : ''}${locked() ? ' disabled' : ''}><span><strong>Send the system log</strong><span class="form-hint">What the ${thisDevice()}&rsquo;s services and the kernel say (the System logs page), without the firewall&rsquo;s lines.</span></span></label>
             <label class="toggle toggle--block settings-send"><input type="checkbox" id="sl-firewall"${s.firewall ? ' checked' : ''}${locked() ? ' disabled' : ''}><span><strong>Send the firewall log</strong><span class="form-hint">The packets that rules with &ldquo;Log matching traffic&rdquo; matched, as they happen, with each rule&rsquo;s name and action.</span></span></label>
             <p class="field-error hidden" id="sl-error"></p>
             ${syslogStatusHtml()}
@@ -189,22 +189,22 @@ window.SettingsModule = (function () {
     function powerCard() {
         if (power.state) {
             const text = power.state === 'reboot'
-                ? 'The router is restarting. This page comes back by itself when it is up again, usually after a minute or two.'
-                : 'The router is shutting down. To use it again, switch it back on.';
+                ? `The ${thisDevice()} is restarting. This page comes back by itself when it is up again, usually after a minute or two.`
+                : `The ${thisDevice()} is shutting down. To use it again, switch it back on.`;
             return `<section class="card" id="settings-power"><div class="net-card-head"><h2>Restart or power off</h2></div><div class="form-message form-message--ok" role="status">${text}</div></section>`;
         }
         const btn = (action, label) => `<button type="button" class="cfg-btn ${action === 'poweroff' ? 'cfg-btn--danger' : ''} settings-power-btn" data-action="${action}"${locked() ? ' disabled' : ''}>${power.arming === action ? 'Click again to confirm' : label}</button>`;
         return `<section class="card" id="settings-power">
             <div class="net-card-head"><h2>Restart or power off</h2></div>
-            <p class="form-hint">Every device behind the router loses its connection while it restarts, usually for a minute or two; what you have committed is kept. Powering off needs someone to switch the router back on. This is not possible while a change is being applied or waits for confirmation.</p>
-            <div class="form-actions">${btn('reboot', 'Restart the router')}${btn('poweroff', 'Power off')}</div>
+            <p class="form-hint">Every device behind the ${thisDevice()} loses its connection while it restarts, usually for a minute or two; what you have committed is kept. Powering off needs someone to switch the ${thisDevice()} back on. This is not possible while a change is being applied or waits for confirmation.</p>
+            <div class="form-actions">${btn('reboot', `Restart the ${thisDevice()}`)}${btn('poweroff', 'Power off')}</div>
         </section>`;
     }
 
     function resetCard() {
         if (reset.done) {
             return `<section class="card" id="settings-reset"><div class="net-card-head"><h2>Factory reset</h2></div>
-                <div class="form-message form-message--ok" role="status">The router is erasing everything it saved and restarting. When it is up again it is a new router: plug a computer into any of its network ports, let it take an address, and open <strong>https://192.168.77.1</strong> to set it up. This page will not come back by itself.</div></section>`;
+                <div class="form-message form-message--ok" role="status">The ${thisDevice()} is erasing everything it saved and restarting. When it is up again it is a new ${thisDevice()}: plug a computer into any of its network ports, let it take an address, and open <strong>https://192.168.77.1</strong> to set it up. This page will not come back by itself.</div></section>`;
         }
         const lock = locked() ? ' disabled' : '';
         const form = reset.open ? `
@@ -216,7 +216,7 @@ window.SettingsModule = (function () {
             : `<div class="form-actions"><button type="button" class="cfg-btn cfg-btn--danger" id="settings-reset-open"${lock}>Factory reset&hellip;</button></div>`;
         return `<section class="card" id="settings-reset">
             <div class="net-card-head"><h2>Factory reset</h2></div>
-            <p class="form-hint">Erases everything this router saved: its networks, firewall rules, Wi-Fi, VPNs, certificates, history and every administrator account (the console login too), and starts it again as a new router that must be set up from the beginning. The installed version stays. Nothing is kept and this cannot be undone; to keep your settings, make a backup first. This is not possible while a change is being applied or waits for confirmation.</p>
+            <p class="form-hint">Erases everything this ${thisDevice()} saved: its networks, firewall rules, Wi-Fi, VPNs, certificates, history and every administrator account (the console login too), and starts it again as a new router that must be set up from the beginning. The installed version stays. Nothing is kept and this cannot be undone; to keep your settings, make a backup first. This is not possible while a change is being applied or waits for confirmation.</p>
             ${form}
         </section>`;
     }
@@ -278,22 +278,24 @@ window.SettingsModule = (function () {
         if (!settings) return;
         const options = option('', 'Choose a country…', settings.country) +
             (settings.countries || []).map(c => option(c.code, `${c.name} (${c.code})`, settings.country)).join('');
+        // an access point has no internet connection to send its name on and no DNS server for a local domain
+        const ap = pageMode() === 'AP';
         $('settings-body').innerHTML =
             '<h2 class="settings-group">General</h2>' +
-            textCard('hostname', 'Host name', 'Name of this router', 'none',
+            textCard('hostname', 'Host name', `Name of this ${thisDevice()}`, 'none',
                 settings.hostname_pending,
-                'The name of this router, such as <code>my-router</code>: letters, digits and hyphens. It is written to the machine itself and shown on the Overview. Empty: the machine keeps the name it has.',
-                `<label class="toggle toggle--block settings-send"><input type="checkbox" id="settings-send"${sendNow() ? ' checked' : ''}${locked() ? ' disabled' : ''}><span><strong>Tell my internet provider this name</strong><span class="form-hint">Only a connection that gets its address by DHCP sends it, and only a few providers care. Off by default.</span></span></label>`) +
+                `The name of this ${thisDevice()}, such as <code>${ap ? 'office-ap' : 'my-router'}</code>: letters, digits and hyphens. It is written to the machine itself and shown on the Overview${ap ? '; the other router lists the device under it' : ''}. Empty: the machine keeps the name it has.`,
+                ap ? '' : `<label class="toggle toggle--block settings-send"><input type="checkbox" id="settings-send"${sendNow() ? ' checked' : ''}${locked() ? ' disabled' : ''}><span><strong>Tell my internet provider this name</strong><span class="form-hint">Only a connection that gets its address by DHCP sends it, and only a few providers care. Off by default.</span></span></label>`) +
             `<section class="card">
             <div class="net-card-head"><h2>Country</h2>${draftTag(settings.country_pending)}</div>
-            <div class="form-grid"><div class="form-field"><label for="settings-country">Where this router is used</label>
+            <div class="form-grid"><div class="form-field"><label for="settings-country">Where this ${thisDevice()} is used</label>
                 <select id="settings-country" class="role-select"${locked() ? ' disabled' : ''}>${options}</select></div></div>
             <p class="form-hint">Every country has its own rules for radio: which Wi-Fi channels may be used and how strongly they may transmit. Wi-Fi follows this setting, and cannot be switched on without it.</p>
             ${settings.editable === false ? '<p class="form-hint">A change is being applied or waits for confirmation: settings cannot be edited right now.</p>' : ''}
         </section>` +
-            textCard('domain', 'Local domain', 'Domain name of this network', 'none',
+            (ap ? '' : textCard('domain', 'Local domain', 'Domain name of this network', 'none',
                 settings.domain_pending,
-                'A name such as <code>lan</code> or <code>home.example.com</code>. Set, the devices are told it and can use short names (<code>laptop</code> finds <code>laptop.lan</code>), and the router answers for names inside it by itself. Empty until you set one. The names in it are managed on the <a href="#" data-goto="dns">DNS</a> page.') +
+                `A name such as <code>lan</code> or <code>home.example.com</code>. Set, the devices are told it and can use short names (<code>laptop</code> finds <code>laptop.lan</code>), and the ${thisDevice()} answers for names inside it by itself. Empty until you set one. The names in it are managed on the <a href="#" data-goto="dns">DNS</a> page.`)) +
             '<h2 class="settings-group">Time</h2>' +
             timeCard() +
             '<h2 class="settings-group">Logging</h2>' +

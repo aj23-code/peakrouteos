@@ -24,8 +24,10 @@ mode**, and it is a draft like every other change: review, commit, confirm.
 
 ## The home page
 
-In access point mode the first page is **Access point** (not the router's Overview), and the menu is cut down to what an access point has:
-Access point, Wireless, and System (Settings, Operation mode, Administrators, Certificates, Backup and restore, System logs, Diagnostics).
+In access point mode the first page is the access point's own **Overview** (not the router's), and the menu is cut down to what an access
+point has: Overview, Wireless, and System (Settings, Operation mode, Administrators, Certificates, Backup and restore, Updates, System
+logs, Diagnostics). The pages call the device an access point, not a router; Settings has no "Tell my internet provider this name" and
+no local domain (an access point has neither an internet connection of its own nor a DNS server).
 The home page shows, refreshed every 5 seconds:
 
 - **The device:** name, how long it has been up, processor, memory, load, software version, and whether changes are waiting.
@@ -84,6 +86,22 @@ The welcome page offers *Set up as new* (or a restore); the next page asks what 
   network behind that end. Set the near end up first.
 
 The port you are plugged into must be one of the bridge's ports, or the page would be lost when the settings are applied.
+
+## PeakRoute AP
+
+Besides the router's access point mode there is an **access point build**, PeakRoute AP (`go build ./cmd/peakroute-ap`), for devices
+that are only ever access points (such as a ceiling access point with one port and little memory). It is the same software with the
+router left out at build time: no internet connection, local networks, firewall rules, DNS or DHCP server, VPN, Dynamic DNS, usage
+counting or client list is in it or runs. Its pages and API are the access point's above, unchanged.
+
+- The wizard offers the access point, the wireless extender and the point-to-point link, not a router.
+- System, Operation mode shows that the device is an access point; it cannot be switched to a router (`PUT /api/v1/ap` with
+  `"mode": "router"` is refused), and settings that are not an access point's are refused before they are applied (a restored router
+  backup stays a draft).
+- The router's API paths answer 409 "This is PeakRoute AP, an access point: that belongs to a router".
+
+In the router build, the router's own background work (usage counting, the internet health check, Dynamic DNS, the firewall log and
+the presence of devices) rests while the device is an access point and starts again when it is a router.
 
 ## Interface
 

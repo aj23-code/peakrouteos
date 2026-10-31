@@ -30,7 +30,10 @@ window.APModule = (function () {
         const input = (field, label, value, ph) => `<div class="form-field"><label for="ap-${field}">${label}</label>
             <input type="text" id="ap-${field}" data-ap="${field}" value="${escapeHtml(value)}" placeholder="${escapeHtml(ph || '')}" autocomplete="off" spellcheck="false"${errors[field] ? ' aria-invalid="true"' : ''}${lock ? ' disabled' : ''}>${err(field)}</div>`;
         const pending = data.mode !== data.active_mode;
-        let html = `<section class="card">
+        let html = data.ap_only ? `<section class="card">
+            <div class="net-card-head"><h2>What this device is</h2>${pending ? '<span class="tag tag-draft">Draft</span>' : ''}<span class="tag tag-ok">Access point</span></div>
+            <p class="form-hint">This is PeakRoute AP: it is always an access point, part of a network that another router runs.</p>
+        </section>` : `<section class="card">
             <div class="net-card-head"><h2>What this device is</h2>${pending ? '<span class="tag tag-draft">Draft</span>' : ''}<span class="tag tag-ok">Now: ${data.active_mode === 'ap' ? 'access point' : 'router'}</span></div>
             <div class="net-access">
                 <label class="toggle toggle--block"><input type="radio" name="ap-mode" data-ap="mode" value="router"${!ap ? ' checked' : ''}${lock ? ' disabled' : ''}>

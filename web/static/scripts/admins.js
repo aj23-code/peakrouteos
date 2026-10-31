@@ -25,7 +25,7 @@ window.AdminsModule = (function () {
     }
 
     async function errorOf(res, fallback) {
-        if (!res) return { general: 'The router did not answer. Try again.', fields: {} };
+        if (!res) return { general: `The ${thisDevice()} did not answer. Try again.`, fields: {} };
         let err = {};
         try { err = await res.json(); } catch (e) { /* not JSON */ }
         const fields = {};
