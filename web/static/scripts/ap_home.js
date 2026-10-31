@@ -49,7 +49,7 @@ window.APHomeModule = (function () {
         const a = status.address;
         let state;
         if (!a.up) state = `${dot('bad')} The network bridge is down`;
-        else if (!a.addresses.length) state = `${dot('warn')} ${a.mode === 'static' ? 'No address yet' : 'Waiting for an address from the other router'}`;
+        else if (!a.addresses.length) state = `${dot('warn')} ${a.mode === 'static' ? 'No address yet' : 'Waiting for an address from the DHCP server'}`;
         else state = `${dot('ok')} On the network`;
         const ports = status.ports.map(p => {
             if (p.kind === 'link') {

@@ -680,6 +680,17 @@ runtime switch. What a build keeps is chosen when it is built: `go build .` is t
   browser on a throwaway `-dev` AP instance: wizard, login, commit and confirm, and all ten AP pages render with no script error and no
   "the/this router".
 
+### The access point's wizard, from the user's walkthrough (2026-10-30)
+
+- The address choice is **Automatic (DHCP)** ("Gets an address from your existing router or DHCP server…"), the default as before, in
+  the wizard, its review, Operation mode and the Overview's waiting text; a fixed address stays an option.
+- The Wi-Fi page of an access point flow (`ap`, `extender`) has no "Make a Wi-Fi network" checkbox: an access point is there to host
+  Wi-Fi, so entering the page turns `wifi_on` on and it asks for the name and password straight away (a router's wizard keeps the
+  checkbox; the page is still left out when no adapter can host a network). Only the page does this; the backend still accepts an access
+  point with no Wi-Fi network.
+- The wizard calls the device an access point in those flows and in the AP build (`dev()` in `first_run.js`): the name hint, the
+  administrator page and the review note.
+
 ### Product, board and processors in updates (2026-10-30)
 
 Agreed with the user: a bundle names three things and goes only onto a system that is the same in all three, so a router never installs an

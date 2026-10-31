@@ -8,8 +8,8 @@ mode**, and it is a draft like every other change: review, commit, confirm.
 
 - **One network.** The cable ports you choose, the Wi-Fi networks and any Wi-Fi link are all members of one bridge (`br0`). A device
   plugged into the access point is on the other router's network and gets its address from that router's DHCP server.
-- **Its own address** is on the same bridge: from the other router's DHCP server (the other router lists the device under its host
-  name, which is how to find it), or fixed (address, netmask, gateway, DNS servers).
+- **Its own address** is on the same bridge: **automatic (DHCP)** by default, from the existing router or DHCP server (which lists the
+  device under its host name, which is how to find it), or fixed (address, netmask, gateway, DNS servers) when chosen.
 - **A recovery address.** `192.168.77.1/24`, the address of the setup network, is kept on the bridge beside the real one. A computer
   that was set up through the setup network keeps working there, so the change can be confirmed even when the address from DHCP is not
   known yet; a computer set to an address in 192.168.77.0/24 reaches the device there at any time.

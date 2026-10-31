@@ -17,6 +17,8 @@
     // how the device is set up: a router, or one of the ways of being an access point
     const modeOf = () => ({ new: 'router', ap: 'ap', extender: 'extender' }[flow] || (flow === 'ptp' ? (F.ptp_end === 'host' ? 'ptp_host' : 'ptp_client') : 'router'));
     const isAP = () => flow === 'ap' || flow === 'extender' || flow === 'ptp';
+    // what the pages call the device: an access point in those flows and in the access point build, else a router
+    const dev = () => (isAP() || (info && info.ap_only) ? 'access point' : 'router');
     function newSteps() {
         const order = { new: ['region', 'internet', 'lan', 'wifi', 'admin', 'review'], ap: ['region', 'ap', 'wifi', 'admin', 'review'],
             extender: ['region', 'link', 'ap', 'wifi', 'admin', 'review'], ptp: ['region', 'link', 'ap', 'admin', 'review'] }[flow] || [];
@@ -136,7 +138,7 @@
             ${banner()}<div class="form-grid">
             ${field('Country', 'country', `<select id="f-country" data-f="country" data-rerender="1"><option value="">Choose…</option>${countries}</select>`)}
             ${field('Time zone', 'timezone', `<select id="f-timezone" data-f="timezone"><option value="">Choose…</option>${zones}</select>`)}
-            ${field('Name of this device', 'hostname', text('hostname', { placeholder: 'peakroute' }), 'Letters, numbers and hyphens. It is how the router is named on the network.', true)}
+            ${field('Name of this device', 'hostname', text('hostname', { placeholder: 'peakroute' }), `Letters, numbers and hyphens. It is how the ${dev()} is named on the network.`, true)}
             </div>${actions('mode')}</form>`;
     }
 
@@ -238,7 +240,7 @@
             <table class="wiz-ports"><thead><tr><th>Cable ports</th><th>Address</th></tr></thead><tbody>${rows || '<tr><td colspan="2">No cable port was found. Wi-Fi can still join the network, set up later on the Wireless page.</td></tr>'}</tbody></table>
             ${errs.ap_ports ? `<p class="field-error">${esc(cap(errs.ap_ports))}</p>` : ''}
             <h2>The device's own address</h2>
-            <div class="net-access">${radio('dhcp', 'From the other router (DHCP)', "The other router lists this device under its name: look for it in that router's list of devices to find the address.")}${radio('static', 'A fixed address', 'Easier to find again. Choose one outside the range the other router hands out.')}</div>
+            <div class="net-access">${radio('dhcp', 'Automatic (DHCP)', "Gets an address from your existing router or DHCP server, which lists this device under its name: look for it there to find the address.")}${radio('static', 'A fixed address', 'Easier to find again. Choose one outside the range the other router hands out.')}</div>
             ${extra}
             <div class="wiz-note">While you set up, <strong>192.168.77.1</strong> keeps working beside the device's own address: a computer set to an address in 192.168.77.0/24 reaches the device there even if you do not know the address it was given.</div>
             ${actions(prevStep('ap'))}</form>`;
@@ -251,6 +253,12 @@
             ${field('Password', 'wifi_pass', text('wifi_pass', { type: 'password', auto: 'new-password' }), 'At least 8 characters.')}
             ${isAP() ? field('VLAN ID (optional)', 'wifi_vlan', text('wifi_vlan', { placeholder: 'untagged' }), 'Devices on this Wi-Fi are on a tagged network: the cable ports carry it with this VLAN ID. Leave it empty to use the untagged network.') : ''}</div>
             <p class="form-hint">${both ? 'The first adapter serves 5 GHz and the next 2.4 GHz, so every device finds one it can use.' : 'The adapter serves 2.4 GHz, which every device can use: move it to 5 GHz on the Wireless page for more speed.'} Everything else can be changed on the Wireless page.</p>` : '';
+        if (isAP()) {
+            return `<form id="wiz-form" class="wiz-body" novalidate><h2>${flow === 'extender' ? 'Repeat the main Wi-Fi' : 'Wi-Fi network'}</h2>
+            <p class="form-hint">${flow === 'extender' ? 'The same name and password as the main Wi-Fi, so devices move between the two by themselves.' : 'The Wi-Fi network this access point hosts. Devices that join it are on the same network as the cable ports, or on the VLAN below.'} More networks can be added on the Wireless page.</p>
+            ${banner()}
+            ${fields}${actions(prevStep('wifi'))}</form>`;
+        }
         return `<form id="wiz-form" class="wiz-body" novalidate><h2>Wi-Fi</h2>
             <p class="form-hint">This device has a Wi-Fi adapter that can host a network (${esc(names)}). You can make one now, or leave it for later.</p>
             ${banner()}
@@ -260,7 +268,7 @@
 
     function admin() {
         return `<form id="wiz-form" class="wiz-body" novalidate><h2>Who runs this ${isAP() ? 'device' : 'router'}?</h2>
-            <p class="form-hint">This account can change everything, in the web interface and on the router's own console (a screen and keyboard, or a serial cable). More accounts can be added later.</p>
+            <p class="form-hint">This account can change everything, in the web interface and on the ${dev()}'s own console (a screen and keyboard, or a serial cable). More accounts can be added later.</p>
             ${banner()}<div class="form-grid">
             ${field('Username', 'username', text('username', { auto: 'username' }), '3 to 32 lower-case letters, numbers, dashes or underscores, starting with a letter.', true)}
             ${field('Password', 'password', text('password', { type: 'password', auto: 'new-password' }), `At least ${info.min_password} characters.`)}
@@ -281,14 +289,14 @@
             ${row('Name', F.hostname)}${row('Country', country)}${row('Time zone', F.timezone)}
             ${isAP()
                 ? `${flow === 'extender' ? row('Joins the main Wi-Fi', `${F.link_ssid} (adapter ${F.link_adapter})`) : ''}${flow === 'ptp' ? row(isHostEnd() ? 'Hosts the link' : 'Joins the link', `${F.link_ssid} (adapter ${F.link_adapter})`) : ''}
-                ${row('Cable ports', F.ap_ports.join(', ') || '(none)')}${row('Own address', F.ap_mode === 'static' ? `${F.ap_ip} / ${F.ap_netmask}, gateway ${F.ap_gateway}` : 'From the other router (DHCP)')}`
+                ${row('Cable ports', F.ap_ports.join(', ') || '(none)')}${row('Own address', F.ap_mode === 'static' ? `${F.ap_ip} / ${F.ap_netmask}, gateway ${F.ap_gateway}` : 'Automatic (DHCP)')}`
                 : `${row('Internet port', F.wan_port)}${row('Internet connection', mode)}
             ${row('Local network ports', F.lan_ports.join(', '))}${row('Router address', `${F.lan_ip} / ${F.lan_subnet}`)}
             ${row('Addresses for devices', F.dhcp ? `${F.dhcp_start} to ${F.dhcp_end}` : 'Not given out by this router')}`}
             ${wifiOn() ? row('Wi-Fi', F.wifi_ssid + (isAP() && parseInt(F.wifi_vlan, 10) ? ` (VLAN ${parseInt(F.wifi_vlan, 10)})` : '')) : ''}
             ${row('Administrator', F.username)}
             </tbody></table>
-            <div class="wiz-note">The network settings are saved as a <strong>draft</strong>, not applied yet. After you are signed in the router shows what will change and applies it when you say so. If the router's address changes, the page follows it, and goes back by itself if you cannot reach it.</div>
+            <div class="wiz-note">The network settings are saved as a <strong>draft</strong>, not applied yet. After you are signed in the ${dev()} shows what will change and applies it when you say so. If the ${dev()}'s address changes, the page follows it, and goes back by itself if you cannot reach it.</div>
             ${actions(prevStep('review'), busy ? 'Setting up…' : (isAP() ? 'Set up this device' : 'Set up this router'), 'wiz-finish')}</form>`;
     }
 
@@ -394,6 +402,8 @@
         if (name === 'link') {
             ensureLinkAdapter();
         }
+        // an access point is there to host Wi-Fi: its Wi-Fi page asks for the network straight away (a router may leave it for later)
+        if (name === 'wifi' && isAP()) F.wifi_on = true;
         if (name === 'wifi' && flow === 'extender' && !touched.wifi) {
             // repeating the main Wi-Fi: the same name and password, so that devices move between the two
             F.wifi_on = true;

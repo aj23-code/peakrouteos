@@ -55,7 +55,7 @@ window.APModule = (function () {
                 <h3 class="form-section">The device's own address</h3>
                 <div class="net-access">
                     <label class="toggle toggle--block"><input type="radio" name="ap-addr" data-ap="addrMode" value="dhcp"${form.addrMode === 'dhcp' ? ' checked' : ''}${lock ? ' disabled' : ''}>
-                        <span><strong>From the other router (DHCP)</strong><span class="form-hint">The other router lists the device under its host name (System, Settings): look for it in that router's list of devices to find the address.</span></span></label>
+                        <span><strong>Automatic (DHCP)</strong><span class="form-hint">Gets an address from your existing router or DHCP server, which lists the device under its host name (System, Settings): look for it there to find the address.</span></span></label>
                     <label class="toggle toggle--block"><input type="radio" name="ap-addr" data-ap="addrMode" value="static"${form.addrMode === 'static' ? ' checked' : ''}${lock ? ' disabled' : ''}>
                         <span><strong>A fixed address</strong><span class="form-hint">Easier to find again. Choose one outside the range the other router hands out.</span></span></label>
                 </div>
