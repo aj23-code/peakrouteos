@@ -34,6 +34,7 @@ if [ -z "$args" ]; then
     exit 1
 fi
 
-# -B: hostapd detaches once it is running, so a configuration it rejects makes this fail
+# -B: hostapd detaches once it is running, so a configuration it rejects makes this fail. -s: what it says after that goes to the
+# journal (System logs) instead of nowhere: an adapter that fails later, such as an automatic channel that cannot be chosen, says why.
 # shellcheck disable=SC2086
-exec "$HOSTAPD" -B -P "$PIDFILE" $args
+exec "$HOSTAPD" -B -s -P "$PIDFILE" $args

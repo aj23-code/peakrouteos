@@ -113,12 +113,18 @@ func TestChannelWidthSettings(t *testing.T) {
 	if got := at(r); !strings.Contains(got, "ht_capab=[HT40-]\n") || strings.Contains(got, "ieee80211ac") {
 		t.Errorf("2.4 GHz 40 MHz:\n%s", got)
 	}
-	// automatic channel: no direction and no centre can be known; DFS channels are left out on 5 GHz
+	// automatic channel: 40 MHz is switched on (80 MHz is built on it; the automatic choice sets the direction), no centre can be
+	// known, and DFS channels are left out on 5 GHz
 	r = r5()
 	r.Channel = 0
 	got := at(r)
-	if !strings.Contains(got, "channel=0\n") || !strings.Contains(got, "acs_exclude_dfs=1\n") || strings.Contains(got, "ht_capab") || strings.Contains(got, "centr_freq") {
+	if !strings.Contains(got, "channel=0\n") || !strings.Contains(got, "acs_exclude_dfs=1\n") || !strings.Contains(got, "ht_capab=[HT40+]\n") ||
+		!strings.Contains(got, "vht_oper_chwidth=1\n") || strings.Contains(got, "centr_freq") {
 		t.Errorf("automatic:\n%s", got)
+	}
+	r.Width = 20
+	if got := at(r); strings.Contains(got, "ht_capab") {
+		t.Errorf("automatic at 20 MHz asks for 40:\n%s", got)
 	}
 	r = r24()
 	r.Channel = 0

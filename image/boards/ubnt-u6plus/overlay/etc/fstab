@@ -1,0 +1,4 @@
+# PeakRoute AP on the UniFi U6+ (docs/u6plus.md), written by the image build. The root file system is not here: U-Boot names the
+# slot on the kernel's command line (root=LABEL=peakroute-root-a), and it is read-only. /etc, /var, /home and /usr/local are laid over
+# it from /data by the initramfs before systemd starts. There is no boot loader partition of ours: U-Boot is Ubiquiti's.
+LABEL=peakroute-data  /data  ext4  defaults,noatime,nofail  0  0

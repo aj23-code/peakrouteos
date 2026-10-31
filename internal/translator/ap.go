@@ -71,7 +71,7 @@ func renderInterfacesAP(cfg config.NetworkConfig) string {
 	fmt.Fprintf(&b, "    bridge_ports %s\n", portList(members))
 	if ap.Mode != config.APStatic {
 		// the main router lists the device under this name, which is how it is found
-		for _, l := range dhcpClientHooks(cfg.Hostname) {
+		for _, l := range dhcpClientHooks(cfg.Hostname, PathUDHCPCScript) {
 			fmt.Fprintf(&b, "    %s\n", l)
 		}
 	}

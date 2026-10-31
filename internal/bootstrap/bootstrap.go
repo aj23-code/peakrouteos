@@ -49,6 +49,12 @@ type Service struct {
 	Dir string
 	// Extra lines are added to the DHCP server's file (a test in a namespace has no user to drop to).
 	Extra []string
+	// Client is the access point build's setup network (PeakRoute AP): its port is plugged into a network another router runs, where a
+	// DHCP server of its own would hand out wrong addresses to everyone. So it serves none: the bridge asks that network's DHCP server
+	// for an address (sending Hostname, so that router lists the device under it) and keeps the setup address beside it, as an access
+	// point keeps its recovery address.
+	Client   bool
+	Hostname func() string
 
 	mu      sync.Mutex
 	running bool
@@ -61,8 +67,21 @@ func (s *Service) Running() bool {
 	return s.running
 }
 
-func (s *Service) conf() string { return filepath.Join(s.Dir, "dnsmasq.conf") }
-func (s *Service) pid() string  { return filepath.Join(s.Dir, "dnsmasq.pid") }
+func (s *Service) conf() string      { return filepath.Join(s.Dir, "dnsmasq.conf") }
+func (s *Service) pid() string       { return filepath.Join(s.Dir, "dnsmasq.pid") }
+func (s *Service) clientPid() string { return filepath.Join(s.Dir, "udhcpc.pid") }
+
+// clientCommand is the DHCP client of the access point build's setup network, in the background with the access point's own script
+// (translator.PathUDHCPCScript), so that the setup address stays.
+func (s *Service) clientCommand() []string {
+	cmd := []string{"udhcpc", "-b", "-R", "-p", s.clientPid(), "-i", Bridge, "-s", translator.PathUDHCPCScript}
+	if s.Hostname != nil {
+		if h := s.Hostname(); config.IsValidHostname(h) {
+			cmd = append(cmd, "-x", "hostname:"+h)
+		}
+	}
+	return cmd
+}
 
 // DHCPConfig is the DHCP server's file: only on the bridge, no DNS (the address is typed), and no router or DNS offered so that a
 // computer that also has another connection does not prefer this one for the internet.
@@ -120,8 +139,10 @@ func (s *Service) Start() error {
 	if err := os.MkdirAll(s.Dir, 0755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(s.conf(), []byte(s.dhcpConfig()), 0644); err != nil {
-		return err
+	if !s.Client {
+		if err := os.WriteFile(s.conf(), []byte(s.dhcpConfig()), 0644); err != nil {
+			return err
+		}
 	}
 	steps := [][]string{{"ip", "link", "add", Bridge, "type", "bridge"}}
 	for _, p := range ports {
@@ -132,8 +153,12 @@ func (s *Service) Start() error {
 	}
 	steps = append(steps,
 		[]string{"ip", "addr", "add", fmt.Sprintf("%s/%d", Address, Prefix), "dev", Bridge},
-		[]string{"ip", "link", "set", Bridge, "up"},
-		[]string{"dnsmasq", "--conf-file=" + s.conf()})
+		[]string{"ip", "link", "set", Bridge, "up"})
+	if s.Client {
+		steps = append(steps, s.clientCommand())
+	} else {
+		steps = append(steps, []string{"dnsmasq", "--conf-file=" + s.conf()})
+	}
 	for _, st := range steps {
 		if err := s.run(ctx, st[0], st[1:]...); err != nil {
 			s.stopLocked(ctx)
@@ -156,9 +181,11 @@ func (s *Service) Stop() {
 
 func (s *Service) stopLocked(ctx context.Context) {
 	// each step is tried whatever the others did: there may be little left to remove
-	if _, err := os.Stat(s.pid()); err == nil {
-		_ = s.run(ctx, "pkill", "--pidfile", s.pid())
-		_ = os.Remove(s.pid())
+	for _, pid := range []string{s.pid(), s.clientPid()} {
+		if _, err := os.Stat(pid); err == nil {
+			_ = s.run(ctx, "pkill", "--pidfile", pid)
+			_ = os.Remove(pid)
+		}
 	}
 	if s.running || s.exists(ctx) {
 		_ = s.run(ctx, "ip", "link", "del", Bridge)

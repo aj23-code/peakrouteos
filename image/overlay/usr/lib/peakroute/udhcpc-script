@@ -1,0 +1,51 @@
+#!/bin/sh
+# udhcpc's script for an access point's bridge (and the setup network of PeakRoute AP): sets the address it was given beside the
+# others on the interface and takes away only that one again. Debian's own script sets the address with ifconfig, which replaces the
+# first address of the interface, and flushes them all when the lease is lost: the recovery address 192.168.77.1 would go with it
+# (docs/access-point.md). udhcpc passes: $1 (deconfig, bound, renew, leasefail, nak) and $interface, $ip, $mask, $router, $dns, $domain.
+
+# (the tests point these elsewhere)
+RUN="${PEAKROUTE_RUN:-/run/peakroute}"
+RESOLV_CONF="${PEAKROUTE_RESOLV_CONF:-/etc/resolv.conf}"
+STATE="$RUN/udhcpc.${interface}"
+
+log() { logger -t "udhcpc[$PPID]" -p "daemon.$1" "$interface: $2" 2>/dev/null || true; }
+
+# drop forgets the address and the default route this script set last time
+drop() {
+    [ -f "$STATE" ] || return 0
+    old_addr=$(sed -n 's/^addr=//p' "$STATE")
+    old_router=$(sed -n 's/^router=//p' "$STATE")
+    [ -n "$old_addr" ] && ip -4 addr del "$old_addr" dev "$interface" 2>/dev/null
+    [ -n "$old_router" ] && ip -4 route del default via "$old_router" dev "$interface" 2>/dev/null
+    rm -f "$STATE"
+}
+
+case "$1" in
+    deconfig)
+        ip link set "$interface" up
+        drop
+        log notice "deconfigured"
+        ;;
+    bound|renew)
+        new="$ip/${mask:-24}"
+        old_addr=$(sed -n 's/^addr=//p' "$STATE" 2>/dev/null)
+        [ -n "$old_addr" ] && [ "$old_addr" != "$new" ] && drop
+        ip -4 addr replace "$new" dev "$interface"
+        router="${router%% *}"
+        if [ -n "$router" ]; then
+            ip -4 route replace default via "$router" dev "$interface"
+        fi
+        mkdir -p "$RUN"
+        printf 'addr=%s\nrouter=%s\n' "$new" "$router" > "$STATE"
+        {
+            [ -n "$domain" ] && echo "search $domain"
+            for s in $dns; do echo "nameserver $s"; done
+        } > "$RESOLV_CONF.peakroute.$$" && mv "$RESOLV_CONF.peakroute.$$" "$RESOLV_CONF"
+        log info "$1: $new router=$router dns=\"$dns\""
+        ;;
+    leasefail|nak)
+        log err "no lease: $1 ${message:-}"
+        ;;
+esac
+exit 0

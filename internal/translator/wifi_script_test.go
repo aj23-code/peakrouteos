@@ -52,7 +52,7 @@ func TestTheWifiScriptStartsOneHostapdForEveryPresentAdapter(t *testing.T) {
 		t.Fatalf("calls: %q", calls)
 	}
 	hostapd := lines[1]
-	if !strings.HasPrefix(hostapd, "hostapd -B -P ") || !strings.HasSuffix(hostapd, " CONF/wlan0.conf CONF/wlan1.conf") || strings.Count(calls, "hostapd") != 1 {
+	if !strings.HasPrefix(hostapd, "hostapd -B -s -P ") || !strings.HasSuffix(hostapd, " CONF/wlan0.conf CONF/wlan1.conf") || strings.Count(calls, "hostapd") != 1 {
 		t.Fatalf("one process, detaching, with every file: %q", hostapd)
 	}
 }

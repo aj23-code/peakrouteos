@@ -27,7 +27,7 @@ iface lo inet loopback
 auto br0
 iface br0 inet manual
     bridge_ports eth0 eth1
-    up udhcpc -b -R -p /run/udhcpc.$IFACE.pid -i $IFACE -x hostname:ap-hall
+    up udhcpc -b -R -p /run/udhcpc.$IFACE.pid -i $IFACE -s /usr/lib/peakroute/udhcpc-script -x hostname:ap-hall
     down [ ! -f /run/udhcpc.$IFACE.pid ] || kill $(cat /run/udhcpc.$IFACE.pid)
     post-up ip addr add 192.168.77.1/24 dev br0 label br0:setup || true
 `

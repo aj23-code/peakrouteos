@@ -126,13 +126,21 @@ func dhcpHooks(cfg config.NetworkConfig) []string {
 	if cfg.Hostname != "" && cfg.SendHostname {
 		name = cfg.Hostname
 	}
-	return dhcpClientHooks(name)
+	return dhcpClientHooks(name, "")
 }
 
-// dhcpClientHooks are the up and down lines for a DHCP client that sends the given host name ("" sends none).
-func dhcpClientHooks(hostname string) []string {
+// PathUDHCPCScript is the access point's DHCP client script (image/overlay): it sets the leased address beside the recovery address
+// and takes away only its own, where Debian's script replaces the interface's first address and flushes them all.
+const PathUDHCPCScript = "/usr/lib/peakroute/udhcpc-script"
+
+// dhcpClientHooks are the up and down lines for a DHCP client that sends the given host name ("" sends none), with udhcpc's own script
+// or the given one.
+func dhcpClientHooks(hostname, script string) []string {
 	pid := "/run/udhcpc.$IFACE.pid"
 	start := "up udhcpc -b -R -p " + pid + " -i $IFACE"
+	if script != "" {
+		start += " -s " + script
+	}
 	if hostname != "" {
 		start += " -x hostname:" + hostname
 	}

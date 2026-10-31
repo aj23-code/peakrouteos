@@ -1,0 +1,5 @@
+# The U6+'s initramfs is part of the boot image U-Boot loads (docs/u6plus.md), which must stay small: only the drivers the U6+ needs
+# to reach its root file system (modules), compressed hard. No swap to resume from.
+MODULES=list
+RESUME=none
+COMPRESS=xz

@@ -167,3 +167,6 @@ func (c NetworkConfig) validateWan(add func(field, format string, args ...any)) 
 		add("wan_pppoe", "PPPoE settings are only used with a PPPoE connection")
 	}
 }
+
+// IsValidHostname says whether a host name may be used as one (letters, digits and hyphens, as the settings allow).
+func IsValidHostname(h string) bool { return hostnamePattern.MatchString(h) }

@@ -11,6 +11,12 @@ the daemon builds a *setup network* (`internal/bootstrap`): all the wired ports 
 address **192.168.77.1/24**, and a DHCP server on it hands out `192.168.77.100` to `.199` (1 hour). Plug a computer into any port, let
 it take an address, and open `https://192.168.77.1`.
 
+**PeakRoute AP (the access point build) serves no addresses.** Its port is plugged into a network another router runs, where a DHCP
+server of its own would hand out wrong addresses to everyone. Its setup network asks that network's DHCP server for an address instead
+(sending the name `peakroute`, so that router lists it), and keeps `192.168.77.1` beside it: open the address the router gave it, or set
+a computer on the same network to an address in `192.168.77.0/24` and open `https://192.168.77.1`. The DHCP client's script is the
+access point's own (`/usr/lib/peakroute/udhcpc-script`), which leaves the other addresses of the bridge alone.
+
 - The address is unusual on purpose: `192.168.1.1` is what most internet providers' routers use, and a router behind one would clash.
 - No router and no DNS server are offered in the leases, and there is no DNS on it: a computer that has another connection (Wi-Fi) keeps
   using that one for the internet, and the address is typed.

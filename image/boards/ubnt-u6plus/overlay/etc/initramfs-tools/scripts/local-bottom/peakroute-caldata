@@ -1,0 +1,28 @@
+#!/bin/sh
+# The U6+'s Wi-Fi calibration (docs/u6plus.md): the radio's driver asks for mediatek/mt7981_eeprom_mt7976_dbdc.bin, which is this
+# device's own calibration, in the first 4 KiB of the eMMC partition "factory" (Ubiquiti's, never written). It is copied to /run, where
+# the kernel looks first (firmware_class.path on the command line), before the driver is loaded from the root file system.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "${1:-}" in
+    prereqs) prereqs; exit 0 ;;
+esac
+
+SRC=/dev/disk/by-partlabel/factory
+DIR=/run/peakroute/firmware/mediatek
+i=0
+while [ ! -b "$SRC" ] && [ "$i" -lt 10 ]; do
+    udevadm settle --timeout=2 2>/dev/null
+    sleep 1
+    i=$((i + 1))
+done
+[ -b "$SRC" ] || { echo "peakroute-caldata: no factory partition: the Wi-Fi has no calibration" >&2; exit 0; }
+mkdir -p "$DIR"
+dd if="$SRC" of="$DIR/mt7981_eeprom_mt7976_dbdc.bin" bs=4096 count=1 2>/dev/null
+# a calibration starts with the chip's number, 0x7981
+magic=$(dd if="$DIR/mt7981_eeprom_mt7976_dbdc.bin" bs=2 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')
+if [ "$magic" != "8179" ]; then
+    echo "peakroute-caldata: the factory partition holds no MT7981 calibration ($magic): not used" >&2
+    rm -f "$DIR/mt7981_eeprom_mt7976_dbdc.bin"
+fi
+exit 0

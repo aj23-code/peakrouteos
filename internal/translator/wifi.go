@@ -173,10 +173,16 @@ func renderHostapd(cfg config.NetworkConfig, p radioPlan, firstOn map[string]str
 	// the 802.11 generations the adapter supports, at the width chosen
 	if r.HT {
 		line("ieee80211n=1")
-		if r.Width >= 40 && r.Channel != 0 {
+		switch {
+		case r.Width >= 40 && r.Channel != 0:
 			if dir := config.HT40Direction(r.Band, r.Channel); dir != "" {
 				line("ht_capab=[HT40%s]", dir)
 			}
+		case r.Width >= 40:
+			// An automatic channel still needs 40 MHz switched on, or 80 MHz (which is built on it) cannot be had and hostapd fails
+			// the adapter once it has picked a channel (found on a U6+, 2026-10-30: the 5 GHz radio on auto at 80 MHz, and with it
+			// every other, since hostapd stops when one of its adapters fails). The direction is the automatic choice's to set.
+			line("ht_capab=[HT40+]")
 		}
 	}
 	chwidth := map[int]int{20: 0, 40: 0, 80: 1, 160: 2}[r.Width]

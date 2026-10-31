@@ -193,6 +193,11 @@ func Start(o Options) *Core {
 	if o.Dev {
 		setupNet.Dir = filepath.Join(o.SystemRoot, "run", "peakroute-setup")
 	}
+	if o.APOnly {
+		// plugged into a network another router runs: ask its DHCP server for an address instead of serving any
+		setupNet.Client = true
+		setupNet.Hostname = func() string { h, _ := os.Hostname(); return h }
+	}
 	var allow func(config.NetworkConfig) error
 	if o.APOnly {
 		allow = config.RequireAP

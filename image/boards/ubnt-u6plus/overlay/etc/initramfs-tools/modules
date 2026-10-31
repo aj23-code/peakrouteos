@@ -1,0 +1,11 @@
+# The U6+'s storage (the eMMC), the root and data file systems, the layers laid over the system (peakroute-state)
+mtk-sd
+# the eMMC's 3.3 V supply (the device tree's regulator-3p3v, driver reg-fixed-voltage, module "fixed"): a module in Debian's kernel, without which the eMMC driver waits
+# for its supply forever and the root file system never appears
+fixed
+ext4
+overlay
+# the kernel's log of a crash is kept in the RAM U-Boot leaves alone (ramoops@42ff0000) and read after the restart
+ramoops
+# the SoC's watchdog, which U-Boot may leave running: its driver keeps it fed while the system starts (it also resets the Wi-Fi)
+mtk_wdt

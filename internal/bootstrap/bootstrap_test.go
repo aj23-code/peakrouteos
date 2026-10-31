@@ -257,3 +257,42 @@ func TestReconcileFollowsTheCommittedSettings(t *testing.T) {
 		t.Fatal("did not come back")
 	}
 }
+
+// PeakRoute AP's setup network serves no addresses: its port is on a network another router runs. The bridge asks that router for one,
+// sending the device's name, and keeps the setup address beside it; stopping it stops the client.
+func TestTheAccessPointBuildAsksForAnAddressAndServesNone(t *testing.T) {
+	s, rec, _ := newService(t)
+	s.Client = true
+	s.Hostname = func() string { return "peakroute" }
+	if err := s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	all := strings.Join(rec.cmds, "\n")
+	if strings.Contains(all, "dnsmasq") {
+		t.Fatalf("a DHCP server was started:\n%s", all)
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir, "dnsmasq.conf")); err == nil {
+		t.Fatal("a DHCP server's file was written")
+	}
+	want := "udhcpc -b -R -p " + filepath.Join(s.Dir, "udhcpc.pid") + " -i " + Bridge + " -s /usr/lib/peakroute/udhcpc-script -x hostname:peakroute"
+	if rec.cmds[len(rec.cmds)-1] != want {
+		t.Fatalf("last command %q, want %q", rec.cmds[len(rec.cmds)-1], want)
+	}
+	if !strings.Contains(all, "ip addr add "+Address+"/24 dev "+Bridge) {
+		t.Fatalf("no setup address:\n%s", all)
+	}
+	// the client wrote its pid file: stopping kills it
+	if err := os.WriteFile(filepath.Join(s.Dir, "udhcpc.pid"), []byte("123\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	rec.cmds = nil
+	s.Stop()
+	if !strings.Contains(strings.Join(rec.cmds, "\n"), "pkill --pidfile "+filepath.Join(s.Dir, "udhcpc.pid")) {
+		t.Fatalf("the client was not stopped: %q", rec.cmds)
+	}
+	// a name that is not one is not sent
+	s.Hostname = func() string { return "bad name;" }
+	if cmd := strings.Join(s.clientCommand(), " "); strings.Contains(cmd, "hostname") {
+		t.Fatalf("sent %q", cmd)
+	}
+}

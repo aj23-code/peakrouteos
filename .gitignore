@@ -6,6 +6,8 @@
 *.img.sha256
 *.img.zst
 *.img.gz
+# board images and backups of devices (buildImageU6Plus.sh, image/boards/*/install.sh)
+/out/
 *.update
 *.update.sha256
 

@@ -708,6 +708,41 @@ manifest; `full_build.sh` names a build from `v[0-9]*` tags only (an `ap-v*` tag
 skipped), `TestTheBuildSaysTheProductWhenTheSystemDoesNot`; each check was removed once to see its test fail. Not done: the AP's release
 workflow and image (they come with the U6+ image profile).
 
+## 7w. PeakRoute AP on the U6+ (2026-10-30, the first night)
+
+Docs: `docs/u6plus.md`. Build: `buildImageU6Plus.sh` (Debian 13 arm64 under qemu-user, Debian's kernel, a FIT boot image and an ext4
+root); install from OpenWrt: `image/boards/ubnt-u6plus/install.sh` (backup, partition, write, probe-env, probe-load, trial, keep,
+openwrt, env, ramoops, status). Found on the way, in order, each from something the device showed (no serial console was used):
+
+- **OpenWrt's kernel cannot run Debian** (no devtmpfs, autofs or kexec); Debian's 6.12 arm64 kernel has every MT7981 driver. The device
+  tree is the one OpenWrt ran with, decompiled (`/sys/firmware/fdt`).
+- **The partition table** has room for 10 entries (all used), says the disk is 3 GiB and has no backup: rewritten with sfdisk on a copy,
+  every entry kept, sectors 1-33 and the backup written, sector 0 left. OpenWrt starts on it unchanged.
+- **U-Boot has the simple parser** (no `&&`): steps are `run a b c` variables. Found by a probe whose marks never moved.
+- **bootm resets the board** for Debian's 37 MB kernel (CONFIG_SYS_BOOTM_LEN; found by a mark set after bootm that was never reached
+  and a quick restart): the kernel is stored unpacked and started with `booti` after `imxtract`.
+- **booti refused "address:size" for the initramfs** (`pr_trial=bootm-returned`): it takes the initramfs and device tree by name from
+  the FIT image.
+- **No crash log at first**: OpenWrt's kernel reads the ramoops RAM with 4 KiB records and clears PeakRoute's 32 KiB ones. U-Boot now
+  copies the raw 64 KiB to `peakroute-boot-b` on the way back to OpenWrt, and `ramoops.py` decodes it. That log showed the kernel
+  starting, running the initramfs, and nothing for 40 s: **the eMMC never appeared** because its 3.3 V supply driver (module `fixed`,
+  `reg-fixed-voltage`) was not in the initramfs. With it, PeakRoute AP started (at 192.168.1.165 from the router's DHCP, with
+  192.168.77.1 beside it; both radios, the device's own calibration, 90 MB of 212 available after `cma=16M`).
+- **The first start serves no DHCP** (`bootstrap.Service.Client`, set by the AP build): its port is on the main network. Its DHCP client
+  and the access point's use `/usr/lib/peakroute/udhcpc-script`, which adds and removes only its own address (Debian's script replaces
+  the first address and flushes all, which took 192.168.77.1 too). Tests: `image/udhcpc_test.go`, the bootstrap test.
+- **Wi-Fi up for 5-10 s, then both radios down** (the wizard's settings, and the same after saving them again): hostapd started both,
+  2.4 GHz finished its automatic channel choice and served a phone, the 5 GHz one (automatic, 80 MHz) failed, and hostapd stops when
+  one of its adapters fails. Our file asked for 80 MHz on an automatic channel without `ht_capab=[HT40+]` (only a fixed channel got
+  it, since the direction depends on the channel); 80 MHz is built on 40. Confirmed by the user: channel 36 kept both up. Fixed in
+  `renderHostapd` (an automatic channel at 40 MHz or more gets `[HT40+]`; the automatic choice sets the direction), which a router's
+  5 GHz on automatic also needed; the test that said "no ht_capab on automatic" was wrong. hostapd now logs to the journal (`-s`):
+  before, its reason was lost once it had detached.
+- The AP firewall keeps SSH out, so a development build (`DEV_SSH_KEY`) opens port 22 whenever nftables loads its rules.
+
+Not done: see `docs/u6plus.md`, "Not done" (updates on the U6+, a release workflow for `ap-v*`, LEDs, the certificate's names, one
+hostapd for both radios).
+
 ## 7t. The disk image (built 2026-10-12; first real boot reached the welcome page)
 
 Rules and how to use it: **`docs/image.md`**. `buildImage.sh` replaces `buildISO.sh`, `first_boot.sh` and the installer (all removed; the
