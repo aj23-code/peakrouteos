@@ -759,6 +759,11 @@ openwrt, env, ramoops, status). Found on the way, in order, each from something 
   its own: it scanned every channel and chose the emptiest, a radar one (100, then 52, then a 60 s radar wait). Fixed in `renderHostapd`:
   a 5 GHz automatic channel also gets `chanlist=36 40 44 48 149 153 157 161 165` (hostapd leaves out what the country does not allow).
   The same run with the list chose 36 and started at once.
+- **`install.sh keep` changed nothing the first time** (2026-10-31): run against PeakRoute, `fw_setenv -s` is Debian's (libubootenv),
+  which reads `name=value` lines and silently ignores lines without `=`, where OpenWrt's (u-boot's envtools) reads `name value`.
+  `set_env` turns the lines into the form the device's tool wants (it asks `fw_setenv --help`). Then `keep` worked, and a restart came
+  back as PeakRoute by itself. (`systemctl reboot` on the U6+ prints "Failed to connect to system scope bus": the image has no D-Bus;
+  systemd restarts anyway.)
 - **The CPU is not the limit** (same day, the user's phone on 5 GHz at channel 36, 80 MHz): at 185 Mbit/s to the phone the busiest core
   was 25% busy (18% interrupts, all on cpu0), the other 15%. Interrupts on one core would run out somewhere near 600-700 Mbit/s;
   the Wi-Fi offload OpenWrt uses (WED) is not needed at these speeds. What the phone gets is the radio link (distance, walls). Devices nearer by connected at 865-1081 Mbit/s (Wi-Fi 6, 80 MHz).

@@ -50,9 +50,11 @@ check_u6plus() {
     [ "${sectors}" = "${SECTORS}" ] || { echo "Error: this U6+'s eMMC has ${sectors} sectors, not ${SECTORS}: the layout here is not known"; exit 1; }
 }
 
-# set_env FILE: U-Boot's settings from a file of "name value" lines (fw_setenv -s: no shell quoting of U-Boot's own ${...})
+# set_env FILE: U-Boot's settings from a file of "name value" lines (fw_setenv -s: no shell quoting of U-Boot's own ${...}). OpenWrt's
+# fw_setenv (u-boot's envtools) reads "name value"; Debian's (libubootenv, on PeakRoute) reads "name=value" and ignores a line without
+# "=" (so "keep" run on PeakRoute changed nothing until 2026-10-31): the lines are turned into that form where the tool wants it.
 set_env() {
-    remote "cat > /tmp/peakroute.env && fw_setenv -s /tmp/peakroute.env && rm /tmp/peakroute.env" < "$1"
+    remote "cat > /tmp/peakroute.env && if fw_setenv --help 2>&1 | grep -q 'key=value'; then sed -i -e 's/^\([^ =]*\) /\1=/' -e 's/^\([^ =]*\)\$/\1=/' /tmp/peakroute.env; fi && fw_setenv -s /tmp/peakroute.env && rm /tmp/peakroute.env" < "$1"
 }
 
 # write_env FIT: U-Boot's settings for PeakRoute's boot image. U-Boot here has the simple command parser (no &&, || or if): a list

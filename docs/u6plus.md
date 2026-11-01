@@ -4,8 +4,8 @@ PeakRoute AP (the access point build, `docs/access-point.md`) runs on the Ubiqui
 256 MB of RAM, a 4 GB eMMC, one gigabit port with PoE in, and an MT7976C radio (2.4 and 5 GHz at once, two Wi-Fi adapters to Linux).
 Its board name is `ubnt-u6plus` (docs/updates.md, "Product, board and processors").
 
-**Status (2026-10-30): PeakRoute AP starts on a U6+ (on trial), the wizard sets it up as an access point and both radios serve
-Wi-Fi; see NOTES.md, "PeakRoute AP on the U6+", for what was found on the way.**
+**Status (2026-10-31): PeakRoute AP is what the user's U6+ starts (kept, with OpenWrt left as the fallback when PeakRoute's boot image
+cannot be read); the wizard sets it up as an access point and both radios serve Wi-Fi; see NOTES.md, "PeakRoute AP on the U6+", for what was found on the way.**
 
 ## What is on the U6+
 
