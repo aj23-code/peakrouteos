@@ -10,6 +10,9 @@
 #   install.sh HOST probe-load   one start that only reads PeakRoute's boot image and checks it, then OpenWrt again
 #   install.sh HOST trial        the next start is PeakRoute, once: any start after it (a power cut, a crash) is OpenWrt again
 #   install.sh HOST keep         PeakRoute starts every time (run against PeakRoute itself, a development build with SSH)
+#   install.sh HOST update       from PeakRoute running slot a (a development build with SSH): writes the newest build to slot b and
+#                                its boot partition and sets U-Boot up to start it once, on trial, as an update does (for a build
+#                                that cannot install updates yet); keep it on its Updates page, or it goes back
 #   install.sh HOST openwrt      OpenWrt starts every time again (from OpenWrt, or from a development build of PeakRoute)
 #   install.sh HOST env          U-Boot's settings for PeakRoute again (after a change to this script)
 #   install.sh HOST ramoops      the kernel's log of the last PeakRoute start that ended in OpenWrt (read from OpenWrt)
@@ -106,6 +109,20 @@ write_env() {
     rm -f "${env}"
 }
 
+# find_build: fit, rootfs and unpack for the newest build in OUT_DIR, checked against their checksums
+find_build() {
+    fit="$(ls -t "${OUT_DIR}"/peakroute-ap-arm64-ubnt-u6plus-*.fit | head -n 1)"
+    # the root file system as built (.rootfs), or as a release has it (.rootfs.gz, written as it is unpacked)
+    rootfs="${fit%.fit}.rootfs"
+    unpack=cat
+    if [ ! -f "${rootfs}" ] && [ -f "${rootfs}.gz" ]; then
+        rootfs="${rootfs}.gz"
+        unpack="gzip -dc"
+    fi
+    [ -f "${rootfs}" ] || { echo "Error: no ${fit%.fit}.rootfs or .rootfs.gz beside ${fit}"; exit 1; }
+    ( cd "$(dirname "${fit}")" && sha256sum -c --quiet "$(basename "${fit}").sha256" "$(basename "${rootfs}").sha256" )
+}
+
 case "${STEP}" in
 backup)
     check_u6plus
@@ -183,16 +200,7 @@ partition)
 
 write)
     check_u6plus
-    fit="$(ls -t "${OUT_DIR}"/peakroute-ap-arm64-ubnt-u6plus-*.fit | head -n 1)"
-    # the root file system as built (.rootfs), or as a release has it (.rootfs.gz, written as it is unpacked)
-    rootfs="${fit%.fit}.rootfs"
-    unpack=cat
-    if [ ! -f "${rootfs}" ] && [ -f "${rootfs}.gz" ]; then
-        rootfs="${rootfs}.gz"
-        unpack="gzip -dc"
-    fi
-    [ -f "${rootfs}" ] || { echo "Error: no ${fit%.fit}.rootfs or .rootfs.gz beside ${fit}"; exit 1; }
-    ( cd "$(dirname "${fit}")" && sha256sum -c --quiet "$(basename "${fit}").sha256" "$(basename "${rootfs}").sha256" )
+    find_build
     boot="$(partition_dev peakroute-boot-a)"; root="$(partition_dev peakroute-root-a)"; data="$(partition_dev peakroute-data)"
     [ -n "${boot}" ] && [ -n "${root}" ] && [ -n "${data}" ] || { echo "Error: run the partition step first"; exit 1; }
     echo "Writing $(basename "${fit}") to ${boot}..."
@@ -255,6 +263,47 @@ openwrt)
     echo 'bootcmd_real run boot_openwrt' > "${env}"
     set_env "${env}"; rm -f "${env}"
     echo "OpenWrt starts every time again (restart ${HOST} for it to)."
+    ;;
+
+update)
+    # what internal/update/uboot.go does, from outside: slot b and its boot partition, then a one-time start of it
+    check_u6plus
+    remote "grep -qw peakroute.slot=a /proc/cmdline" || { echo "Error: run it against PeakRoute running from slot a"; exit 1; }
+    find_build
+    boot="$(partition_dev peakroute-boot-b)"; root="$(partition_dev peakroute-root-b)"
+    [ -n "${boot}" ] && [ -n "${root}" ] || { echo "Error: ${HOST} has no slot b partitions"; exit 1; }
+    remote "! grep -q '^${root} ' /proc/mounts" || { echo "Error: ${root} is in use"; exit 1; }
+    count=$(( ( $(stat -c %s "${fit}") + 511 ) / 512 ))
+    # slot b is not one to start until it is all written
+    env="$(mktemp)"
+    echo 'pb_count_b' > "${env}"
+    set_env "${env}"
+    echo "Writing $(basename "${fit}") to ${boot}..."
+    remote "dd of=${boot} bs=1M conv=fsync 2>/dev/null" < "${fit}"
+    echo "Writing $(basename "${rootfs}") to ${root} ($(( $(stat -c %s "${rootfs}") >> 20 )) MB)..."
+    ${unpack} "${rootfs}" | remote "dd of=${root} bs=1M conv=fsync 2>/dev/null"
+    # checked, grown to the partition and named for slot b (root=LABEL=peakroute-root-b), as the daemon does
+    remote "e2fsck -fp ${root} >/dev/null; [ \$? -le 1 ] && resize2fs ${root} >/dev/null 2>&1 && tune2fs -L peakroute-root-b ${root} >/dev/null" \
+        || { echo "Error: the written root file system does not check clean"; exit 1; }
+    pb_count="$(remote "fw_printenv -n pb_count")"
+    {
+        # slot a stays the kept one, to go back to
+        echo 'pb_slot a'
+        printf 'pb_count_a %s\n' "${pb_count}"
+        printf 'pb_count_b 0x%x\n' "${count}"
+        printf 'pt_start 0x%x\n' "$(partition_start peakroute-boot-b)"
+        printf 'pt_count 0x%x\n' "${count}"
+        args="${BOOTARGS/root=LABEL=peakroute-root-a/root=LABEL=peakroute-root-b}"
+        args="${args/peakroute.slot=a/peakroute.slot=b}"
+        printf 'pt_args %s\n' "${args/peakroute.trial= /peakroute.trial=1 }"
+        printf 'pt_read mmc read %s ${pt_start} ${pt_count}\n' "${LOADADDR}"
+        printf 'pt_boot setenv bootargs ${pt_args}; booti %s %s:ramdisk-1 %s:fdt-1\n' "${KERNEL_ADDR}" "${LOADADDR}" "${LOADADDR}"
+        echo 'boot_trial run pl_sig; run pl_dev pt_read pl_kernel pt_boot'
+        echo 'boot_kept run boot_peak; run boot_openwrt'
+        echo 'bootcmd_real setenv bootcmd_real run boot_kept; saveenv; run boot_trial; run boot_kept'
+    } > "${env}"
+    set_env "${env}"; rm -f "${env}"
+    echo "Written. Restart ${HOST} (ssh root@${HOST} reboot) to start slot b once, then keep it on its Updates page within 10 minutes."
     ;;
 
 env)

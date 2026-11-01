@@ -807,7 +807,9 @@ slot's `pb_count_<slot>` (the first installs only had `pb_count`), so Go back wo
 a) and the U6+ image keeps it now (enabled; it was removed before); install.sh writes `pb_slot a`, `pb_count_a` and drops `pb_count_b`.
 Tests: `TestAnUpdateOnTheU6PlusFromWritingToKeeping` (write, trial, keep, go back), `TestAU6PlusBundleWithoutItsBootImageIsRefused`,
 `TestARouterIgnoresABootImage`, `TestBootArgsForASlot`, `TestOnTheU6Plus*` (trialwatch). A U6+ on `ap-v0.5.1-alpha` cannot take an
-update (its daemon reads GRUB): the next build goes on once with `install.sh write`.
+update (its daemon reads GRUB): the next build goes on once with `install.sh HOST update`, which does from outside, over the dev
+build's SSH, what the daemon does (slot b + boot-b, e2fsck/resize2fs/label, pt_* and the one-shot bootcmd_real); `write` would
+overwrite the running slot a.
 
 ## 7t. The disk image (built 2026-10-12; first real boot reached the welcome page)
 

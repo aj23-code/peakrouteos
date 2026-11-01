@@ -95,7 +95,8 @@ installer checks them and writes the root file system as it unpacks it).
 
 - Updates on the device itself have only been tested here, not on a U6+ (they write the other slot and its boot partition and start
   it once through U-Boot, on trial: docs/updates.md, section 4). A U6+ running `ap-v0.5.1-alpha` or older cannot install them (its
-  daemon looks for GRUB): install a newer build once with `install.sh HOST write`.
+  daemon looks for GRUB): put a newer build on once with `install.sh HOST update` (from PeakRoute in slot a, a development build with
+  SSH: it writes slot b and starts it once, on trial; keep it on its Updates page) or `install.sh HOST write` (from OpenWrt).
 - A release build and workflow (`ap-v*` tags); the image's version comes from them (`ap-v0.1.0` is v0.1.0).
 - The LEDs and the reset button.
 - One hostapd serves both radios and stops when one of them fails (band steering needs one process): a radio that cannot start takes
