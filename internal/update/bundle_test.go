@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,10 +162,19 @@ func TestManifestsThatMakeNoSenseAreRefused(t *testing.T) {
 		"no size":                        func(m *Manifest) { m.RootfsSize = 0 },
 		"an absurd size":                 func(m *Manifest) { m.RootfsSize = maxRootfs + 1 },
 		"a checksum that is not one":     func(m *Manifest) { m.RootfsSHA256 = "abc" },
+		"a boot image with no checksum":  func(m *Manifest) { m.Boot = &BootImage{Size: 1 << 20} },
+		"an empty boot image":            func(m *Manifest) { m.Boot = &BootImage{SHA256: strings.Repeat("a", 64)} },
+		"a boot image too big":           func(m *Manifest) { m.Boot = &BootImage{Size: maxBoot + 1, SHA256: strings.Repeat("a", 64)} },
 	} {
 		if _, err := OpenBundle(bytes.NewReader(bundleOf(t, "v0.10.0", rootfs, mod))); err == nil {
 			t.Errorf("%s was accepted", name)
 		}
+	}
+	// a boot image described rightly is accepted (a U6+'s bundle, docs/u6plus.md); a router's bundle has none
+	if _, err := OpenBundle(bytes.NewReader(bundleOf(t, "v0.10.0", rootfs, func(m *Manifest) {
+		m.Boot = &BootImage{Size: 46 << 20, SHA256: strings.Repeat("a", 64)}
+	}))); err != nil {
+		t.Errorf("a boot image: %v", err)
 	}
 	// not an update at all
 	for name, data := range map[string][]byte{"text": []byte("hello"), "empty": nil, "gzip": gz(t, []byte("x"))} {
@@ -279,5 +289,40 @@ func TestTheProductAndBoardMustMatch(t *testing.T) {
 	bad.Board = "u6/../x"
 	if bad.Validate() == nil {
 		t.Error("a board that is not a plain name was accepted")
+	}
+}
+
+// A U6+'s bundle has the boot image as a third entry, after the system (buildImageU6Plus.sh): the reader opens it as any bundle (the
+// system is still the second entry) and reads past it, so a router, which never installs one, is not confused by it either.
+func TestABundleWithABootImageOpensAndDrains(t *testing.T) {
+	rootfs := fakeRootfs(1 << 20)
+	payload := gz(t, rootfs)
+	boot := bytes.Repeat([]byte("FIT"), 4096)
+	m := Manifest{Format: FormatVersion, Version: "v0.1.0", Built: "2026-10-31T10:00:00Z", Arch: "arm64", Product: ProductAP, Board: "ubnt-u6plus",
+		Layout: LayoutVersion, RootfsSize: int64(len(rootfs)), RootfsSHA256: sum(rootfs), PayloadSHA256: sum(payload),
+		Boot: &BootImage{Size: int64(len(boot)), SHA256: sum(boot)}}
+	raw, _ := json.Marshal(m)
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, e := range []struct {
+		name string
+		data []byte
+	}{{manifestName, raw}, {payloadName, payload}, {BootName, boot}} {
+		tw.WriteHeader(&tar.Header{Name: e.name, Mode: 0644, Size: int64(len(e.data)), Typeflag: tar.TypeReg})
+		tw.Write(e.data)
+	}
+	tw.Close()
+	b, err := OpenBundle(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Manifest.Boot == nil || b.Manifest.Boot.Size != int64(len(boot)) || b.Manifest.Boot.SHA256 != sum(boot) {
+		t.Fatalf("boot image: %+v", b.Manifest.Boot)
+	}
+	if _, err := io.Copy(io.Discard, b.Payload); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Drain(); err != nil {
+		t.Fatalf("drain: %v", err)
 	}
 }

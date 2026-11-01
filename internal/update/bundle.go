@@ -29,8 +29,12 @@ const (
 
 	manifestName = "manifest.json"
 	payloadName  = "rootfs.img.gz"
-	maxManifest  = 64 << 10
-	maxRootfs    = int64(64) << 30 // no root file system is bigger than this; a manifest that says so is wrong
+	// BootName is the third entry of a bundle for a board whose boot loader is not ours (the U6+: U-Boot starts a FIT image from a
+	// partition of its own, docs/u6plus.md): the boot image that goes with the system. A router's bundle has none.
+	BootName    = "boot.fit"
+	maxBoot     = int64(64) << 20 // the U6+'s boot partitions are 64 MiB
+	maxManifest = 64 << 10
+	maxRootfs   = int64(64) << 30 // no root file system is bigger than this; a manifest that says so is wrong
 )
 
 // Manifest says what a bundle holds.
@@ -47,6 +51,15 @@ type Manifest struct {
 	PayloadSHA256 string   `json:"payload_sha256"` // of the compressed entry
 	Notes         string   `json:"notes,omitempty"`
 	Reset         []string `json:"reset,omitempty"` // paths to drop from the router's own layer after the update (none are used yet)
+	// Boot is the boot image that goes with the system (BootName, the entry after the system), on a board whose boot loader starts
+	// one of its own; nil for a router, whose boot loader (GRUB) starts the kernel inside the system.
+	Boot *BootImage `json:"boot,omitempty"`
+}
+
+// BootImage describes a bundle's boot image.
+type BootImage struct {
+	Size   int64  `json:"size"`
+	SHA256 string `json:"sha256"`
 }
 
 var hex64 = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -70,6 +83,9 @@ func (m Manifest) Validate() error {
 	}
 	if !hex64.MatchString(m.RootfsSHA256) || !hex64.MatchString(m.PayloadSHA256) {
 		return errors.New("the update file has no checksums")
+	}
+	if m.Boot != nil && (m.Boot.Size <= 0 || m.Boot.Size > maxBoot || !hex64.MatchString(m.Boot.SHA256)) {
+		return errors.New("the update file's boot image is described wrongly")
 	}
 	return nil
 }

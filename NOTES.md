@@ -784,6 +784,19 @@ Updates page says "Built for: x86-64, generic" (or "ARM64, ubnt-u6plus") and nam
 test (new and old names, a release with both, the right board for the wrong processors, an arm64 router and an old-named release),
 mutation-checked (arch left out of the name, and the old name allowed on any processor: both fail).
 
+### PeakRoute AP's releases on GitHub (2026-10-31)
+
+The GitHub side of updating a U6+, done before the device side (the user's order). `buildImageU6Plus.sh` makes
+`peakroute-ap-arm64-ubnt-u6plus-<version>.update` beside the .fit and .rootfs: the router's bundle format (manifest, then
+`rootfs.img.gz`) plus a third entry, `boot.fit`, the boot image that goes with the system, described in the manifest's `boot`
+(`size`, `sha256`; `Manifest.Boot`, checked by `Validate`: at most 64 MiB, the U6+'s boot partitions). After the system on purpose: the
+reader of today opens it like any bundle and drains past it (`TestABundleWithABootImageOpensAndDrains`), so no router is confused.
+`.github/workflows/release-ap.yml` runs on `ap-v*` tags: the checks, the U6+ build under qemu-user on GitHub's x86 runner (release build,
+no SSH), then a release "PeakRoute AP <version>" with the .update, .fit and .rootfs.gz and their checksums
+(`.github/release-notes-ap.md`). `install.sh write` takes a release's `.rootfs.gz` too (unpacked as it is written; `OUT_DIR` = the
+download folder). Not tried yet: the workflow itself (it runs on the first `ap-v*` tag). Not done: the device side, installing an
+update on the U6+ (the other slot and boot partition, `pb_start`/`pb_args`, on trial).
+
 ## 7t. The disk image (built 2026-10-12; first real boot reached the welcome page)
 
 Rules and how to use it: **`docs/image.md`**. `buildImage.sh` replaces `buildISO.sh`, `first_boot.sh` and the installer (all removed; the

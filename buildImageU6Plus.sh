@@ -9,6 +9,8 @@ set -euo pipefail
 #
 #   peakroute-ap-arm64-ubnt-u6plus-<version>.fit      what U-Boot starts: Debian's arm64 kernel, the U6+'s device tree and the initramfs,
 #                                               in one FIT image (U-Boot's format), written to the partition peakroute-boot
+#   peakroute-ap-arm64-ubnt-u6plus-<version>.update   the bundle that updates a U6+ that runs PeakRoute AP: the manifest, the root file
+#                                                     system (compressed) and the boot image (docs/updates.md, docs/u6plus.md)
 #   peakroute-ap-arm64-ubnt-u6plus-<version>.rootfs   the root file system (ext4, label peakroute-root-a), written to peakroute-root-a
 #
 # image/boards/ubnt-u6plus/install.sh puts them on a U6+ that runs OpenWrt, with a trial boot that falls back to OpenWrt.
@@ -65,11 +67,11 @@ if [ "$(id -u)" -ne 0 ]; then
         -o "${OUT_DIR}/peakroute-ap" ./cmd/peakroute-ap )
     dtc -q -I dts -O dtb -o "${OUT_DIR}/${BOARD}.dtb" "${BOARD_DIR}/${BOARD}.dts"
     exec sudo -E BUILD_DIR="${BUILD_DIR}" OUT_DIR="${OUT_DIR}" REUSE_ROOTFS="${REUSE_ROOTFS}" DEV_SSH_KEY="${DEV_SSH_KEY}" \
-        PEAKROUTE_VERSION="${VERSION}" SUDO_OWNER="$(id -u):$(id -g)" "$0" "$@"
+        PEAKROUTE_VERSION="${VERSION}" UPDATE_NOTES="${UPDATE_NOTES:-}" SUDO_OWNER="$(id -u):$(id -g)" "$0" "$@"
 fi
 
 # 2. As root
-for cmd in debootstrap chroot mkfs.ext4 e2fsck mkimage xz wget dpkg-deb sha256sum truncate; do
+for cmd in debootstrap chroot mkfs.ext4 e2fsck mkimage xz wget dpkg-deb sha256sum truncate gzip tar; do
     command -v "$cmd" >/dev/null 2>&1 || { echo "Error: ${cmd} is missing"; exit 1; }
 done
 # Debian's arm64 programs must run here: qemu-user-static registers itself with the kernel (binfmt_misc)
@@ -302,7 +304,34 @@ umount "${BUILD_DIR}/mnt"
 e2fsck -fy "${ROOTFS_IMG}" > /dev/null || [ $? -le 1 ] || { echo "Error: the root file system image is not clean"; exit 1; }
 echo "      the system is ${used_mb} MB: a file system of ${rootfs_mb} MB"
 
-echo "[5/5] Checksums..."
-( cd "${OUT_DIR}" && sha256sum "${NAME}.fit" > "${NAME}.fit.sha256" && sha256sum "${NAME}.rootfs" > "${NAME}.rootfs.sha256" )
+echo "[5/5] The update bundle and the checksums..."
+# The update bundle (docs/updates.md, section 5): the manifest, the compressed root file system and, for the U6+, the boot image that
+# goes with it as a third entry (docs/u6plus.md, "Updates"), in a tar archive. The same root file system as the .rootfs.
+BUNDLE="${OUT_DIR}/${NAME}.update"
+BUNDLE_DIR="${BUILD_DIR}/bundle"
+rm -rf "${BUNDLE_DIR}" "${BUNDLE}"
+mkdir -p "${BUNDLE_DIR}"
+if command -v pigz > /dev/null 2>&1; then pigz -n -6 -c "${ROOTFS_IMG}" > "${BUNDLE_DIR}/rootfs.img.gz"; else gzip -n -6 -c "${ROOTFS_IMG}" > "${BUNDLE_DIR}/rootfs.img.gz"; fi
+cp "${FIT}" "${BUNDLE_DIR}/boot.fit"
+json_text() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n\t' '  '; }
+cat > "${BUNDLE_DIR}/manifest.json" << MANIFEST
+{
+  "format": 1,
+  "version": "$(json_text "${VERSION}")",
+  "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "arch": "arm64",
+  "product": "ap",
+  "board": "${BOARD}",
+  "layout": 1,
+  "rootfs_size": $(stat -c %s "${ROOTFS_IMG}"),
+  "rootfs_sha256": "$(sha256sum "${ROOTFS_IMG}" | cut -d' ' -f1)",
+  "payload_sha256": "$(sha256sum "${BUNDLE_DIR}/rootfs.img.gz" | cut -d' ' -f1)",
+  "boot": {"size": $(stat -c %s "${BUNDLE_DIR}/boot.fit"), "sha256": "$(sha256sum "${BUNDLE_DIR}/boot.fit" | cut -d' ' -f1)"},
+  "notes": "$(json_text "${UPDATE_NOTES:-}")"
+}
+MANIFEST
+tar -C "${BUNDLE_DIR}" --format=ustar -cf "${BUNDLE}" manifest.json rootfs.img.gz boot.fit
+rm -rf "${BUNDLE_DIR}"
+( cd "${OUT_DIR}" && for f in "${NAME}.fit" "${NAME}.rootfs" "${NAME}.update"; do sha256sum "${f}" > "${f}.sha256"; done )
 [ -n "${SUDO_OWNER:-}" ] && chown -R "${SUDO_OWNER}" "${OUT_DIR}"
-echo "Done: ${OUT_DIR}/${NAME}.fit and .rootfs. Install with image/boards/${BOARD}/install.sh (docs/u6plus.md)."
+echo "Done: ${OUT_DIR}/${NAME}.fit, .rootfs and .update. Install with image/boards/${BOARD}/install.sh (docs/u6plus.md)."

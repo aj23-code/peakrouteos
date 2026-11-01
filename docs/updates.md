@@ -105,6 +105,7 @@ archive:
 |---|---|
 | `manifest.json` (first) | `format` (1), `version` (`v0.10.0`), `built` (RFC 3339), `arch` (`amd64`), `product` (`router` or `ap`), `board` (`pc` or an access point model such as `ubnt-u6plus`), `layout` (1), `rootfs_size` (bytes of the file system), `rootfs_sha256` (of the decompressed file system), `payload_sha256` (of the next entry), `notes` (what changed, a few lines), `reset` (paths, see §2; none yet) |
 | `rootfs.img.gz` | the root file system image (an ext4 file system, built by `buildImage.sh` and gzip-compressed) |
+| `boot.fit` (a U6+'s only) | the boot image that goes with that system (kernel, device tree, initramfs), described in the manifest's `boot` (`size`, `sha256`). A board whose boot loader is not ours (U-Boot on the U6+, docs/u6plus.md) starts a boot image of its own: an update writes it to the other slot's boot partition too. A router's bundle has none (GRUB starts the kernel inside the system). It comes after the system, so a reader that knows only two entries reads past it. |
 
 A GitHub release has the file and its `.update.sha256` (the checksum of the whole file, `sha256sum` format). The device
 checks the file it downloaded against it, and the payload and the file system against the manifest, so a truncated or corrupt download
@@ -171,7 +172,11 @@ handlers lift the 10-second limits of the server for themselves.
 `peakroute-os-amd64-generic-<version>.update` (+ `.sha256`). GitHub has no update mechanism of its own: a release is files attached to a tag, and the
 device does the rest (§5). `.github/workflows/release.yml` builds both when a tag `v*` is pushed and attaches the bundle, the compressed
 disk image (`peakroute-os-amd64-generic-<tag>.img.gz`, for a fresh write; a release file may be at most 2 GiB, which is why it is compressed) and their
-checksums. A tag with a hyphen (`v0.11.0-beta`) is a pre-release. To release: bump nothing by hand, just `git tag v0.11.0 && git push
+checksums. A tag with a hyphen (`v0.11.0-beta`) is a pre-release. **PeakRoute AP's releases** are
+`.github/workflows/release-ap.yml`, on tags `ap-v*` (`git tag ap-v0.1.0 && git push origin ap-v0.1.0`): it builds the image of every board
+the access point has (the U6+ for now, `buildImageU6Plus.sh`, arm64 under emulation on GitHub's x86 machines) and attaches
+`peakroute-ap-arm64-ubnt-u6plus-<version>.update`, `.fit` and `.rootfs.gz` with their checksums to a release of that tag, titled
+PeakRoute AP and with notes of its own (`.github/release-notes-ap.md`). The version is the tag without `ap-`. To release: bump nothing by hand, just `git tag v0.11.0 && git push
 origin v0.11.0`. `UPDATE_REPO=owner/name ./full_build.sh` sets the source compiled into the daemon (the workflow passes the
 repository it runs in).
 

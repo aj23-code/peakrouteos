@@ -83,10 +83,19 @@ On a U6+ running OpenWrt (24.10 was used), with an SSH key OpenWrt accepts:
 
 While the U6+ runs PeakRoute its OpenWrt Wi-Fi is gone: keep the computer on another access point or a cable.
 
+## Releases
+
+A tag `ap-v<version>` makes a release (`.github/workflows/release-ap.yml`, docs/updates.md, section 7) with
+`peakroute-ap-arm64-ubnt-u6plus-<version>.update` (the update bundle: manifest, root file system, and `boot.fit`, the boot image that
+goes with it), `.fit` and `.rootfs.gz` (for an install) and their checksums. To install from a release: download the `.fit` and the
+`.rootfs.gz` with their `.sha256` into a folder, then `OUT_DIR=<that folder> image/boards/ubnt-u6plus/install.sh HOST write` (the
+installer checks them and writes the root file system as it unpacks it).
+
 ## Not done
 
-- Updates: the Updates page says they are not supported here (they switch slots with GRUB). The slots and boot partitions are there
-  for it: the U6+ way is to write the other slot and its boot image and point `pb_start` and `pb_args` at them, on trial.
+- Updates: the bundles are built and released (above), but a U6+ does not install them yet: the Updates page says they are not
+  supported here (they switch slots with GRUB). The slots and boot partitions are there for it: the U6+ way is to write the other slot
+  and its boot image and point `pb_start` and `pb_args` at them, on trial.
 - A release build and workflow (`ap-v*` tags); the image's version comes from them (`ap-v0.1.0` is v0.1.0).
 - The LEDs and the reset button.
 - One hostapd serves both radios and stops when one of them fails (band steering needs one process): a radio that cannot start takes

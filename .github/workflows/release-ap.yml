@@ -1,0 +1,54 @@
+name: release-ap
+# Pushing a PeakRoute AP version tag (ap-v0.1.0, ap-v0.2.0-beta) builds the access point's image for every board it has and attaches
+# the files to a GitHub release of that tag (docs/updates.md, "Release files are named for what they are"; docs/u6plus.md). The router's
+# releases are release.yml (tags v*), in the same repository. A tag with a hyphen is a pre-release.
+on:
+  push:
+    tags: ["ap-v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the image's version comes from the tags
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Checks
+        run: ./check.sh
+      - name: Make room (the build needs about 4 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+      - name: Tools of the image build (Debian's arm64 programs run under emulation)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debootstrap qemu-user-static binfmt-support u-boot-tools device-tree-compiler xz-utils e2fsprogs wget pigz
+          ls /proc/sys/fs/binfmt_misc/ | grep -i aarch64
+      - name: Build for the UniFi 6 Plus
+        env:
+          UPDATE_REPO: ${{ github.repository }}
+          UPDATE_NOTES: Release ${{ github.ref_name }}
+        run: |
+          # the version is the tag without the product's prefix: ap-v0.1.0 is v0.1.0
+          PEAKROUTE_VERSION="${GITHUB_REF_NAME#ap-}" BUILD_DIR=/var/tmp/peakroute-build-ubnt-u6plus ./buildImageU6Plus.sh
+      - name: Package
+        run: |
+          mkdir -p dist
+          name="peakroute-ap-arm64-ubnt-u6plus-${GITHUB_REF_NAME#ap-}"
+          cd out/ubnt-u6plus
+          mv "${name}.update" "${name}.update.sha256" "${name}.fit" "${name}.fit.sha256" ../../dist/
+          # the root file system for an install is mostly empty space: compressed, and checked as it will be downloaded
+          pigz -6 -c "${name}.rootfs" > "../../dist/${name}.rootfs.gz"
+          ( cd ../../dist && sha256sum "${name}.rootfs.gz" > "${name}.rootfs.gz.sha256" )
+          ls -lh ../../dist
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=""
+          case "${GITHUB_REF_NAME#ap-}" in *-*) flags="--prerelease" ;; esac
+          gh release create "${GITHUB_REF_NAME}" dist/* --title "PeakRoute AP ${GITHUB_REF_NAME#ap-}" --notes-file .github/release-notes-ap.md --generate-notes ${flags}

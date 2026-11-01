@@ -2,8 +2,8 @@
 
 | File | What it is | Use it to |
 |---|---|---|
-| `peakroute-os-<version>.img.gz` | the whole disk image, compressed | write a **new** device, or write one again: `gunzip -k` it, then `dd` it to the disk (at least 8 GB) |
-| `peakroute-os-<version>.update` | the system only, with a manifest | **update a running device**: System → Updates (a device with updates on finds it by itself, or upload the file) |
+| `peakroute-os-amd64-generic-<version>.img.gz` | the whole disk image, compressed, for any x86-64 PC | write a **new** device, or write one again: `gunzip -k` it, then `dd` it to the disk (at least 8 GB) |
+| `peakroute-os-amd64-generic-<version>.update` | the system only, with a manifest | **update a running device**: System → Updates (a device with updates on finds it by itself, or upload the file) |
 | `*.sha256` | checksums | check a download: `sha256sum -c <file>.sha256` |
 
 A device written from an image older than `v0.9.0-alpha` has a different disk layout and cannot update to this one: write the image once

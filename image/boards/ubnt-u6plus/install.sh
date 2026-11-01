@@ -15,6 +15,9 @@
 #   install.sh HOST ramoops      the kernel's log of the last PeakRoute start that ended in OpenWrt (read from OpenWrt)
 #   install.sh HOST status       what U-Boot will start, and what the probes found
 #
+# The files are the newest peakroute-ap-arm64-ubnt-u6plus-*.fit in OUT_DIR (out/ubnt-u6plus) and its .rootfs, or the .rootfs.gz of a
+# release: OUT_DIR=~/Downloads install.sh HOST write.
+#
 # HOST is the U6+'s address (OpenWrt's, or PeakRoute's for keep). SSH_OPTS adds options to ssh (a key: SSH_OPTS="-i key"). ASSUME_YES=1
 # answers the partition step's question.
 set -euo pipefail
@@ -176,15 +179,21 @@ partition)
 write)
     check_u6plus
     fit="$(ls -t "${OUT_DIR}"/peakroute-ap-arm64-ubnt-u6plus-*.fit | head -n 1)"
+    # the root file system as built (.rootfs), or as a release has it (.rootfs.gz, written as it is unpacked)
     rootfs="${fit%.fit}.rootfs"
-    [ -f "${rootfs}" ] || { echo "Error: no ${rootfs}"; exit 1; }
-    ( cd "${OUT_DIR}" && sha256sum -c --quiet "$(basename "${fit}").sha256" "$(basename "${rootfs}").sha256" )
+    unpack=cat
+    if [ ! -f "${rootfs}" ] && [ -f "${rootfs}.gz" ]; then
+        rootfs="${rootfs}.gz"
+        unpack="gzip -dc"
+    fi
+    [ -f "${rootfs}" ] || { echo "Error: no ${fit%.fit}.rootfs or .rootfs.gz beside ${fit}"; exit 1; }
+    ( cd "$(dirname "${fit}")" && sha256sum -c --quiet "$(basename "${fit}").sha256" "$(basename "${rootfs}").sha256" )
     boot="$(partition_dev peakroute-boot-a)"; root="$(partition_dev peakroute-root-a)"; data="$(partition_dev peakroute-data)"
     [ -n "${boot}" ] && [ -n "${root}" ] && [ -n "${data}" ] || { echo "Error: run the partition step first"; exit 1; }
     echo "Writing $(basename "${fit}") to ${boot}..."
     remote "dd of=${boot} bs=1M conv=fsync 2>/dev/null" < "${fit}"
     echo "Writing $(basename "${rootfs}") to ${root} ($(( $(stat -c %s "${rootfs}") >> 20 )) MB)..."
-    remote "dd of=${root} bs=1M conv=fsync 2>/dev/null" < "${rootfs}"
+    ${unpack} "${rootfs}" | remote "dd of=${root} bs=1M conv=fsync 2>/dev/null"
     remote "e2fsck -fn ${root} >/dev/null" || { echo "Error: the written root file system does not check clean"; exit 1; }
     # (OpenWrt has no blkid: the ext4 label is read from the superblock, 16 bytes at 1144)
     if [ "$(remote "dd if=${data} bs=1 skip=1144 count=16 2>/dev/null" | tr -d '\0')" != "peakroute-data" ]; then
