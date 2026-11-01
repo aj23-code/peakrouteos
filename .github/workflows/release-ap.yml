@@ -26,8 +26,12 @@ jobs:
       - name: Tools of the image build (Debian's arm64 programs run under emulation)
         run: |
           sudo apt-get update
-          sudo apt-get install -y debootstrap qemu-user-static binfmt-support u-boot-tools device-tree-compiler xz-utils e2fsprogs wget pigz
-          ls /proc/sys/fs/binfmt_misc/ | grep -i aarch64
+          sudo apt-get install -y debootstrap u-boot-tools device-tree-compiler xz-utils e2fsprogs wget pigz
+          # arm64 programs run through qemu, registered with the kernel (binfmt_misc). Ubuntu 26.04 has no qemu-user-static of its own
+          # (the name is provided by qemu-user-binfmt): whichever this runner has.
+          sudo apt-get install -y qemu-user-static binfmt-support || sudo apt-get install -y qemu-user-binfmt
+          ls /proc/sys/fs/binfmt_misc/
+          grep -q '^enabled' /proc/sys/fs/binfmt_misc/qemu-aarch64
       - name: Build for the UniFi 6 Plus
         env:
           UPDATE_REPO: ${{ github.repository }}
