@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the daemon and then the disk image (peakroute-os.img) and the update bundle (peakroute-os-<version>.update): see
+# Builds the daemon and then the disk image (peakroute-os.img) and the update bundle (peakroute-os-amd64-generic-<version>.update): see
 # docs/image.md and docs/updates.md.
 #
 #   ./full_build.sh                              build both

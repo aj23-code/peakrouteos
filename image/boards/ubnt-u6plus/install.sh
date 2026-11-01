@@ -175,7 +175,7 @@ partition)
 
 write)
     check_u6plus
-    fit="$(ls -t "${OUT_DIR}"/peakroute-ap-ubnt-u6plus-*.fit | head -n 1)"
+    fit="$(ls -t "${OUT_DIR}"/peakroute-ap-arm64-ubnt-u6plus-*.fit | head -n 1)"
     rootfs="${fit%.fit}.rootfs"
     [ -f "${rootfs}" ] || { echo "Error: no ${rootfs}"; exit 1; }
     ( cd "${OUT_DIR}" && sha256sum -c --quiet "$(basename "${fit}").sha256" "$(basename "${rootfs}").sha256" )
@@ -246,7 +246,7 @@ openwrt)
 env)
     # U-Boot's settings again, for the boot image that was written last (after a change to this script)
     check_u6plus
-    write_env "$(ls -t "${OUT_DIR}"/peakroute-ap-ubnt-u6plus-*.fit | head -n 1)"
+    write_env "$(ls -t "${OUT_DIR}"/peakroute-ap-arm64-ubnt-u6plus-*.fit | head -n 1)"
     echo "Done."
     ;;
 

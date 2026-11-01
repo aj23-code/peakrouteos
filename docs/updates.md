@@ -98,32 +98,40 @@ needs one is announced as a full image (a fresh write), and the Updates page say
 
 ## 5. The bundle
 
-One file, `peakroute-os-<version>.update`, a tar archive:
+One file, `peakroute-os-amd64-generic-<version>.update` for the router (see "Release files are named for what they are" below), a tar
+archive:
 
 | Entry | Content |
 |---|---|
 | `manifest.json` (first) | `format` (1), `version` (`v0.10.0`), `built` (RFC 3339), `arch` (`amd64`), `product` (`router` or `ap`), `board` (`pc` or an access point model such as `ubnt-u6plus`), `layout` (1), `rootfs_size` (bytes of the file system), `rootfs_sha256` (of the decompressed file system), `payload_sha256` (of the next entry), `notes` (what changed, a few lines), `reset` (paths, see §2; none yet) |
 | `rootfs.img.gz` | the root file system image (an ext4 file system, built by `buildImage.sh` and gzip-compressed) |
 
-A GitHub release has the file and `peakroute-os-<version>.update.sha256` (the checksum of the whole file, `sha256sum` format). The device
+A GitHub release has the file and its `.update.sha256` (the checksum of the whole file, `sha256sum` format). The device
 checks the file it downloaded against it, and the payload and the file system against the manifest, so a truncated or corrupt download
 never gets as far as a slot. (A signature would be a third entry, `manifest.sig`, checked against a public key in the image: planned,
 not built.) The first image carries the same file system as slot A.
 
 **Product, board and processors (2026-10-30).** There are two builds of the software (the router and PeakRoute AP,
 `docs/access-point.md`), and an access point image is made for one model, whose kernel, device tree and disk are its own. So a bundle
-names three things and goes only onto a system that is the same in all three: its **product** (`router`, `ap`), its **board** (`pc` for
-any x86 machine, or the model) and its **processors** (`arch`). The system says what it is in `/usr/lib/peakroute/release`
+names three things and goes only onto a system that is the same in all three: its **product** (`router`, `ap`), its **board** (`generic` for
+any machine of its processors, such as any x86-64 PC, or the model; `pc`, its name in the builds of 2026-10-30 and 31, is read as
+`generic`) and its **processors** (`arch`). The system says what it is in `/usr/lib/peakroute/release`
 (`PEAKROUTE_PRODUCT`, `PEAKROUTE_BOARD`, `PEAKROUTE_ARCH`), written by the image build; the Updates page shows the product and board
-("Built for"). A bundle or a system from before these fields existed says neither and is the router on x86, which is what all of
-them were; a system whose release file does not say the product (a development run) is what the daemon was built as. The check is
+("Built for"). A bundle or a system from before these fields existed says neither and is the router, generic (all of them were, on
+x86-64); a system whose release file does not say the product (a development run) is what the daemon was built as. The check is
 made for every bundle, downloaded or uploaded, before anything is written (`Manifest.Compatible`).
 
-**One repository, a release per product.** The router's tags are `v1.2.3` and its file is `peakroute-os-<version>.update`, as before;
-PeakRoute AP's tags are `ap-v1.2.3`, with one file per board, `peakroute-ap-<board>-<version>.update` (and its `.sha256`). A device
-looks only at its own product's tags and only at its own board's file in them, so a router never offers an access point's release and a
-U6+ never offers another model's (or a file put in the wrong release by mistake). Devices from before this look only for
-`peakroute-os-*.update` under tags that are version numbers, so they skip the access point's releases too. `full_build.sh` names a
+**One repository, a release per product.** The router's tags are `v1.2.3`, PeakRoute AP's `ap-v1.2.3`.
+
+**Release files are named for what they are** (2026-10-31): `peakroute-<os|ap>-<arch>-<board>-<version>.<ext>`, where `os` is the
+router (PeakRoute OS), `arch` the processors as the manifest names them (`amd64`, `arm64`) and `board` as above. The router today:
+`peakroute-os-amd64-generic-v0.10.0.img.gz` and `.update`; PeakRoute AP on the U6+: `peakroute-ap-arm64-ubnt-u6plus-<version>.fit`,
+`.rootfs` (and `.update` when it has one). Each has its `.sha256`. A device looks only at its own product's tags and only at the file
+for its own processors and board in them (`Identity.assetRank`), so a router never offers an access point's release, an arm64 router
+never an amd64 one, and a U6+ never another model's (or a file put in the wrong release by mistake). Releases from before the names
+said the processors and board (`peakroute-os-v0.9.8-alpha.update`) are still found by the router on amd64 (only), a file named in full
+being preferred where a release has both. Devices from before this look for `peakroute-os-*.update` under tags that are version numbers:
+the router's new names start that way, so they keep finding the router's releases, and skip the access point's. `full_build.sh` names a
 router build from `v*` tags only. Building and publishing the access point's releases is not done yet (it comes with its image).
 
 **Where releases come from.** One GitHub repository, `owner/name`, **fixed when the software is built** (`UPDATE_REPO`, linker flag
@@ -160,9 +168,9 @@ handlers lift the 10-second limits of the server for themselves.
 ## 7. Building releases
 
 `buildImage.sh` makes the root file system image once and uses it for both outputs: slot A of `peakroute-os.img` and the bundle
-`peakroute-os-<version>.update` (+ `.sha256`). GitHub has no update mechanism of its own: a release is files attached to a tag, and the
+`peakroute-os-amd64-generic-<version>.update` (+ `.sha256`). GitHub has no update mechanism of its own: a release is files attached to a tag, and the
 device does the rest (§5). `.github/workflows/release.yml` builds both when a tag `v*` is pushed and attaches the bundle, the compressed
-disk image (`peakroute-os-<tag>.img.gz`, for a fresh write; a release file may be at most 2 GiB, which is why it is compressed) and their
+disk image (`peakroute-os-amd64-generic-<tag>.img.gz`, for a fresh write; a release file may be at most 2 GiB, which is why it is compressed) and their
 checksums. A tag with a hyphen (`v0.11.0-beta`) is a pre-release. To release: bump nothing by hand, just `git tag v0.11.0 && git push
 origin v0.11.0`. `UPDATE_REPO=owner/name ./full_build.sh` sets the source compiled into the daemon (the workflow passes the
 repository it runs in).

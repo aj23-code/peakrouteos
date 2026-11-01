@@ -771,6 +771,19 @@ openwrt, env, ramoops, status). Found on the way, in order, each from something 
 Not done: see `docs/u6plus.md`, "Not done" (updates on the U6+, a release workflow for `ap-v*`, LEDs, the certificate's names, one
 hostapd for both radios).
 
+### Release files are named for product, processors and board (2026-10-31)
+
+Asked by the user: every release file says what it is for, `peakroute-<os|ap>-<arch>-<board>-<version>.<ext>` (docs/updates.md,
+"Release files are named for what they are"). The router: `peakroute-os-amd64-generic-<tag>.img.gz` and `.update` (release.yml,
+buildImage.sh); the U6+: `peakroute-ap-arm64-ubnt-u6plus-<version>.fit` and `.rootfs` (buildImageU6Plus.sh; install.sh looks for that
+name, so a .fit built before needs a rebuild or a rename). The x86 board is called `generic` (it was `pc` for two days of builds; `pc`
+is read as `generic`, `TestPCIsTheGenericBoard`). The updater picks a release's file by `Identity.assetRank(arch, name)`: 2 for the full
+name of its product, processors and board, 1 for the router's old name (`peakroute-os-v*.update`) on amd64 generic only, 0 otherwise;
+the best in a release wins. Routers in the field (v0.9.x) look for `peakroute-os-*.update`, which the new router names still match. The
+Updates page says "Built for: x86-64, generic" (or "ARM64, ubnt-u6plus") and names the file to upload in full. Tests: the mixed releases
+test (new and old names, a release with both, the right board for the wrong processors, an arm64 router and an old-named release),
+mutation-checked (arch left out of the name, and the old name allowed on any processor: both fail).
+
 ## 7t. The disk image (built 2026-10-12; first real boot reached the welcome page)
 
 Rules and how to use it: **`docs/image.md`**. `buildImage.sh` replaces `buildISO.sh`, `first_boot.sh` and the installer (all removed; the

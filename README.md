@@ -3,8 +3,8 @@
 A router operating system for x86 machines: Debian 13 with one static Go daemon, `peakroute`, that serves the web interface and writes
 the configuration of the services under it (nftables, dnsmasq, hostapd, etc.) Status: alpha.
 
-- **Install:** download `peakroute-os-<version>.img.gz` from [Releases](../../releases), `gunzip -k` it and write it to a disk of at least 8 GB
-  (`sudo dd if=peakroute-os-<version>.img of=/dev/sdX bs=4M conv=fsync status=progress`). Plug a computer into any port and open the welcome page.
+- **Install:** download `peakroute-os-amd64-generic-<version>.img.gz` (the router, for any x86-64 PC) from [Releases](../../releases), `gunzip -k` it and write it to a disk of at least 8 GB
+  (`sudo dd if=peakroute-os-amd64-generic-<version>.img of=/dev/sdX bs=4M conv=fsync status=progress`). Plug a computer into any port and open the welcome page.
   Everything is set up there; there is no installer and no console setup. Root is locked: the administrator you make is the only login.
 - **Update:** System → Updates. A new version is written into the second of two system slots while the router keeps routing, started once
   on trial and kept only when you press Keep (otherwise it goes back after ten minutes). Settings live on their own partition and are not

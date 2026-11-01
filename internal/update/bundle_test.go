@@ -253,7 +253,7 @@ func TestTheProductAndBoardMustMatch(t *testing.T) {
 	if err := old.Compatible(router); err != nil {
 		t.Fatalf("an old router bundle onto a router: %v", err)
 	}
-	if err := (Manifest{Product: ProductRouter, Board: BoardPC, Arch: "amd64", Layout: LayoutVersion, RootfsSize: 1}).Compatible(router); err != nil {
+	if err := (Manifest{Product: ProductRouter, Board: BoardGeneric, Arch: "amd64", Layout: LayoutVersion, RootfsSize: 1}).Compatible(router); err != nil {
 		t.Fatalf("a router bundle that says so: %v", err)
 	}
 	apU6 := Manifest{Product: ProductAP, Board: "ubnt-u6plus", Arch: "arm64", Layout: LayoutVersion, RootfsSize: 1}
@@ -264,7 +264,7 @@ func TestTheProductAndBoardMustMatch(t *testing.T) {
 		m Manifest
 		t Target
 	}{
-		"an AP bundle onto a router":           {Manifest{Product: ProductAP, Board: BoardPC, Arch: "amd64", Layout: LayoutVersion, RootfsSize: 1}, router},
+		"an AP bundle onto a router":           {Manifest{Product: ProductAP, Board: BoardGeneric, Arch: "amd64", Layout: LayoutVersion, RootfsSize: 1}, router},
 		"a router bundle onto an access point": {Manifest{Arch: "arm64", Layout: LayoutVersion, RootfsSize: 1}, u6},
 		"another board of the same processors": {Manifest{Product: ProductAP, Board: "ubnt-u7pro", Arch: "arm64", Layout: LayoutVersion, RootfsSize: 1}, u6},
 		"the AP for x86 onto the U6+":          {Manifest{Product: ProductAP, Arch: "arm64", Layout: LayoutVersion, RootfsSize: 1}, u6},

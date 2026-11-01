@@ -8,7 +8,7 @@ set -euo pipefail
 #
 #   peakroute-os.img                  a raw disk image that is written to the router's disk like OpenWrt's:
 #                                       sudo dd if=peakroute-os.img of=/dev/sdX bs=4M conv=fsync status=progress
-#   peakroute-os-<version>.update     the bundle that updates a device that is running (the Updates page): the same root file system,
+#   peakroute-os-amd64-generic-<version>.update   the bundle that updates a device that is running (the Updates page): the same root file system,
 #                                       compressed, with a manifest
 #
 # There is no installer and no console setup: the first thing a person sees is the welcome page of the web interface. It also
@@ -197,7 +197,7 @@ PEAKROUTE_BUILT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 PEAKROUTE_LAYOUT=${LAYOUT_VERSION}
 PEAKROUTE_ARCH=amd64
 PEAKROUTE_PRODUCT=router
-PEAKROUTE_BOARD=pc
+PEAKROUTE_BOARD=generic
 DEBIAN_VERSION=13
 RELEASE
 
@@ -369,7 +369,8 @@ losetup -d "${LOOP_DEV}"
 LOOP_DEV=""
 
 # The update bundle (docs/updates.md, section 5): a manifest and the compressed file system, in a tar archive
-BUNDLE="$(dirname "${OUTPUT_IMG}")/peakroute-os-${VERSION}.update"
+# named for what it is: the router (os), its processors and its board (docs/updates.md, "One repository, a release per product")
+BUNDLE="$(dirname "${OUTPUT_IMG}")/peakroute-os-amd64-generic-${VERSION}.update"
 BUNDLE_DIR="${BUILD_DIR}/bundle"
 rm -rf "${BUNDLE_DIR}" "${BUNDLE}"
 mkdir -p "${BUNDLE_DIR}"
@@ -383,7 +384,7 @@ cat > "${BUNDLE_DIR}/manifest.json" << MANIFEST
   "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "arch": "amd64",
   "product": "router",
-  "board": "pc",
+  "board": "generic",
   "layout": ${LAYOUT_VERSION},
   "rootfs_size": $(stat -c %s "${ROOTFS_IMG}"),
   "rootfs_sha256": "$(sha256sum "${ROOTFS_IMG}" | cut -d' ' -f1)",

@@ -7,9 +7,9 @@ set -euo pipefail
 # The U6+ is an MT7981 (arm64) access point with 256 MB of RAM and a 4 GB eMMC whose layout is Ubiquiti's: its boot loader (U-Boot)
 # is kept, and PeakRoute goes into new partitions in the free space after Ubiquiti's. Two outputs, in out/ubnt-u6plus/:
 #
-#   peakroute-ap-ubnt-u6plus-<version>.fit      what U-Boot starts: Debian's arm64 kernel, the U6+'s device tree and the initramfs,
+#   peakroute-ap-arm64-ubnt-u6plus-<version>.fit      what U-Boot starts: Debian's arm64 kernel, the U6+'s device tree and the initramfs,
 #                                               in one FIT image (U-Boot's format), written to the partition peakroute-boot
-#   peakroute-ap-ubnt-u6plus-<version>.rootfs   the root file system (ext4, label peakroute-root-a), written to peakroute-root-a
+#   peakroute-ap-arm64-ubnt-u6plus-<version>.rootfs   the root file system (ext4, label peakroute-root-a), written to peakroute-root-a
 #
 # image/boards/ubnt-u6plus/install.sh puts them on a U6+ that runs OpenWrt, with a trial boot that falls back to OpenWrt.
 #
@@ -42,7 +42,8 @@ git_version() {
 }
 VERSION="${PEAKROUTE_VERSION:-$(git_version)}"
 UPDATE_REPO="${UPDATE_REPO:-aj23-code/peakrouteos}"
-NAME="peakroute-ap-${BOARD}-${VERSION}"
+# named for the product, its processors and its board, as every release file is (docs/updates.md)
+NAME="peakroute-ap-arm64-${BOARD}-${VERSION}"
 # Where U-Boot puts things (docs/u6plus.md, "How it starts"). U-Boot's bootm cannot start Debian's kernel: it refuses to unpack more than
 # its CONFIG_SYS_BOOTM_LEN and resets the board. So the kernel is stored unpacked and started with booti, after imxtract has copied each
 # part of the boot image to its place, all of it below 0x48000000 (U-Boot's own memory is near the top of the 256 MB):

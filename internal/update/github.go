@@ -21,7 +21,6 @@ const APIBase = "https://api.github.com"
 
 var (
 	repoRe  = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$`)
-	assetRe = regexp.MustCompile(`^peakroute-os-.+\.update$`)
 	sha256R = regexp.MustCompile(`(?i)\b([0-9a-f]{64})\b`)
 )
 
@@ -127,7 +126,6 @@ func (s *Service) FindRelease(ctx context.Context, repo string, prerelease bool,
 	}
 	runningV, haveRunning := ParseVersion(running)
 	id := s.Identity()
-	pattern := id.assetPattern()
 
 	type cand struct {
 		v Version
@@ -138,16 +136,16 @@ func (s *Service) FindRelease(ctx context.Context, repo string, prerelease bool,
 		if gr.Draft || (gr.Prerelease && !prerelease) {
 			continue
 		}
-		// only this product's tags, and only this board's file in them
+		// only this product's tags, and in them only the file for this processor and board (named in full, else by the old name)
 		v, version, ok := id.tagVersion(gr.Tag)
 		if !ok {
 			continue
 		}
 		var asset *ghAsset
+		best := 0
 		for i := range gr.Assets {
-			if pattern.MatchString(gr.Assets[i].Name) {
-				asset = &gr.Assets[i]
-				break
+			if rank := id.assetRank(s.Arch, gr.Assets[i].Name); rank > best {
+				asset, best = &gr.Assets[i], rank
 			}
 		}
 		if asset == nil || !s.urlOK(asset.URL) {

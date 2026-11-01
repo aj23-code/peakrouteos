@@ -68,7 +68,7 @@ sends is `peakroute`, and `192.168.77.1` answers beside it.
 ## Building and installing
 
     sudo apt install debootstrap qemu-user-static binfmt-support u-boot-tools device-tree-compiler xz-utils
-    ./buildImageU6Plus.sh                                  # out/ubnt-u6plus/peakroute-ap-ubnt-u6plus-<version>.fit and .rootfs
+    ./buildImageU6Plus.sh                                  # out/ubnt-u6plus/peakroute-ap-arm64-ubnt-u6plus-<version>.fit and .rootfs
     DEV_SSH_KEY=$PWD/out/dev-ssh.pub ./buildImageU6Plus.sh # a development build: root signs in over SSH with that key (the
                                                            # access point's firewall lets it in), for bring-up only
 

@@ -31,10 +31,12 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist
-          mv "peakroute-os-${GITHUB_REF_NAME}.update" "peakroute-os-${GITHUB_REF_NAME}.update.sha256" dist/
+          # every file is named for the product (os: the router), its processors and its board: peakroute-os-amd64-generic-<tag>
+          name="peakroute-os-amd64-generic-${GITHUB_REF_NAME}"
+          mv "${name}.update" "${name}.update.sha256" dist/
           # a release file may be at most 2 GiB: the disk image is mostly empty space and compresses far below that
-          pigz -6 -c peakroute-os.img > "dist/peakroute-os-${GITHUB_REF_NAME}.img.gz"
-          ( cd dist && sha256sum "peakroute-os-${GITHUB_REF_NAME}.img.gz" > "peakroute-os-${GITHUB_REF_NAME}.img.gz.sha256" )
+          pigz -6 -c peakroute-os.img > "dist/${name}.img.gz"
+          ( cd dist && sha256sum "${name}.img.gz" > "${name}.img.gz.sha256" )
           ls -lh dist
       - name: Publish
         env:

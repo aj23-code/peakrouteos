@@ -11,7 +11,7 @@ On an Ubuntu or Debian machine with `debootstrap`, `fdisk`, `dosfstools`, `e2fsp
     ./full_build.sh
 
 That builds the daemon (`peakroute`) and then runs `buildImage.sh`, which asks for `sudo` once (debootstrap, chroot and loop devices need
-root) and makes **`peakroute-os.img`** (the disk image) and **`peakroute-os-<version>.update`** (the bundle that updates a running device,
+root) and makes **`peakroute-os.img`** (the disk image) and **`peakroute-os-amd64-generic-<version>.update`** (the bundle that updates a running device,
 `docs/updates.md`), each with a `.sha256`. `VERSION=v0.10.1 ./full_build.sh` names the build; `UPDATE_REPO=owner/name` sets the
 default place a device looks for updates. The image is two root slots (the system plus half again, at least 3 GiB each) and a data
 partition of 256 MiB that grows to the disk at the first start, so about 6.6 GB, most of it empty space (see "Why the image file is about 6.6 GB" below); `IMAGE_SIZE=16G` makes it an exact size

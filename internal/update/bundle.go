@@ -40,7 +40,7 @@ type Manifest struct {
 	Built         string   `json:"built"`
 	Arch          string   `json:"arch"`
 	Product       string   `json:"product,omitempty"` // "router" or "ap" (identity.go); empty in bundles from before: the router
-	Board         string   `json:"board,omitempty"`   // "pc" or an access point's model; empty in bundles from before: pc
+	Board         string   `json:"board,omitempty"`   // "generic" or an access point's model; empty in bundles from before: generic
 	Layout        int      `json:"layout"`
 	RootfsSize    int64    `json:"rootfs_size"`    // bytes of the file system once decompressed
 	RootfsSHA256  string   `json:"rootfs_sha256"`  // of the decompressed file system
