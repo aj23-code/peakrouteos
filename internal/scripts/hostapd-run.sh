@@ -11,6 +11,7 @@ CONF_DIR="${PEAKROUTE_HOSTAPD_DIR:-/etc/peakroute/hostapd}"
 SYS_NET="${PEAKROUTE_SYS_NET:-/sys/class/net}"
 HOSTAPD="${PEAKROUTE_HOSTAPD:-/usr/sbin/hostapd}"
 PIDFILE="${PEAKROUTE_HOSTAPD_PID:-/run/peakroute-hostapd.pid}"
+LOGFILE="${PEAKROUTE_HOSTAPD_LOG:-/run/peakroute-hostapd.log}"
 RFKILL="${PEAKROUTE_RFKILL:-rfkill}"
 
 # a radio that is soft-blocked cannot start an access point
@@ -34,7 +35,8 @@ if [ -z "$args" ]; then
     exit 1
 fi
 
-# -B: hostapd detaches once it is running, so a configuration it rejects makes this fail. -s: what it says after that goes to the
-# journal (System logs) instead of nowhere: an adapter that fails later, such as an automatic channel that cannot be chosen, says why.
+# -B: hostapd detaches once it is running, so a configuration it rejects makes this fail. -f: what it says after that goes to a file
+# in /run instead of nowhere, so that an adapter that fails later (an automatic channel that cannot be chosen) says why. (Debian's
+# hostapd has no -s, which would send it to the journal: it prints its usage and stops, as was found on a U6+.)
 # shellcheck disable=SC2086
-exec "$HOSTAPD" -B -s -P "$PIDFILE" $args
+exec "$HOSTAPD" -B -f "$LOGFILE" -P "$PIDFILE" $args

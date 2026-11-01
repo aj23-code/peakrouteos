@@ -31,7 +31,7 @@ func runHostapdScript(t *testing.T, confs map[string]string, present []string) (
 	cmd := exec.Command("sh", "../scripts/hostapd-run.sh")
 	cmd.Env = append(os.Environ(),
 		"PEAKROUTE_HOSTAPD_DIR="+confDir, "PEAKROUTE_SYS_NET="+sysNet, "PEAKROUTE_HOSTAPD="+fake("hostapd"),
-		"PEAKROUTE_RFKILL="+fake("rfkill"), "PEAKROUTE_HOSTAPD_PID="+filepath.Join(root, "pid"))
+		"PEAKROUTE_RFKILL="+fake("rfkill"), "PEAKROUTE_HOSTAPD_PID="+filepath.Join(root, "pid"), "PEAKROUTE_HOSTAPD_LOG="+filepath.Join(root, "log"))
 	b, err := cmd.CombinedOutput()
 	logged, _ := os.ReadFile(log)
 	// the directory names differ per run: make the log comparable
@@ -52,7 +52,7 @@ func TestTheWifiScriptStartsOneHostapdForEveryPresentAdapter(t *testing.T) {
 		t.Fatalf("calls: %q", calls)
 	}
 	hostapd := lines[1]
-	if !strings.HasPrefix(hostapd, "hostapd -B -s -P ") || !strings.HasSuffix(hostapd, " CONF/wlan0.conf CONF/wlan1.conf") || strings.Count(calls, "hostapd") != 1 {
+	if !strings.HasPrefix(hostapd, "hostapd -B -f ") || !strings.HasSuffix(hostapd, " CONF/wlan0.conf CONF/wlan1.conf") || strings.Count(calls, "hostapd") != 1 {
 		t.Fatalf("one process, detaching, with every file: %q", hostapd)
 	}
 }
@@ -110,5 +110,33 @@ func TestTheWifiScriptWorksWithoutRfkill(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(log); !strings.Contains(string(b), "-B") {
 		t.Fatalf("hostapd was not started: %q", b)
+	}
+}
+
+// Every option the script gives hostapd must be one the installed hostapd has: Debian's has no -s (an earlier version of the script
+// used it, and hostapd printed its usage and stopped, seen on a U6+). Skipped where hostapd is not installed.
+func TestTheWifiScriptOnlyUsesOptionsHostapdHas(t *testing.T) {
+	path, err := exec.LookPath("hostapd")
+	if err != nil {
+		t.Skip("hostapd is not installed here")
+	}
+	usage, _ := exec.Command(path, "-h").CombinedOutput() // prints its usage and exits 1
+	script, err := os.ReadFile("../scripts/hostapd-run.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var line string
+	for _, l := range strings.Split(string(script), "\n") {
+		if strings.HasPrefix(l, `exec "$HOSTAPD"`) {
+			line = l
+		}
+	}
+	if line == "" {
+		t.Fatal("the script does not start hostapd")
+	}
+	for _, f := range strings.Fields(line) {
+		if len(f) == 2 && f[0] == '-' && !strings.Contains(string(usage), "   "+f+" ") {
+			t.Errorf("hostapd has no option %s:\n%s", f, usage)
+		}
 	}
 }

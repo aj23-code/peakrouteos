@@ -739,6 +739,17 @@ openwrt, env, ramoops, status). Found on the way, in order, each from something 
   5 GHz on automatic also needed; the test that said "no ht_capab on automatic" was wrong. hostapd now logs to the journal (`-s`):
   before, its reason was lost once it had detached.
 - The AP firewall keeps SSH out, so a development build (`DEV_SSH_KEY`) opens port 22 whenever nftables loads its rules.
+- **The `-s` of hostapd was wrong** (2026-10-31): Debian's hostapd 2.10 has no `-s` (it prints its usage and stops, so the Wi-Fi never
+  started). It logs to `/run/peakroute-hostapd.log` with `-f` now, and `TestTheWifiScriptOnlyUsesOptionsHostapdHas` checks every option
+  against the installed hostapd's usage (skipped where there is none: the stand-in hostapd of the other tests cannot catch this).
+- **The SoC's crypto engine** (`crypto_safexcel`, EIP97) fails the kernel's SHA-384/512 self-tests with a warning and a trace each:
+  blacklisted in the U6+'s image (`/etc/modprobe.d/peakroute-u6plus.conf`).
+- **Speed** (the user's phone, two rooms away, 250 Mbps internet): 119 Mbps at 40 MHz on channel 36; slower at 80 MHz on the automatic
+  channel, which was **100**, a radar channel that `acs_exclude_dfs=1` should have kept out (open: why; read `/run/peakroute-hostapd.log`
+  and `iw reg get` on the device); **175 Mbps at 80 MHz on channel 36** (what OpenWrt ran). The phone's signal as the AP hears it was
+  -77 dBm ("Poor") while the phone showed good bars: the page shows the uplink, which is always the weaker way (open: say so on the
+  page). Devices nearer by connected at 865-1081 Mbit/s (Wi-Fi 6, 80 MHz). Not measured yet: the CPU during a test (Debian's driver
+  does not use the chip's Wi-Fi offload, WED, which OpenWrt does).
 
 Not done: see `docs/u6plus.md`, "Not done" (updates on the U6+, a release workflow for `ap-v*`, LEDs, the certificate's names, one
 hostapd for both radios).
