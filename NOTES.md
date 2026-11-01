@@ -797,8 +797,17 @@ no SSH), then a release "PeakRoute AP <version>" with the .update, .fit and .roo
 download folder). **First releases (2026-11-01):** router `v1.0.0-beta` (release.yml, 5 min) and PeakRoute AP `ap-v0.5.1-alpha`
 (release-ap.yml, 10 min: .update 262 MB, .fit 44 MB, .rootfs.gz 218 MB). Its first run (`ap-v0.5.0-alpha`, left as a tag without a
 release) failed in apt: GitHub's runners are Ubuntu 26.04, where `qemu-user-static` is only a name provided by `qemu-user-binfmt`; the
-workflow falls back to it now. The published .update checks out (checksum; manifest v0.5.1-alpha, ap, ubnt-u6plus, arm64, boot). Not done: the device side, installing an
-update on the U6+ (the other slot and boot partition, `pb_start`/`pb_args`, on trial).
+workflow falls back to it now. The published .update checks out (checksum; manifest v0.5.1-alpha, ap, ubnt-u6plus, arm64, boot). **Device side (2026-11-01, not yet on the U6+):**
+`internal/update/uboot.go`: the release file's `PEAKROUTE_BOOTLOADER=uboot` (or board `ubnt-u6plus`) switches the slot logic from
+GRUB to U-Boot's environment (`fw_printenv`, `fw_setenv -s`, name=value). Writing an update also writes `boot.fit` to
+`peakroute-boot-<slot>` (sha256 against the manifest, else ErrWrongData; refused without one) and saves `pb_count_<slot>`. Restart sets
+`pt_start/pt_count/pt_args` and a one-shot `bootcmd_real` ("setenv bootcmd_real run boot_kept; saveenv; run boot_trial; run boot_kept":
+it is set back before the trial starts, which is the whole safety). Keep copies `pt_*` to `pb_*`, sets `pb_slot`, and saves the old
+slot's `pb_count_<slot>` (the first installs only had `pb_count`), so Go back works. `trialwatch` reads `pb_slot` on U-Boot (default
+a) and the U6+ image keeps it now (enabled; it was removed before); install.sh writes `pb_slot a`, `pb_count_a` and drops `pb_count_b`.
+Tests: `TestAnUpdateOnTheU6PlusFromWritingToKeeping` (write, trial, keep, go back), `TestAU6PlusBundleWithoutItsBootImageIsRefused`,
+`TestARouterIgnoresABootImage`, `TestBootArgsForASlot`, `TestOnTheU6Plus*` (trialwatch). A U6+ on `ap-v0.5.1-alpha` cannot take an
+update (its daemon reads GRUB): the next build goes on once with `install.sh write`.
 
 ## 7t. The disk image (built 2026-10-12; first real boot reached the welcome page)
 

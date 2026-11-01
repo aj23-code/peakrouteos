@@ -73,6 +73,11 @@ write_env() {
         printf 'pb_start 0x%x\n' "${start}"
         printf 'pb_count 0x%x\n' "${count}"
         printf 'pb_args %s\n' "${BOOTARGS}"
+        # the install is slot a, kept; updates write slot b and set U-Boot up for a trial of it (internal/update/uboot.go). A slot b
+        # from before is not one to go back to: its boot image length is taken away (a name alone removes the variable)
+        echo 'pb_slot a'
+        printf 'pb_count_a 0x%x\n' "${count}"
+        echo 'pb_count_b'
         echo 'pl_dev mmc dev 0'
         printf 'pl_read mmc read %s ${pb_start} ${pb_count}\n' "${LOADADDR}"
         # the signature U-Boot would demand of Ubiquiti's own images is taken away, as for OpenWrt (it may be gone already: not a step)

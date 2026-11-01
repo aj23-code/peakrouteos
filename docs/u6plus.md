@@ -93,9 +93,9 @@ installer checks them and writes the root file system as it unpacks it).
 
 ## Not done
 
-- Updates: the bundles are built and released (above), but a U6+ does not install them yet: the Updates page says they are not
-  supported here (they switch slots with GRUB). The slots and boot partitions are there for it: the U6+ way is to write the other slot
-  and its boot image and point `pb_start` and `pb_args` at them, on trial.
+- Updates on the device itself have only been tested here, not on a U6+ (they write the other slot and its boot partition and start
+  it once through U-Boot, on trial: docs/updates.md, section 4). A U6+ running `ap-v0.5.1-alpha` or older cannot install them (its
+  daemon looks for GRUB): install a newer build once with `install.sh HOST write`.
 - A release build and workflow (`ap-v*` tags); the image's version comes from them (`ap-v0.1.0` is v0.1.0).
 - The LEDs and the reset button.
 - One hostapd serves both radios and stops when one of them fails (band steering needs one process): a radio that cannot start takes

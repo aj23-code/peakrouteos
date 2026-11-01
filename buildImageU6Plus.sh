@@ -145,9 +145,9 @@ chown -R root:root "${ROOTFS_DIR}/etc" "${ROOTFS_DIR}/usr/lib/peakroute"
 chmod 755 "${ROOTFS_DIR}/usr/lib/peakroute/udhcpc-script" \
     "${ROOTFS_DIR}/etc/initramfs-tools/hooks/peakroute-state" "${ROOTFS_DIR}/etc/initramfs-tools/scripts/local-bottom/peakroute-state" \
     "${ROOTFS_DIR}/etc/initramfs-tools/scripts/local-bottom/peakroute-caldata"
-# the x86 image's slot switching and partition growing: the U6+'s partitions are made to size, and its boot is U-Boot's
-rm -f "${ROOTFS_DIR}/etc/systemd/system/peakroute-growdata.service" "${ROOTFS_DIR}/etc/systemd/system/peakroute-trialwatch.service" \
-      "${ROOTFS_DIR}/usr/lib/peakroute/growdata" "${ROOTFS_DIR}/usr/lib/peakroute/trialwatch"
+# the x86 image's partition growing: the U6+'s partitions are made to size. The trial watch stays: it reads U-Boot's kept slot
+rm -f "${ROOTFS_DIR}/etc/systemd/system/peakroute-growdata.service" "${ROOTFS_DIR}/usr/lib/peakroute/growdata"
+chmod 755 "${ROOTFS_DIR}/usr/lib/peakroute/trialwatch"
 mkdir -p "${ROOTFS_DIR}/data"
 cat > "${ROOTFS_DIR}/usr/lib/peakroute/release" << RELEASE
 PEAKROUTE_VERSION=${VERSION}
@@ -156,6 +156,7 @@ PEAKROUTE_LAYOUT=1
 PEAKROUTE_ARCH=arm64
 PEAKROUTE_PRODUCT=ap
 PEAKROUTE_BOARD=${BOARD}
+PEAKROUTE_BOOTLOADER=uboot
 DEBIAN_VERSION=13
 RELEASE
 install -D -m 755 "${PROJECT_DIR}/internal/scripts/hostapd-run.sh" "${ROOTFS_DIR}/usr/lib/peakroute/hostapd-run"
@@ -169,7 +170,7 @@ mount --bind /dev/pts "${ROOTFS_DIR}/dev/pts"
 # the chroot's programs speak plain C (the build machine's language is not installed in it)
 export LC_ALL=C LANG=C
 chroot "${ROOTFS_DIR}" passwd -l root
-chroot "${ROOTFS_DIR}" systemctl enable peakroute.service peakroute-wifi.service nftables.service networking.service systemd-timesyncd.service
+chroot "${ROOTFS_DIR}" systemctl enable peakroute.service peakroute-wifi.service peakroute-trialwatch.service nftables.service networking.service systemd-timesyncd.service
 chroot "${ROOTFS_DIR}" systemctl disable wpa_supplicant.service 2>/dev/null || true
 chroot "${ROOTFS_DIR}" systemctl mask systemd-firstboot.service
 # what a root file system from an earlier version of this script lacks (xz: the initramfs is compressed with it)

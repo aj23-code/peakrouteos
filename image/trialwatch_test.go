@@ -111,3 +111,38 @@ func TestTheStateScriptsArePlainShell(t *testing.T) {
 		}
 	}
 }
+
+// On the U6+ the kept slot is U-Boot's pb_slot (fw_printenv), a when it is not set.
+func newUBootTrialLab(t *testing.T, cmdline, pbSlot string) *trialLab {
+	t.Helper()
+	l := newTrialLab(t, cmdline, "x")
+	fake := `#!/bin/sh
+# fw_printenv -n NAME
+[ -s "` + filepath.Join(l.dir, "pb_slot") + `" ] || { echo "## Error: \"$2\" not defined" >&2; exit 1; }
+cat "` + filepath.Join(l.dir, "pb_slot") + `"
+`
+	os.WriteFile(filepath.Join(l.dir, "bin", "fw_printenv"), []byte(fake), 0755)
+	os.WriteFile(filepath.Join(l.dir, "pb_slot"), []byte(pbSlot), 0644)
+	os.WriteFile(filepath.Join(l.dir, "release"), []byte("PEAKROUTE_PRODUCT=ap\nPEAKROUTE_BOOTLOADER=uboot\n"), 0644)
+	l.env = append(l.env, "PEAKROUTE_RELEASE="+filepath.Join(l.dir, "release"))
+	return l
+}
+
+func TestOnTheU6PlusAVersionThatIsNotKeptIsGoneBackFrom(t *testing.T) {
+	for _, kept := range []string{"a", ""} {
+		l := newUBootTrialLab(t, "console=ttyS0 root=LABEL=peakroute-root-b peakroute.slot=b peakroute.trial=1", kept)
+		if out := l.run(t); !l.rebooted() || !strings.Contains(out, "going back") {
+			t.Fatalf("pb_slot %q: no restart: %q", kept, out)
+		}
+	}
+}
+
+func TestOnTheU6PlusAKeptVersionIsLeftAlone(t *testing.T) {
+	for cmdline, kept := range map[string]string{"peakroute.slot=b peakroute.trial=1": "b", "peakroute.slot=a peakroute.trial=1": ""} {
+		l := newUBootTrialLab(t, cmdline, kept)
+		l.run(t)
+		if l.rebooted() {
+			t.Fatalf("%s with pb_slot %q: restarted although it is kept", cmdline, kept)
+		}
+	}
+}

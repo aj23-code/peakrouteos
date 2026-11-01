@@ -70,6 +70,10 @@ type Env struct {
 	StatePath   string // /run/peakroute/state: "persistent" or "volatile", written by the initramfs
 	// SlotDevice is the partition of a slot.
 	SlotDevice func(Slot) string
+	// BootDevice is the boot image partition of a slot, and PartitionStart the first sector of a partition by name, on a board whose
+	// boot loader is U-Boot (uboot.go; nil: the real ones).
+	BootDevice     func(Slot) string
+	PartitionStart func(name string) (int64, error)
 	// Mounted lists the sources of what is mounted (the device a slot is written to must not be among them).
 	Mounted func() []string
 	Run     RunFunc
@@ -410,6 +414,22 @@ func (s *Service) setGrubEnv(ctx context.Context, kv ...string) (err error) {
 	return nil
 }
 
+// startTrial makes the next start (only) the given slot, on trial.
+func (s *Service) startTrial(ctx context.Context, sl Slot) error {
+	if s.loader() == LoaderUBoot {
+		return s.ubootTrial(ctx, sl)
+	}
+	return s.setGrubEnv(ctx, "trial="+string(sl))
+}
+
+// keepRunning makes the slot that runs (on trial) the one that starts from now on.
+func (s *Service) keepRunning(ctx context.Context, sl Slot) error {
+	if s.loader() == LoaderUBoot {
+		return s.ubootKeep(ctx, sl)
+	}
+	return s.setGrubEnv(ctx, "slot="+string(sl), "trial=")
+}
+
 // BootState works out which slot runs and whether a version is on trial.
 func (s *Service) BootState(ctx context.Context) Boot {
 	var b Boot
@@ -421,6 +441,16 @@ func (s *Service) BootState(ctx context.Context) Boot {
 	b.Running = Slot(v)
 	t, _ := s.cmdlineOption("peakroute.trial")
 	b.Trial = t == "1"
+	if s.loader() == LoaderUBoot {
+		env, err := s.readUBootEnv(ctx)
+		if err != nil {
+			b.Problem = err.Error()
+			return b
+		}
+		b.Kept = ubootKept(env)
+		b.OnTrial = b.Trial && b.Kept != b.Running
+		return b
+	}
 	env, err := s.readGrubEnv(ctx)
 	if err != nil {
 		b.Problem = err.Error()
@@ -578,6 +608,12 @@ func (s *Service) receive(ctx context.Context, r io.Reader, wantSum string) (m M
 	s.phase("writing")
 	if err := WriteSlot(ctx, b, dev, s.progress); err != nil {
 		return m, err
+	}
+	// a board whose boot loader starts a boot image of its own gets the one that goes with the system (uboot.go)
+	if s.loader() == LoaderUBoot {
+		if err := s.writeBootImage(ctx, b, slot); err != nil {
+			return m, err
+		}
 	}
 	if err := b.Drain(); err != nil {
 		return m, ErrWrongData
@@ -817,7 +853,7 @@ func (s *Service) Restart(ctx context.Context) error {
 			detail += "; a copy of the settings was kept (" + id + ")"
 		}
 	}
-	if err := s.setGrubEnv(ctx, "trial="+string(st.Slot)); err != nil {
+	if err := s.startTrial(ctx, st.Slot); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -851,7 +887,7 @@ func (s *Service) Keep(ctx context.Context) error {
 	if !boot.OnTrial {
 		return errors.New("no new version is on trial")
 	}
-	if err := s.setGrubEnv(ctx, "slot="+string(boot.Running), "trial="); err != nil {
+	if err := s.keepRunning(ctx, boot.Running); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -893,7 +929,7 @@ func (s *Service) GoBack(ctx context.Context) error {
 	if !s.editable() {
 		return ErrNotEditable
 	}
-	if err := s.setGrubEnv(ctx, "trial="+string(boot.Running.Other())); err != nil {
+	if err := s.startTrial(ctx, boot.Running.Other()); err != nil {
 		return err
 	}
 	s.mu.Lock()

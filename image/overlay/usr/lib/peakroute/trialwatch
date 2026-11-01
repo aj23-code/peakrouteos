@@ -1,6 +1,7 @@
 #!/bin/sh
 # Started only when this version is on trial (peakroute-trialwatch.service, kernel option peakroute.trial=1): if nobody keeps it
-# within the time, the device restarts into the version that was kept before. It does not depend on the daemon, so a version whose
+# within the time, the device restarts into the version that was kept before (GRUB starts the kept slot unless told otherwise; U-Boot
+# on the U6+ was set back to the kept slot before it started the trial). It does not depend on the daemon, so a version whose
 # daemon cannot start is undone as well. docs/updates.md, section 4.
 #
 # The places and the time can be changed through the environment, which is how the tests run this script.
@@ -11,11 +12,18 @@ GRUBENV="${PEAKROUTE_GRUBENV:-/boot/efi/grub/grubenv}"
 CMDLINE="${PEAKROUTE_CMDLINE:-/proc/cmdline}"
 SECONDS_TO_WAIT="${PEAKROUTE_TRIAL_SECONDS:-600}"
 REBOOT="${PEAKROUTE_REBOOT:-systemctl reboot}"
+RELEASE="${PEAKROUTE_RELEASE:-/usr/lib/peakroute/release}"
+LOADER="${PEAKROUTE_BOOTLOADER:-$(sed -n 's/^PEAKROUTE_BOOTLOADER=//p' "$RELEASE" 2>/dev/null | head -n 1)}"
 
 running="$(tr ' ' '\n' < "$CMDLINE" | sed -n 's/^peakroute\.slot=//p' | head -n 1)"
 [ -n "$running" ] || { echo "trialwatch: the kernel was not told which slot it runs" >&2; exit 0; }
 
-kept() { grub-editenv "$GRUBENV" list 2>/dev/null | sed -n 's/^slot=//p' | head -n 1; }
+if [ "$LOADER" = uboot ]; then
+    # U-Boot's environment: pb_slot, a when it is not set (the installer installs slot a)
+    kept() { s="$(fw_printenv -n pb_slot 2>/dev/null || true)"; echo "${s:-a}"; }
+else
+    kept() { grub-editenv "$GRUBENV" list 2>/dev/null | sed -n 's/^slot=//p' | head -n 1; }
+fi
 
 waited=0
 while [ "$waited" -lt "$SECONDS_TO_WAIT" ]; do

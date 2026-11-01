@@ -28,6 +28,7 @@ type lab struct {
 	s        *Service
 	mu       sync.Mutex
 	grub     map[string]string
+	uboot    map[string]string // U-Boot's environment (fw_printenv, fw_setenv)
 	calls    []string
 	failing  map[string]error // program name -> what it returns
 	reboots  chan struct{}
@@ -38,7 +39,7 @@ type lab struct {
 func newLab(t *testing.T, running Slot, trial bool, kept Slot) *lab {
 	t.Helper()
 	dir := t.TempDir()
-	l := &lab{t: t, dir: dir, grub: map[string]string{"slot": string(kept), "trial": ""}, failing: map[string]error{}, reboots: make(chan struct{}, 4), editable: true}
+	l := &lab{t: t, dir: dir, grub: map[string]string{"slot": string(kept), "trial": ""}, uboot: map[string]string{}, failing: map[string]error{}, reboots: make(chan struct{}, 4), editable: true}
 	cmd := "BOOT_IMAGE=/vmlinuz root=LABEL=peakroute-root-" + string(running) + " ro quiet peakroute.slot=" + string(running)
 	if trial {
 		cmd += " peakroute.trial=1"
@@ -84,6 +85,29 @@ func (l *lab) run(ctx context.Context, name string, args ...string) ([]byte, err
 	l.calls = append(l.calls, name+" "+strings.Join(args, " "))
 	if err := l.failing[name]; err != nil {
 		return []byte("it failed"), err
+	}
+	// U-Boot's environment (uboot.go): fw_printenv lists it, fw_setenv -s FILE sets name=value lines (empty: removed)
+	if name == "fw_printenv" {
+		var b strings.Builder
+		for k, v := range l.uboot {
+			fmt.Fprintf(&b, "%s=%s\n", k, v)
+		}
+		return []byte(b.String()), nil
+	}
+	if name == "fw_setenv" && len(args) == 2 && args[0] == "-s" {
+		raw, err := os.ReadFile(args[1])
+		if err != nil {
+			return nil, err
+		}
+		for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+			k, v, _ := strings.Cut(line, "=")
+			if v == "" {
+				delete(l.uboot, k)
+			} else {
+				l.uboot[k] = v
+			}
+		}
+		return nil, nil
 	}
 	if name == "grub-editenv" && len(args) >= 2 {
 		switch args[1] {

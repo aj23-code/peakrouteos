@@ -93,6 +93,17 @@ The daemon changes `grubenv` with `grub-editenv` (the ESP is mounted read-only a
 
 Reverting a kept version is just another trial of the other slot: an update with the previous version already written.
 
+**On a board whose boot loader is U-Boot** (the U6+: release file `PEAKROUTE_BOOTLOADER=uboot`, docs/u6plus.md) the steps are the same,
+with U-Boot's environment (`fw_printenv`, `fw_setenv`) in place of GRUB's (`internal/update/uboot.go`):
+
+- *Copy* also writes the bundle's `boot.fit` to the other slot's boot partition (`peakroute-boot-<slot>`), checked against the manifest,
+  and saves its length (`pb_count_<slot>`). A U6+ bundle without one is refused.
+- *Restart on trial* sets `pt_start`, `pt_count`, `pt_args` (that slot's boot partition, and the kernel command line with its `root`,
+  `peakroute.slot` and `peakroute.trial=1`) and makes `bootcmd_real` start it **once**: it sets itself back to `run boot_kept` and saves
+  that before it starts the trial, so any start after it (a crash, the watchdog, a power cut, the trial watch) is the kept slot.
+- *Keep* copies `pt_*` to `pb_*` (what `boot_peak` starts), sets `pb_slot` (the kept slot; `a` when it is not set, as the installer
+  installs slot a) and saves the old slot's `pb_count_<slot>` for going back. The trial watch reads `pb_slot`.
+
 What is not covered: a bundle never changes GRUB, the partition table or the ESP. That is what the *layout version* is for: a release that
 needs one is announced as a full image (a fresh write), and the Updates page says so rather than trying.
 
