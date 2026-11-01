@@ -109,10 +109,11 @@ window.APHomeModule = (function () {
                 const sig = d.signal_dbm;
                 return `<tr><td><code class="code-mac">${esc(d.mac)}</code></td><td>${esc(d.ssid)}</td><td>${esc(d.band)}${d.channel ? ', ch ' + d.channel : ''}</td>
                     <td>${sig == null ? '–' : `${dot(signalClass(sig))}${sig} dBm <span class="form-hint">${signalWord(sig)}</span>`}</td>
-                    <td>${d.rx_mbps ? Math.round(d.rx_mbps) : '–'} / ${d.tx_mbps ? Math.round(d.tx_mbps) : '–'} Mbit/s</td>
+                    <td>${d.tx_mbps ? Math.round(d.tx_mbps) : '–'} / ${d.rx_mbps ? Math.round(d.rx_mbps) : '–'} Mbit/s</td>
                     <td>${bytesText(d.rx_bytes + d.tx_bytes)}</td><td>${agoText(d.connected_seconds)}</td></tr>`;
             }).join('');
-            body = `<div class="apx-scroll"><table class="apx-table"><thead><tr><th>Device</th><th>Wi-Fi network</th><th>Band</th><th>Signal</th><th>Speed (down / up)</th><th>Traffic</th><th>Connected</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+            // (the station list is the access point's view: tx_mbps is what it sends to the device, rx_mbps what it receives)
+            body = `<p class="form-hint">The signal is how strongly this access point hears each device. A device usually hears the access point more strongly than that (its Wi-Fi bars), because an access point sends with more power than a phone or a laptop.</p><div class="apx-scroll"><table class="apx-table"><thead><tr><th>Device</th><th>Wi-Fi network</th><th>Band</th><th title="How strongly this access point hears the device">Signal at the AP</th><th title="The link rate of the last frames each way: to the device (its download) and from it (its upload). A device that is idle sends at a low rate.">Link rate (down / up)</th><th>Traffic</th><th>Connected</th></tr></thead><tbody>${rows}</tbody></table></div>`;
         }
         return `<section class="card"><div class="net-card-head"><h2>Connected devices</h2><span class="tag">${list.length}</span></div>${body}</section>`;
     }

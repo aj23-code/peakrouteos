@@ -37,7 +37,7 @@ The home page shows, refreshed every 5 seconds:
 - **Wi-Fi:** for each adapter hosting Wi-Fi: whether it runs, the channel and width in use, transmit power, **channel use** (how much of
   the time the channel is busy, measured between two looks; above 70% is marked red), the noise, and how many devices are connected with
   their average signal; and each Wi-Fi network with its bands, VLAN and device count.
-- **Connected devices:** every device on the Wi-Fi: address, network, band and channel, signal (excellent to poor), speed each way, traffic
+- **Connected devices:** every device on the Wi-Fi: address, network, band and channel, signal as the access point hears it (excellent to poor; a device usually hears the access point more strongly, because the access point sends with more power), link rate each way (to the device, its download, and from it; an idle device sends at a low rate), traffic
   and how long it has been connected.
 
 Right after the first-run setup nothing is applied yet, so the page says so and the menu already shows the access point's (the mode shown

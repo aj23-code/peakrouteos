@@ -89,8 +89,6 @@ While the U6+ runs PeakRoute its OpenWrt Wi-Fi is gone: keep the computer on ano
   for it: the U6+ way is to write the other slot and its boot image and point `pb_start` and `pb_args` at them, on trial.
 - A release build and workflow (`ap-v*` tags); the image's version comes from them (`ap-v0.1.0` is v0.1.0).
 - The LEDs and the reset button.
-- The web certificate is made at the first start, before the address from DHCP is known: it names 192.168.1.1, not the access point's
-  address (the browser warns either way until the authority is trusted).
 - One hostapd serves both radios and stops when one of them fails (band steering needs one process): a radio that cannot start takes
   the other down. The 5 GHz automatic channel did that until it got its 40 MHz line (NOTES.md).
 - Committing the access point changes its address (a new bridge asks for a new lease): the page that has to confirm the change may

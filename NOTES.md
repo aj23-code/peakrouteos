@@ -742,13 +742,19 @@ openwrt, env, ramoops, status). Found on the way, in order, each from something 
 - **The `-s` of hostapd was wrong** (2026-10-31): Debian's hostapd 2.10 has no `-s` (it prints its usage and stops, so the Wi-Fi never
   started). It logs to `/run/peakroute-hostapd.log` with `-f` now, and `TestTheWifiScriptOnlyUsesOptionsHostapdHas` checks every option
   against the installed hostapd's usage (skipped where there is none: the stand-in hostapd of the other tests cannot catch this).
+- **The web certificate named the router's leftover 192.168.1.1** on an access point and not its own address (made at the start,
+  before the lease). `daemon.certAddresses`: a router's are its settings, as before; an access point's (and the AP build's before its
+  first settings) are its bridges' addresses now (br0, brsetup), its fixed address and 192.168.77.1. The check runs every 10 minutes
+  instead of 12 hours, so a lease is in it soon; it is made again only when something is missing. Test: `certnames_test.go`.
 - **The SoC's crypto engine** (`crypto_safexcel`, EIP97) fails the kernel's SHA-384/512 self-tests with a warning and a trace each:
   blacklisted in the U6+'s image (`/etc/modprobe.d/peakroute-u6plus.conf`).
 - **Speed** (the user's phone, two rooms away, 250 Mbps internet): 119 Mbps at 40 MHz on channel 36; slower at 80 MHz on the automatic
   channel, which was **100**, a radar channel that `acs_exclude_dfs=1` should have kept out (open: why; read `/run/peakroute-hostapd.log`
   and `iw reg get` on the device); **175 Mbps at 80 MHz on channel 36** (what OpenWrt ran). The phone's signal as the AP hears it was
-  -77 dBm ("Poor") while the phone showed good bars: the page shows the uplink, which is always the weaker way (open: say so on the
-  page). Devices nearer by connected at 865-1081 Mbit/s (Wi-Fi 6, 80 MHz). Not measured yet: the CPU during a test (Debian's driver
+  -77 dBm ("Poor") while the phone showed good bars: the page shows the uplink, which is always the weaker way; the column is now
+  "Signal at the AP", with a line saying so. **The speed column had the two ways swapped**: the station list is the access point's
+  view (`tx bitrate` is what it sends to the device, its download), and the page showed rx first under "down": the "24 Mbit/s down" of
+  every device was its idle upload. Now "Link rate (down / up)" = tx / rx (the phone: 432 down). Devices nearer by connected at 865-1081 Mbit/s (Wi-Fi 6, 80 MHz). Not measured yet: the CPU during a test (Debian's driver
   does not use the chip's Wi-Fi offload, WED, which OpenWrt does).
 
 Not done: see `docs/u6plus.md`, "Not done" (updates on the U6+, a release workflow for `ap-v*`, LEDs, the certificate's names, one

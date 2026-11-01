@@ -266,7 +266,7 @@ func Start(o Options) *Core {
 	sessionMgr.StartJanitor(c.Ctx, time.Minute)
 
 	// The web interface's certificate: made by this router's own web authority for the names and addresses the router has now (unless
-	// a custom one was uploaded), checked again every twelve hours, and served without a restart when it changes.
+	// a custom one was uploaded), checked again every ten minutes, and served without a restart when it changes.
 	c.Certs = &cert.Manager{Wanted: func() cert.Names {
 		cfg := cfgMgr.NetworkConfig()
 		var n cert.Names
@@ -280,17 +280,7 @@ func Start(o Options) *Core {
 				n.DNS = append(n.DNS, host+"."+cfg.Domain)
 			}
 		}
-		for _, a := range append([]string{cfg.LanIP}, func() []string {
-			var ips []string
-			for _, nw := range cfg.Networks {
-				ips = append(ips, nw.IP)
-			}
-			return ips
-		}()...) {
-			if ip := net.ParseIP(a); ip != nil {
-				n.IPs = append(n.IPs, ip)
-			}
-		}
+		n.IPs = certAddresses(cfg, o.APOnly, interfaceAddrs)
 		return n
 	}}
 	certMgr := c.Certs
@@ -302,7 +292,9 @@ func Start(o Options) *Core {
 			select {
 			case <-c.Ctx.Done():
 				return
-			case <-time.After(12 * time.Hour):
+			// often enough that an address from DHCP, which comes after the start, is in it soon (it is made again only when the
+			// names or addresses changed, or it runs out)
+			case <-time.After(10 * time.Minute):
 				if err := certMgr.Ensure(); err != nil {
 					log.Printf("[-] Checking the web interface's certificate failed: %v", err)
 				}
