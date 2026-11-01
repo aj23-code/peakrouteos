@@ -143,6 +143,9 @@ func ensureSafeWifi(cfg config.NetworkConfig) error {
 	return nil
 }
 
+// acsChannels5 are the 5 GHz channels an automatic choice may take: those without radar detection (UNII-1 and UNII-3).
+const acsChannels5 = "36 40 44 48 149 153 157 161 165"
+
 func renderHostapd(cfg config.NetworkConfig, p radioPlan, firstOn map[string]string) string {
 	r := p.radio
 	country := cfg.Country
@@ -164,7 +167,12 @@ func renderHostapd(cfg config.NetworkConfig, p radioPlan, firstOn map[string]str
 	}
 	line("channel=%d", r.Channel)
 	if r.Channel == 0 && r.Band == config.Band5 {
-		line("acs_exclude_dfs=1") // an automatic choice avoids the channels that need a radar wait
+		// An automatic choice avoids the channels that need a radar wait (52-144), which look the emptiest and so always win: the list
+		// of channels it may choose from. acs_exclude_dfs alone is not enough: Debian's hostapd 2.10 obeys it only when the driver
+		// chooses, not in its own choice (seen on a U6+: it chose 100, then 52, and waited a minute for radar). hostapd leaves out a
+		// channel of the list that the country does not allow.
+		line("acs_exclude_dfs=1")
+		line("chanlist=%s", acsChannels5)
 	}
 	line("beacon_int=100")
 	line("dtim_period=2")

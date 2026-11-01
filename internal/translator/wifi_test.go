@@ -118,7 +118,8 @@ func TestChannelWidthSettings(t *testing.T) {
 	r = r5()
 	r.Channel = 0
 	got := at(r)
-	if !strings.Contains(got, "channel=0\n") || !strings.Contains(got, "acs_exclude_dfs=1\n") || !strings.Contains(got, "ht_capab=[HT40+]\n") ||
+	if !strings.Contains(got, "channel=0\n") || !strings.Contains(got, "acs_exclude_dfs=1\n") || !strings.Contains(got, "chanlist=36 40 44 48 149 153 157 161 165\n") ||
+		strings.Contains(got, "chanlist=52") || !strings.Contains(got, "ht_capab=[HT40+]\n") ||
 		!strings.Contains(got, "vht_oper_chwidth=1\n") || strings.Contains(got, "centr_freq") {
 		t.Errorf("automatic:\n%s", got)
 	}
@@ -128,7 +129,7 @@ func TestChannelWidthSettings(t *testing.T) {
 	}
 	r = r24()
 	r.Channel = 0
-	if got := at(r); strings.Contains(got, "acs_exclude_dfs") {
+	if got := at(r); strings.Contains(got, "acs_exclude_dfs") || strings.Contains(got, "chanlist") {
 		t.Errorf("2.4 GHz has no DFS to exclude:\n%s", got)
 	}
 	// no 802.11n on an adapter that lacks it
