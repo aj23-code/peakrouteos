@@ -794,7 +794,10 @@ reader of today opens it like any bundle and drains past it (`TestABundleWithABo
 `.github/workflows/release-ap.yml` runs on `ap-v*` tags: the checks, the U6+ build under qemu-user on GitHub's x86 runner (release build,
 no SSH), then a release "PeakRoute AP <version>" with the .update, .fit and .rootfs.gz and their checksums
 (`.github/release-notes-ap.md`). `install.sh write` takes a release's `.rootfs.gz` too (unpacked as it is written; `OUT_DIR` = the
-download folder). Not tried yet: the workflow itself (it runs on the first `ap-v*` tag). Not done: the device side, installing an
+download folder). **First releases (2026-11-01):** router `v1.0.0-beta` (release.yml, 5 min) and PeakRoute AP `ap-v0.5.1-alpha`
+(release-ap.yml, 10 min: .update 262 MB, .fit 44 MB, .rootfs.gz 218 MB). Its first run (`ap-v0.5.0-alpha`, left as a tag without a
+release) failed in apt: GitHub's runners are Ubuntu 26.04, where `qemu-user-static` is only a name provided by `qemu-user-binfmt`; the
+workflow falls back to it now. The published .update checks out (checksum; manifest v0.5.1-alpha, ap, ubnt-u6plus, arm64, boot). Not done: the device side, installing an
 update on the U6+ (the other slot and boot partition, `pb_start`/`pb_args`, on trial).
 
 ## 7t. The disk image (built 2026-10-12; first real boot reached the welcome page)
