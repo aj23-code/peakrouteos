@@ -18,7 +18,8 @@ import (
 	"time"
 )
 
-var t0 = time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+// Noon yesterday: the store drops rows older than its retention by the real clock, so a fixed date would turn the tests red a month later.
+var t0 = time.Now().UTC().AddDate(0, 0, -1).Truncate(24 * time.Hour).Add(12 * time.Hour)
 
 func probe(at time.Time, rtt time.Duration, ok bool) Probe {
 	return Probe{At: at, Series: SeriesDNS, RTT: rtt, OK: ok}
