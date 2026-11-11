@@ -187,6 +187,12 @@ var serviceCommands = map[string]command{
 	SvcWifi: {"systemctl", []string{"restart", "peakroute-wifi"}},
 }
 
+// staleBridgesCommand removes the bridges (br0, br150, ...) that /etc/network/interfaces no longer describes. Restarting networking
+// only takes down what the new file still names, so a network whose VLAN was changed would keep its old bridge, address and routes
+// until the next boot. Deleting the link takes its address and routes with it.
+var staleBridgesCommand = command{"sh", []string{"-c", `for d in /sys/class/net/br[0-9]*; do n=${d##*/}; case ${n#br} in ''|*[!0-9]*) continue;; esac; ` +
+	`grep -q "^iface $n " ` + PathInterfaces + ` || ip link del "$n"; done; exit 0`}}
+
 // actionFile is the one file that decides what a service action does. When it did not exist before a change there is nothing to
 // re-apply after an undo (the action reads the file and would only complain that it is gone).
 var actionFile = map[string]string{
@@ -317,6 +323,10 @@ func (a *Applier) Apply(ctx context.Context, desired Desired, plan Plan) Result 
 			return fail(fmt.Errorf("%s %s failed: %s", act.Verb, act.Service, firstLine(out, err)))
 		}
 		res.Steps = append(res.Steps, step)
+		if act.Service == SvcNetworking {
+			// not fatal: a bridge that cannot be removed only stays where it was
+			_, _ = a.exec(ctx, serviceTimeout, staleBridgesCommand)
+		}
 	}
 
 	res.OK = true
@@ -394,6 +404,9 @@ func (a *Applier) undo(ctx context.Context, snap Snapshot) []string {
 		}
 		if out, err := a.exec(rbCtx, timeout, cmd); err != nil {
 			problem("could not bring %s back to the previous configuration: %s", act.Service, firstLine(out, err))
+		}
+		if act.Service == SvcNetworking {
+			_, _ = a.exec(rbCtx, serviceTimeout, staleBridgesCommand)
 		}
 	}
 	return problems

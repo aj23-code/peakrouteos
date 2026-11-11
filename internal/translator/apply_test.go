@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -164,6 +165,7 @@ func TestApplyOnAnEmptySystemWritesChecksThenRestartsInOrder(t *testing.T) {
 		// then the services, in dependency order
 		"sysctl -p " + PathSysctl,
 		"systemctl restart networking",
+		staleBridgesCommand.String(), // bridges the new file no longer names are removed
 		"systemctl reload nftables",
 		"systemctl restart dnsmasq",
 	}
@@ -681,7 +683,7 @@ func TestRestoreReturnsTheSystemToTheSnapshot(t *testing.T) {
 		}
 	}
 	// the services are re-run so they pick the old files up again
-	if got := strings.Join(run.log(), "|"); got != "systemctl restart networking|systemctl reload nftables|systemctl restart dnsmasq" {
+	if got := strings.Join(run.log(), "|"); got != "systemctl restart networking|"+staleBridgesCommand.String()+"|systemctl reload nftables|systemctl restart dnsmasq" {
 		t.Errorf("restore commands = %q", got)
 	}
 }
@@ -769,5 +771,35 @@ func TestRestoreReportsWhatItCouldNotUndo(t *testing.T) {
 	res := ap.Restore(context.Background(), *applied.Snapshot)
 	if res.OK || len(res.Problems) == 0 || res.Error == "" {
 		t.Errorf("a restore that cannot restart the service must say so: %+v", res)
+	}
+}
+
+// The cleanup after a networking restart removes a bridge whose network changed VLAN, and only that: bridges the file still names,
+// and links that are not numbered bridges, stay.
+func TestStaleBridgesCommandRemovesOnlyBridgesTheFileNoLongerNames(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	sys := filepath.Join(dir, "sys")
+	os.MkdirAll(bin, 0755)
+	for _, n := range []string{"br0", "br90", "br150", "brsetup", "br1x", "eth0", "bridge"} {
+		os.MkdirAll(filepath.Join(sys, n), 0755)
+	}
+	ifaces := filepath.Join(dir, "interfaces")
+	os.WriteFile(ifaces, []byte("auto br0\niface br0 inet static\n\nauto br90\niface br90 inet static\n"), 0644)
+	deleted := filepath.Join(dir, "deleted")
+	os.WriteFile(filepath.Join(bin, "ip"), []byte("#!/bin/sh\necho \"$@\" >> "+deleted+"\n"), 0755)
+
+	script := strings.NewReplacer("/sys/class/net", sys, PathInterfaces, ifaces).Replace(staleBridgesCommand.args[1])
+	cmd := exec.Command("sh", "-c", script)
+	cmd.Env = []string{"PATH=" + bin + ":/usr/bin:/bin"}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("script failed: %v\n%s", err, out)
+	}
+	got, _ := os.ReadFile(deleted)
+	if strings.TrimSpace(string(got)) != "link del br150" {
+		t.Errorf("removed %q, want only br150", got)
 	}
 }

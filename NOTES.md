@@ -1541,6 +1541,8 @@ every future page works on every screen automatically.
   scrolling, view switching, a phone width, and a stopped server. A runner would be worth adding later.
 - For POST/PUT/DELETE from the browser use `apiFetch` (it adds the CSRF header), never bare `fetch`.
 
+- **A network whose VLAN changed left its old bridge behind (2026-11-10).** `systemctl restart networking` runs `ifdown -a` against the *new* `/etc/network/interfaces`, so a bridge the file no longer names (br150 after the VLAN became 90) was never taken down and kept its address and routes: the Routes page (the live table) showed br150 and br90 on the same address. After every networking restart (apply and restore) `staleBridgesCommand` (`translator/apply.go`) deletes each numbered bridge `br<digits>` that has no `iface` line in the file; the link's address and routes go with it. Failure is ignored. Tested with a fake `ip` against a fake `/sys/class/net`; not run on the router.
+
 ## 12. Open questions for the maintainer
 
 - 9e first slice: DHCP only (a dnsmasq restart cannot lock anyone out) or LAN address plus DHCP.
