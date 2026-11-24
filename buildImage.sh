@@ -156,8 +156,10 @@ if [ "${REUSE_ROOTFS}" != "1" ]; then
     #   The firmware lives in Debian's non-free-firmware section, hence the extra component: Intel (iwlwifi), Qualcomm Atheros
     #   (ath9k_htc, ath10k...), MediaTek (mt76) and Realtek. Together they add roughly 270 MB uninstalled; drop the ones for hardware
     #   you will never use to shrink the image.
-    # - avahi-daemon: mDNS shared between the networks that switch it on (Local Networks). It is installed but off: its own configuration
-    #   file is removed and its units disabled below, and the daemon writes the file and starts it when a network asks for it.
+    # - dbus, avahi-daemon: mDNS shared between the networks that switch it on (Local Networks). It is installed but off: its own configuration
+    #   file is removed and its units disabled below, and the daemon writes the file and starts it when a network asks for it. dbus is named
+    #   because avahi-daemon depends on "default-dbus-system-bus | dbus-system-bus", virtual packages that debootstrap does not resolve:
+    #   without it avahi is left unconfigured and the whole build fails (v1.0.2-beta). avahi runs on the bus, too.
     # - wireguard-tools, openvpn: the VPN. systemd-timesyncd, tzdata: the clock. ca-certificates: Dynamic DNS over https.
     # - iputils-ping, iputils-tracepath: the diagnostics. libnss-myhostname: the machine finds its own name.
     DEBIAN_FRONTEND=noninteractive debootstrap \
@@ -165,7 +167,7 @@ if [ "${REUSE_ROOTFS}" != "1" ]; then
         --variant=minbase \
         --components=main,non-free-firmware \
         --keyring="${DEBIAN_KEYRING}" \
-        --include=linux-image-amd64,initramfs-tools,udev,kmod,systemd-sysv,grub-efi-amd64,grub-pc-bin,grub-common,sudo,procps,gdisk,dosfstools,e2fsprogs,rsync,ifupdown,bridge-utils,vlan,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ppp,conntrack,avahi-daemon,hostapd,wpasupplicant,iw,wireless-regdb,rfkill,libnss-myhostname,systemd-timesyncd,tzdata,wireguard-tools,openvpn,firmware-iwlwifi,firmware-atheros,firmware-mediatek,firmware-realtek,ca-certificates,lsb-release,util-linux,fdisk,nano,passwd \
+        --include=linux-image-amd64,initramfs-tools,udev,kmod,systemd-sysv,grub-efi-amd64,grub-pc-bin,grub-common,sudo,procps,gdisk,dosfstools,e2fsprogs,rsync,ifupdown,bridge-utils,vlan,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ppp,conntrack,dbus,avahi-daemon,hostapd,wpasupplicant,iw,wireless-regdb,rfkill,libnss-myhostname,systemd-timesyncd,tzdata,wireguard-tools,openvpn,firmware-iwlwifi,firmware-atheros,firmware-mediatek,firmware-realtek,ca-certificates,lsb-release,util-linux,fdisk,nano,passwd \
         trixie "${ROOTFS_DIR}" http://deb.debian.org/debian/
     touch "${ROOTFS_DIR}/.peakroute-debootstrapped"
 else

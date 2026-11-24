@@ -1074,7 +1074,7 @@ in `buildImage.sh` (router only, not the AP build), disabled, with its packaged 
 reflected; a second network with it on is needed for anything to be reflected (one alone just gets the router's name). Checked: rendering,
 firewall rule, plan (only `reload nftables, restart mdns`), the API, and that avahi 0.8 accepts the file (it rejects an unknown key, takes
 ours; run in a user namespace, where it stops at creating its runtime directory). **Not checked: reflection between real devices** (needs
-root on a box with two networks; the image has to be rebuilt to get the package), nor `.local` lookups through the router.
+root on a box with two networks; the image has to be rebuilt to get the package), nor `.local` lookups through the router. **The first release with it (v1.0.2-beta) failed to build:** avahi-daemon depends on `default-dbus-system-bus | dbus-system-bus`, virtual packages debootstrap does not resolve, so avahi stayed unconfigured; `dbus` is now in the package list (found from the Debian Packages index; the CI log shows only "possibly the package avahi-daemon is at fault").
 
 **Time server and the clock warning (2026-11-23).** (1) A fourth switch on each network, **Serve the time (NTP)** (`Network.NTP` / `lan_ntp`,
 off and unwritten by default). Chosen design: a small SNTP responder inside the daemon (`internal/timeserver`, run with `whileRouter`, so
