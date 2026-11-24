@@ -166,6 +166,7 @@ window.OverviewCards = (function () {
         if (!n.default) tags.push(`<span class="tag">VLAN ${n.vlan}</span>`);
         if (!n.default) tags.push(n.internet ? '<span class="tag tag-ok">Internet</span>' : '<span class="tag tag-warn">No internet</span>');
         if (n.isolated) tags.push('<span class="tag">Isolated</span>');
+        if (n.mdns) tags.push('<span class="tag">mDNS</span>');
         if (n.pending) tags.push('<span class="tag tag-draft">Draft</span>');
 
         let dhcp = '';

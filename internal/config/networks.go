@@ -33,6 +33,9 @@ type Network struct {
 	DHCP     *DHCPConfig `json:"dhcp,omitempty"`
 	Internet bool        `json:"internet"` // may reach the internet through the WAN
 	Isolated bool        `json:"isolated"` // cannot talk to other networks, and they cannot talk to it
+	// MDNS shares this network's mDNS (Bonjour) announcements and questions with the other networks that have it on, and lets the
+	// router answer to its own name here. Off is the default and is not written to the file.
+	MDNS bool `json:"mdns,omitempty"`
 	// DNSServers are what the network's devices are told to use for DNS instead of this router (empty: the router)
 	DNSServers []string `json:"dns_servers,omitempty"`
 }
@@ -78,7 +81,7 @@ var (
 // Equal reports whether two networks are configured identically.
 func (n Network) Equal(o Network) bool {
 	if n.ID != o.ID || n.Name != o.Name || n.VLAN != o.VLAN || n.IP != o.IP || n.Netmask != o.Netmask ||
-		n.Internet != o.Internet || n.Isolated != o.Isolated || strings.Join(n.DNSServers, ",") != strings.Join(o.DNSServers, ",") {
+		n.Internet != o.Internet || n.Isolated != o.Isolated || n.MDNS != o.MDNS || strings.Join(n.DNSServers, ",") != strings.Join(o.DNSServers, ",") {
 		return false
 	}
 	switch {

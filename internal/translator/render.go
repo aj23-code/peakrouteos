@@ -280,6 +280,13 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 		ManagedDir{Path: PathOVClientDir, Prefix: ovPrefix, Service: SvcOpenVPN},
 		ManagedDir{Path: PathOVCCDDir, Any: true, Service: SvcOpenVPN}) // the device files have no suffix
 
+	// mDNS, shared between the networks that have it on (a file only while one does)
+	if content, ok := renderAvahi(cfg, lan); ok {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathAvahi, Content: []byte(content), Mode: 0644, Service: SvcMDNS})
+	} else {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathAvahi, Remove: true, Service: SvcMDNS})
+	}
+
 	// The time zone, and the time servers (a file only while they are not the defaults)
 	if cfg.Timezone != "" {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathTimezone, Content: []byte(cfg.Timezone + "\n"), Mode: 0644, Service: SvcTimezone})

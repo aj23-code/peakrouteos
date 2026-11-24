@@ -156,6 +156,8 @@ if [ "${REUSE_ROOTFS}" != "1" ]; then
     #   The firmware lives in Debian's non-free-firmware section, hence the extra component: Intel (iwlwifi), Qualcomm Atheros
     #   (ath9k_htc, ath10k...), MediaTek (mt76) and Realtek. Together they add roughly 270 MB uninstalled; drop the ones for hardware
     #   you will never use to shrink the image.
+    # - avahi-daemon: mDNS shared between the networks that switch it on (Local Networks). It is installed but off: its own configuration
+    #   file is removed and its units disabled below, and the daemon writes the file and starts it when a network asks for it.
     # - wireguard-tools, openvpn: the VPN. systemd-timesyncd, tzdata: the clock. ca-certificates: Dynamic DNS over https.
     # - iputils-ping, iputils-tracepath: the diagnostics. libnss-myhostname: the machine finds its own name.
     DEBIAN_FRONTEND=noninteractive debootstrap \
@@ -163,7 +165,7 @@ if [ "${REUSE_ROOTFS}" != "1" ]; then
         --variant=minbase \
         --components=main,non-free-firmware \
         --keyring="${DEBIAN_KEYRING}" \
-        --include=linux-image-amd64,initramfs-tools,udev,kmod,systemd-sysv,grub-efi-amd64,grub-pc-bin,grub-common,sudo,procps,gdisk,dosfstools,e2fsprogs,rsync,ifupdown,bridge-utils,vlan,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ppp,conntrack,hostapd,wpasupplicant,iw,wireless-regdb,rfkill,libnss-myhostname,systemd-timesyncd,tzdata,wireguard-tools,openvpn,firmware-iwlwifi,firmware-atheros,firmware-mediatek,firmware-realtek,ca-certificates,lsb-release,util-linux,fdisk,nano,passwd \
+        --include=linux-image-amd64,initramfs-tools,udev,kmod,systemd-sysv,grub-efi-amd64,grub-pc-bin,grub-common,sudo,procps,gdisk,dosfstools,e2fsprogs,rsync,ifupdown,bridge-utils,vlan,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ppp,conntrack,avahi-daemon,hostapd,wpasupplicant,iw,wireless-regdb,rfkill,libnss-myhostname,systemd-timesyncd,tzdata,wireguard-tools,openvpn,firmware-iwlwifi,firmware-atheros,firmware-mediatek,firmware-realtek,ca-certificates,lsb-release,util-linux,fdisk,nano,passwd \
         trixie "${ROOTFS_DIR}" http://deb.debian.org/debian/
     touch "${ROOTFS_DIR}/.peakroute-debootstrapped"
 else
@@ -227,6 +229,10 @@ chroot "${ROOTFS_DIR}" systemctl enable peakroute.service peakroute-wifi.service
 # ifupdown starts wpa_supplicant for a Wi-Fi client itself (wpa-conf), so the service that serves other programs is not needed, and
 # the first-boot questions of systemd would ask for a language and a password on the console
 chroot "${ROOTFS_DIR}" systemctl disable wpa_supplicant.service 2>/dev/null || true
+# avahi (mDNS) stays off until a network shares it: the daemon then writes its configuration and starts it. With the packaged file gone
+# the review of a first commit has no stray "remove avahi-daemon.conf" line.
+chroot "${ROOTFS_DIR}" systemctl disable avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
+rm -f "${ROOTFS_DIR}/etc/avahi/avahi-daemon.conf"
 chroot "${ROOTFS_DIR}" systemctl mask systemd-firstboot.service
 
 # Every device gets an identity of its own at its first start

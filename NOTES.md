@@ -1057,6 +1057,25 @@ the default network would be a security change nobody asked for; ids are `net2`,
 whose networks changed, and the usual file and service list: adding a network restarts networking, the
 firewall and the DHCP server, flipping the Internet or isolation switch only reloads the firewall.
 
+**mDNS per network (2026-11-23).** A third switch next to Internet and Isolate on each network's card: **Share mDNS (Bonjour) with other
+networks** (`Network.MDNS`, `mdns` in the file; the default network's is `lan_mdns`; both off by default and not written when off, so existing
+files and goldens are untouched). Why: mDNS is link-local, so a phone never finds the speaker or printer on another network. How:
+`translator/mdns.go` writes `/etc/avahi/avahi-daemon.conf` while any network has it on: `allow-interfaces` is exactly those networks'
+interfaces (`br0`/the port for the default one, `br<vlan>` for the rest, never the WAN), `enable-reflector=yes`, no wide-area, and
+`publish-addresses=yes` only (the router answers to `<hostname>.local` on those networks, which covers the `peakroute.local` to-do in
+`docs/setup.md` for them; no workstation/HINFO/domain records). The firewall gets `iifname "<net>" udp dport 5353 accept` in **input** for each
+added network with it on (the default network already has everything). **Nothing is forwarded:** the router repeats the packets itself, so
+the isolation switches are unchanged: discovery crosses, connections still follow Isolate. It means an isolated network with mDNS on can
+*see* other networks' services (and be seen), which the card's hint says. The action (`SvcMDNS`, after the VPN steps in `serviceOrder`, verb
+restart) reads the file: present, `systemctl enable` + `restart` avahi; absent, `disable --now` (and nothing at all if avahi is not installed,
+an error if it is wanted and missing). Switching it only reloads the firewall and restarts avahi, never networking. **Image:** `avahi-daemon` is
+in `buildImage.sh` (router only, not the AP build), disabled, with its packaged configuration file removed, so a first commit shows no stray
+"remove avahi-daemon.conf" line and avahi runs only once a network asks. Only mDNS over IPv4/IPv6 multicast on the networks' bridges is
+reflected; a second network with it on is needed for anything to be reflected (one alone just gets the router's name). Checked: rendering,
+firewall rule, plan (only `reload nftables, restart mdns`), the API, and that avahi 0.8 accepts the file (it rejects an unknown key, takes
+ours; run in a user namespace, where it stops at creating its runtime directory). **Not checked: reflection between real devices** (needs
+root on a box with two networks; the image has to be rebuilt to get the package), nor `.local` lookups through the router.
+
 ## 7g. Wireless, and PeakRoute on access points (started 2026-10-08)
 
 **Direction (from the maintainer):** PeakRoute should also run on **access points**, with the same codebase.

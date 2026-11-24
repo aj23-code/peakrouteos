@@ -210,6 +210,9 @@ func nftablesNetworkRules(cfg config.NetworkConfig, lan string) (input, forward 
 		fmt.Fprintf(&in, "        iifname \"%s\" udp dport { 53, 67 } accept\n", iface)
 		fmt.Fprintf(&in, "        iifname \"%s\" tcp dport 53 accept\n", iface)
 		fmt.Fprintf(&in, "        iifname \"%s\" icmp type echo-request accept\n", iface)
+		if n.MDNS {
+			fmt.Fprintf(&in, "        iifname \"%s\" udp dport 5353 accept\n", iface)
+		}
 		if n.Internet {
 			fmt.Fprintf(&fw, "        iifname \"%s\" oifname \"%s\" accept\n", iface, cfg.WanDevice())
 		}

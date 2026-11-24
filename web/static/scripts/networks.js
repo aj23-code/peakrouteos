@@ -27,11 +27,12 @@ window.NetworksModule = (function () {
             lease: (d && d.lease_time) || '',
             internet: !!n.internet,
             isolated: !!n.isolated,
+            mdns: !!n.mdns,
         };
     }
 
     const norm = (f) => JSON.stringify([f.name.trim(), f.vlan.trim(), f.ip.trim(), f.netmask.trim(), f.dhcpEnabled,
-        f.start.trim(), f.end.trim(), f.lease.trim(), f.internet, f.isolated]);
+        f.start.trim(), f.end.trim(), f.lease.trim(), f.internet, f.isolated, f.mdns]);
 
     function isDirty(c) {
         return c.isNew || norm(c.form) !== norm(formOf(c.server));
@@ -126,6 +127,7 @@ window.NetworksModule = (function () {
                     ? '<label class="toggle toggle--block"><input type="checkbox" checked disabled><span><strong>Internet access</strong><span class="form-hint">Always on for the default network.</span></span></label>'
                     : toggleHtml(c, 'internet', 'Allow internet access', 'Off, devices here can reach this router for an address and DNS, and nothing else.', false)}
                 ${toggleHtml(c, 'isolated', 'Isolate from other networks', 'Devices here cannot reach other networks, and devices on other networks cannot reach them.', false)}
+                ${toggleHtml(c, 'mdns', 'Share mDNS (Bonjour) with other networks', 'Devices here and on the other networks that share mDNS can find each other by name and service (printers, speakers, AirPlay, Chromecast). Whether they can connect still follows the switches above. The router also answers to its own name here.', false)}
             </div>
             ${!isDefault && dhcpOn && !c.form.internet ? '<p class="form-hint net-warn">Devices will get an address but cannot reach the internet until you allow it.</p>' : ''}
 
@@ -201,7 +203,7 @@ window.NetworksModule = (function () {
 
     function bodyOf(c) {
         const f = c.form;
-        const body = { ip: f.ip.trim(), netmask: f.netmask.trim(), isolated: f.isolated };
+        const body = { ip: f.ip.trim(), netmask: f.netmask.trim(), isolated: f.isolated, mdns: f.mdns };
         const isDefault = !c.isNew && c.server.default;
         if (!isDefault) {
             body.name = f.name.trim();
@@ -347,7 +349,7 @@ window.NetworksModule = (function () {
             newCount++;
             cards.push({
                 key: 'new-' + newCount, isNew: true, server: null, errors: {}, message: null, confirmDelete: false,
-                form: { name: '', vlan: s.vlan, ip: s.ip, netmask: s.netmask, dhcpEnabled: true, start: s.start, end: s.end, lease: '12h', internet: false, isolated: true },
+                form: { name: '', vlan: s.vlan, ip: s.ip, netmask: s.netmask, dhcpEnabled: true, start: s.start, end: s.end, lease: '12h', internet: false, isolated: true, mdns: false },
             });
             selected = 'new-' + newCount;
             renderAll();

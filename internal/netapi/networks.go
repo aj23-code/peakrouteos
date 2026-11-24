@@ -34,6 +34,7 @@ type Network struct {
 	DHCP        *DHCP    `json:"dhcp"`         // null: no DHCP server (or, for the default network, not managed yet)
 	Internet    bool     `json:"internet"`     // may reach the internet; always true for the default network
 	Isolated    bool     `json:"isolated"`     // cannot talk to other networks, and they cannot talk to it
+	MDNS        bool     `json:"mdns"`         // shares mDNS (Bonjour) with the other networks that have it on
 	Pending     bool     `json:"pending"`      // the draft differs from what is in effect
 }
 
@@ -45,7 +46,7 @@ type networksResponse struct {
 const lanID = config.DefaultNetworkID
 
 // The fields of the configuration the default network owns (the file's own names).
-var networkFields = []string{"lan_ip", "lan_subnet", "lan_interfaces", "lan_isolated", "dhcp_enabled", "dhcp_range_start", "dhcp_range_end", "dhcp_lease_time"}
+var networkFields = []string{"lan_ip", "lan_subnet", "lan_interfaces", "lan_isolated", "lan_mdns", "dhcp_enabled", "dhcp_range_start", "dhcp_range_end", "dhcp_lease_time"}
 
 func toDHCP(d *config.DHCPConfig) *DHCP {
 	if d == nil {
@@ -89,7 +90,7 @@ func networkView(active, draft config.NetworkConfig, id string) (Network, bool) 
 	n := Network{ID: id, Default: id == lanID}
 	if n.Default {
 		n.Name, n.VLAN, n.IP, n.Netmask = "LAN", 1, draft.LanIP, draft.LanSubnet
-		n.DHCP, n.Internet, n.Isolated = toDHCP(draft.DHCP), true, draft.LanIsolated
+		n.DHCP, n.Internet, n.Isolated, n.MDNS = toDHCP(draft.DHCP), true, draft.LanIsolated, draft.LanMDNS
 		n.Pending = changedIn(active, draft, networkFields...)
 	} else {
 		d, ok := draft.FindNetwork(id)
@@ -97,7 +98,7 @@ func networkView(active, draft config.NetworkConfig, id string) (Network, bool) 
 			return Network{}, false
 		}
 		n.Name, n.VLAN, n.IP, n.Netmask = d.Name, d.VLAN, d.IP, d.Netmask
-		n.DHCP, n.Internet, n.Isolated = toDHCP(d.DHCP), d.Internet, d.Isolated
+		n.DHCP, n.Internet, n.Isolated, n.MDNS = toDHCP(d.DHCP), d.Internet, d.Isolated, d.MDNS
 		a, had := active.FindNetwork(id)
 		n.Pending = !had || !a.Equal(d)
 	}
@@ -169,6 +170,7 @@ type networkRequest struct {
 	DHCP     *DHCP   `json:"dhcp"`
 	Internet *bool   `json:"internet"`
 	Isolated *bool   `json:"isolated"`
+	MDNS     *bool   `json:"mdns"`
 }
 
 // answer turns the result of staging into the response: field errors, a failure, or the network.
@@ -259,6 +261,7 @@ func (a *API) postNetwork(w http.ResponseWriter, r *http.Request) {
 			DHCP:     fromDHCP(req.DHCP),
 			Internet: req.Internet != nil && *req.Internet,
 			Isolated: req.Isolated == nil || *req.Isolated, // isolated unless told otherwise
+			MDNS:     req.MDNS != nil && *req.MDNS,
 		}
 		if req.Name != nil {
 			n.Name = strings.TrimSpace(*req.Name)
@@ -306,6 +309,9 @@ func (a *API) putNetwork(w http.ResponseWriter, r *http.Request, id string) {
 			if req.Isolated != nil {
 				n.Isolated = *req.Isolated
 			}
+			if req.MDNS != nil {
+				n.MDNS = *req.MDNS
+			}
 			v := c.Validate()
 			return withReservations(errorsForNetwork(v, i), v)
 		}
@@ -338,6 +344,9 @@ func (a *API) editDefault(c *config.NetworkConfig, req networkRequest) error {
 	}
 	if req.Isolated != nil {
 		c.LanIsolated = *req.Isolated
+	}
+	if req.MDNS != nil {
+		c.LanMDNS = *req.MDNS
 	}
 
 	// Only this network's own fields are checked here; the rest of the configuration (the WAN, say)

@@ -125,7 +125,7 @@ letter, and refuses a name the system already uses (an account or a group). The 
 
 ## Still to do
 
-- `peakroute.local` (mDNS) and a captive-portal style redirect, so the address need not be typed.
+- `peakroute.local` (mDNS: done for networks that switch mDNS on, Local Networks; the setup network does not yet) and a captive-portal style redirect, so the address need not be typed.
 - Wired ports plugged in after the daemon started (a USB network adapter) are not joined to the setup network until it restarts.
 - Choosing the update channel and an automatic update window (when Updates exist).
 - The image (no installer, no console wizard: it is flashed and the first thing seen is this page): the `sudo` package, root's password

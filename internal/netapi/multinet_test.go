@@ -594,3 +594,41 @@ func TestAWifiAdapterThatIsAlreadyAPortStaysListedAndCanBeMovedOff(t *testing.T)
 		}
 	}
 }
+
+func TestMDNSIsOffForANewNetworkAndSetPerNetwork(t *testing.T) {
+	e := standard(t)
+	if rec := e.create(newGuest); rec.Code != http.StatusCreated {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	for _, n := range e.networks() {
+		if n.MDNS {
+			t.Errorf("%s shares mDNS before anyone asked", n.ID)
+		}
+	}
+	// on for the guest network and the default one
+	if rec := e.net(http.MethodPut, "net2", `{"ip":"10.20.0.1","netmask":"255.255.255.0","mdns":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if rec := e.net(http.MethodPut, "lan", `{"ip":"192.168.1.1","netmask":"255.255.255.0","mdns":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	d := e.draft()
+	if !d.LanMDNS || !d.Networks[0].MDNS {
+		t.Fatalf("%+v", d)
+	}
+	for _, n := range e.networks() {
+		if !n.MDNS || !n.Pending {
+			t.Errorf("%s: %+v", n.ID, n)
+		}
+	}
+	// a request that says nothing about mDNS (the DHCP page sends none) leaves it as it is
+	if rec := e.net(http.MethodPut, "net2", `{"ip":"10.20.0.1","netmask":"255.255.255.0","isolated":false}`); rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if !e.draft().Networks[0].MDNS {
+		t.Error("a request without mdns switched it off")
+	}
+	if rec := e.net(http.MethodPut, "net2", `{"ip":"10.20.0.1","netmask":"255.255.255.0","mdns":false}`); rec.Code != http.StatusOK || e.draft().Networks[0].MDNS {
+		t.Errorf("%d %s", rec.Code, rec.Body)
+	}
+}

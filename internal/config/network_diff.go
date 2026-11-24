@@ -70,6 +70,7 @@ var networkSettings = []networkSetting{
 		}
 		return "not isolated"
 	}},
+	{"lan_mdns", "Default network mDNS", func(c NetworkConfig) string { return onOff(c.LanMDNS, "shared (mDNS on)", "off") }},
 	{"dhcp_enabled", "DHCP server", func(c NetworkConfig) string {
 		return dhcpValue(c, func(d *DHCPConfig) string {
 			if d.Enabled {
@@ -209,6 +210,9 @@ func networkText(n Network) string {
 	}
 	t := fmt.Sprintf("VLAN %d, router %s / %s, %s, %s, %s", n.VLAN, text(n.IP), text(n.Netmask), dhcp,
 		onOff(n.Internet, "internet allowed", "no internet"), onOff(n.Isolated, "isolated from other networks", "can reach other networks"))
+	if n.MDNS {
+		t += ", mDNS shared"
+	}
 	if len(n.DNSServers) > 0 {
 		t += ", DNS " + strings.Join(n.DNSServers, ", ")
 	}
