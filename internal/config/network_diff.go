@@ -71,6 +71,7 @@ var networkSettings = []networkSetting{
 		return "not isolated"
 	}},
 	{"lan_mdns", "Default network mDNS", func(c NetworkConfig) string { return onOff(c.LanMDNS, "shared (mDNS on)", "off") }},
+	{"lan_ntp", "Default network time server", func(c NetworkConfig) string { return onOff(c.LanNTP, "serves the time", "off") }},
 	{"dhcp_enabled", "DHCP server", func(c NetworkConfig) string {
 		return dhcpValue(c, func(d *DHCPConfig) string {
 			if d.Enabled {
@@ -212,6 +213,9 @@ func networkText(n Network) string {
 		onOff(n.Internet, "internet allowed", "no internet"), onOff(n.Isolated, "isolated from other networks", "can reach other networks"))
 	if n.MDNS {
 		t += ", mDNS shared"
+	}
+	if n.NTP {
+		t += ", serves the time"
 	}
 	if len(n.DNSServers) > 0 {
 		t += ", DNS " + strings.Join(n.DNSServers, ", ")

@@ -107,10 +107,13 @@ func carriedBy(cfg config.NetworkConfig, id string) bool {
 
 // networkNotes tells the person about networks that cannot work yet, shown with the plan.
 func networkNotes(cfg config.NetworkConfig) []string {
-	if !cfg.Bridged() {
-		return nil
-	}
 	var notes []string
+	if cfg.NTPDisabled && len(cfg.NTPAddrs()) > 0 {
+		notes = append(notes, "A network serves the time, but this router's own clock follows no time server (Settings, Time): devices that ask are told the clock is not set.")
+	}
+	if !cfg.Bridged() {
+		return notes
+	}
 	if !carriedBy(cfg, config.DefaultNetworkID) {
 		notes = append(notes, "No LAN port carries the default network, so nothing can reach this router's web interface from it.")
 	}
@@ -176,17 +179,20 @@ func renderDnsmasqDHCPNetworks(cfg config.NetworkConfig, lan string) string {
 	for _, n := range cfg.Networks {
 		fmt.Fprintf(&b, "interface=%s\n", networkIface(n))
 	}
-	scope := func(tag, routerIP, mask string, servers []string, d *config.DHCPConfig) {
+	scope := func(tag, routerIP, mask string, servers []string, d *config.DHCPConfig, ntp bool) {
 		if d == nil || !d.Enabled {
 			return
 		}
 		fmt.Fprintf(&b, "dhcp-range=set:%s,%s,%s,%s,%s\n", tag, d.RangeStart, d.RangeEnd, mask, d.LeaseTime)
 		fmt.Fprintf(&b, "dhcp-option=tag:%s,option:router,%s\n", tag, routerIP)
 		fmt.Fprintf(&b, "dhcp-option=tag:%s,option:dns-server,%s\n", tag, dnsServerOption(servers, routerIP))
+		if ntp {
+			fmt.Fprintf(&b, "dhcp-option=tag:%s,option:ntp-server,%s\n", tag, routerIP)
+		}
 	}
-	scope(config.DefaultNetworkID, cfg.LanIP, cfg.LanSubnet, cfg.LanDNSServers, cfg.DHCP)
+	scope(config.DefaultNetworkID, cfg.LanIP, cfg.LanSubnet, cfg.LanDNSServers, cfg.DHCP, cfg.LanNTP)
 	for _, n := range cfg.Networks {
-		scope(n.ID, n.IP, n.Netmask, n.DNSServers, n.DHCP)
+		scope(n.ID, n.IP, n.Netmask, n.DNSServers, n.DHCP, n.NTP)
 	}
 	writeReservations(&b, cfg)
 	return b.String()
@@ -212,6 +218,9 @@ func nftablesNetworkRules(cfg config.NetworkConfig, lan string) (input, forward 
 		fmt.Fprintf(&in, "        iifname \"%s\" icmp type echo-request accept\n", iface)
 		if n.MDNS {
 			fmt.Fprintf(&in, "        iifname \"%s\" udp dport 5353 accept\n", iface)
+		}
+		if n.NTP {
+			fmt.Fprintf(&in, "        iifname \"%s\" udp dport 123 accept\n", iface)
 		}
 		if n.Internet {
 			fmt.Fprintf(&fw, "        iifname \"%s\" oifname \"%s\" accept\n", iface, cfg.WanDevice())

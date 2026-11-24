@@ -2,7 +2,11 @@ package network
 
 import (
 	"context"
+	"net"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -13,6 +17,46 @@ type TimeStatus struct {
 	NTPEnabled   bool   // the time service is switched on
 	Synchronized bool   // the clock has been set from a time server
 	Server       string // the server the clock follows, as the time service names it ("" when none)
+	ServerIP     net.IP // its address (nil when unknown)
+	Stratum      int    // that server's stratum (0 when unknown)
+}
+
+// HasHardwareClock reports whether the machine has a real-time clock: the chip that keeps the time while the power is off. Whether
+// a battery keeps it going cannot be asked of the hardware; without the chip there is certainly nothing to keep it. root is "" or
+// "/" on a real machine.
+func HasHardwareClock(root string) bool {
+	entries, err := os.ReadDir(filepath.Join(root, "/sys/class/rtc"))
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "rtc") {
+			return true
+		}
+	}
+	return false
+}
+
+// ParseTimesyncStatus reads `timedatectl timesync-status`: the server ("Server: 162.159.200.1 (time.cloudflare.com)" gives the
+// whole text, its address) and the stratum.
+func ParseTimesyncStatus(out string) (server string, ip net.IP, stratum int) {
+	for _, line := range strings.Split(out, "\n") {
+		k, v, ok := strings.Cut(strings.TrimSpace(line), ":")
+		if !ok {
+			continue
+		}
+		v = strings.TrimSpace(v)
+		switch k {
+		case "Server":
+			server = v
+			if f := strings.Fields(v); len(f) > 0 {
+				ip = net.ParseIP(f[0])
+			}
+		case "Stratum":
+			stratum, _ = strconv.Atoi(v)
+		}
+	}
+	return server, ip, stratum
 }
 
 // ParseTimedatectlShow reads the output of `timedatectl show` (key=value lines).
@@ -56,7 +100,7 @@ func ReadTimeStatus(ctx context.Context) (TimeStatus, bool) {
 	st := ParseTimedatectlShow(string(out))
 	if st.Synchronized {
 		if sync, err := exec.CommandContext(ctx, "timedatectl", "timesync-status").Output(); err == nil {
-			st.Server = ParseTimesyncServer(string(sync))
+			st.Server, st.ServerIP, st.Stratum = ParseTimesyncStatus(string(sync))
 		}
 	}
 	return st, true

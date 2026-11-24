@@ -1076,6 +1076,24 @@ firewall rule, plan (only `reload nftables, restart mdns`), the API, and that av
 ours; run in a user namespace, where it stops at creating its runtime directory). **Not checked: reflection between real devices** (needs
 root on a box with two networks; the image has to be rebuilt to get the package), nor `.local` lookups through the router.
 
+**Time server and the clock warning (2026-11-23).** (1) A fourth switch on each network, **Serve the time (NTP)** (`Network.NTP` / `lan_ntp`,
+off and unwritten by default). Chosen design: a small SNTP responder inside the daemon (`internal/timeserver`, run with `whileRouter`, so
+an access point never has it), **not** chrony: replacing `systemd-timesyncd` on a live router for a feature most people leave off was
+the riskier road, and this can be tested here with real packets. It listens on the router's address of each serving network (opened,
+dropped and reopened every 10 s as the committed configuration changes, so a networking restart under it heals), answers mode-3 questions
+of versions 1-4 only, with an answer the same size as the question, from the router's own clock: stratum = the followed server's + 1 (read
+from `timedatectl timesync-status`), reference id the upstream's address (IPv6: first four bytes of its MD5), and **leap 3, stratum 16
+(clients ignore it) while the router is not synchronised**. The firewall gets `iifname "<net>" udp dport 123 accept` for added networks
+(the default one has everything) and dnsmasq `option:ntp-server` (tagged per network when there are several). Root delay and dispersion
+are fixed 30 ms figures (not measured). Tests: the packet bytes, the not-set cases, only client questions, and a real listener on
+127.0.0.1 that opens and frees its port as the address list changes. **Not checked on real devices.** (2) **The default time server is now
+real:** `peakroute.conf` for timesyncd is always written (default `pool.ntp.org`); before, no file meant Debian's own list while the page
+said `pool.ntp.org`. Cost: every router's first commit after this version shows one "create ... peakroute.conf" and a restart of the time
+service. The access point build writes it the same way. (3) **No clock chip warning:** `network.HasHardwareClock` (a `rtcN` in
+`/sys/class/rtc`), reported in the settings as `time.no_hardware_clock`; the Time card warns when it is set and the servers are the defaults
+or the time is off. A battery cannot be asked about, so a machine with a chip is trusted to have one. Chrony would still be the way to
+serve hardware-grade time or to serve over IPv6; considered, not built.
+
 ## 7g. Wireless, and PeakRoute on access points (started 2026-10-08)
 
 **Direction (from the maintainer):** PeakRoute should also run on **access points**, with the same codebase.

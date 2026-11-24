@@ -168,6 +168,7 @@ func TestApplyOnAnEmptySystemWritesChecksThenRestartsInOrder(t *testing.T) {
 		staleBridgesCommand.String(), // bridges the new file no longer names are removed
 		"systemctl reload nftables",
 		"systemctl restart dnsmasq",
+		serviceCommands[SvcNTP].String(), // the time servers file is always written
 	}
 	if got := run.log(); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("commands =\n  %s\nwant\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))

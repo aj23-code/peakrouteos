@@ -122,7 +122,7 @@ Effort: S = under an hour, M = one session, L = multi-session.
 
 ## Longer-term gaps (needs design decisions first)
 
-IPv6 (NAT and ICMPv6 input rules), time sync (NTP), an update mechanism for the OS and daemon, a watchdog, a recovery path (SSH or console tool), Secure Boot and BIOS boot, and the missing UI pages above.
+IPv6 (NAT and ICMPv6 input rules), a watchdog, a recovery path (SSH or console tool), Secure Boot and BIOS boot, and the missing UI pages above.
 
 ## Open decisions
 

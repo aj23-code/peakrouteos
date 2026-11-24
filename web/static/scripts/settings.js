@@ -127,12 +127,30 @@ window.SettingsModule = (function () {
         return 'The clock has not been set from a time server yet. That takes a minute or so after the internet connection comes up.';
     }
 
+    // A device with no real-time clock chip starts every time with a wrong clock: it needs time servers it can reach, and no one
+    // can say whether a battery is behind the chip when there is one, so only the missing chip is reported.
+    function clockWarningShown() {
+        const t = settings.time;
+        return !!(t && t.no_hardware_clock && (!ntpNow() || serversNow().trim() === ''));
+    }
+
+    function clockWarningText() {
+        return `This ${thisDevice()} has no battery-backed clock: after every restart or power cut its clock is wrong until it reaches a time server. ` +
+            'Fill in time servers it can reach (your internet provider\u2019s, or one you run) and keep the time service on, so the firewall log, certificates and DHCP leases stay right.';
+    }
+
+    function updateClockWarning() {
+        const w = $('settings-clock-warning');
+        if (w) w.classList.toggle('hidden', !clockWarningShown());
+    }
+
     function timeCard() {
         const on = ntpNow();
         return `<section class="card" id="settings-time">
             <div class="net-card-head"><h2>Time</h2>${draftTag(settings.time_pending)}</div>
             ${settings.time ? `<p class="settings-clock"><span class="form-hint">The ${thisDevice()}&rsquo;s clock</span> <strong id="settings-clock"></strong></p>` : ''}
             <p class="form-hint" id="settings-time-status">${escapeHtml(timeStatusText())}</p>
+            <div class="form-message${clockWarningShown() ? '' : ' hidden'}" id="settings-clock-warning" role="status">${escapeHtml(clockWarningText())}</div>
             <div class="form-grid"><div class="form-field"><label for="settings-tz">Time zone</label>
                 <select id="settings-tz" class="role-select"${locked() ? ' disabled' : ''}>${zoneOptions()}</select>
                 <p class="field-error hidden" id="settings-tz-error"></p></div></div>
@@ -451,6 +469,7 @@ window.SettingsModule = (function () {
             else if (id === 'settings-ntp') {
                 typed.ntp = e.target.checked;
                 $('settings-servers-grid').classList.toggle('hidden', !typed.ntp);
+                updateClockWarning();
                 updateButton('time');
             }
         });
@@ -464,6 +483,7 @@ window.SettingsModule = (function () {
             }
             if (e.target.id === 'settings-servers') {
                 typed.servers = e.target.value;
+                updateClockWarning();
                 clearErrors('settings-servers-error');
                 updateButton('time');
                 return;

@@ -36,6 +36,8 @@ type Network struct {
 	// MDNS shares this network's mDNS (Bonjour) announcements and questions with the other networks that have it on, and lets the
 	// router answer to its own name here. Off is the default and is not written to the file.
 	MDNS bool `json:"mdns,omitempty"`
+	// NTP makes the router answer time questions on this network and tell DHCP clients to ask it. Router only; off is not written.
+	NTP bool `json:"ntp,omitempty"`
 	// DNSServers are what the network's devices are told to use for DNS instead of this router (empty: the router)
 	DNSServers []string `json:"dns_servers,omitempty"`
 }
@@ -63,6 +65,20 @@ func (p PortNetworks) IsDefault() bool { return p.NativeID() == DefaultNetworkID
 // network gets its own bridge and the firewall and DHCP files name every network.
 func (c NetworkConfig) Bridged() bool { return len(c.Networks) > 0 }
 
+// NTPAddrs are the router's addresses on the networks that have it serve the time (the default network's first).
+func (c NetworkConfig) NTPAddrs() []string {
+	var out []string
+	if c.LanNTP && c.LanIP != "" {
+		out = append(out, c.LanIP)
+	}
+	for _, n := range c.Networks {
+		if n.NTP && n.IP != "" {
+			out = append(out, n.IP)
+		}
+	}
+	return out
+}
+
 // FindNetwork returns an additional network by id.
 func (c NetworkConfig) FindNetwork(id string) (Network, bool) {
 	for _, n := range c.Networks {
@@ -81,7 +97,7 @@ var (
 // Equal reports whether two networks are configured identically.
 func (n Network) Equal(o Network) bool {
 	if n.ID != o.ID || n.Name != o.Name || n.VLAN != o.VLAN || n.IP != o.IP || n.Netmask != o.Netmask ||
-		n.Internet != o.Internet || n.Isolated != o.Isolated || n.MDNS != o.MDNS || strings.Join(n.DNSServers, ",") != strings.Join(o.DNSServers, ",") {
+		n.Internet != o.Internet || n.Isolated != o.Isolated || n.MDNS != o.MDNS || n.NTP != o.NTP || strings.Join(n.DNSServers, ",") != strings.Join(o.DNSServers, ",") {
 		return false
 	}
 	switch {

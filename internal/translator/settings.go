@@ -24,20 +24,16 @@ func ensureSafeSettings(cfg config.NetworkConfig) error {
 	return nil
 }
 
-// renderTimesyncd writes the time servers file for systemd-timesyncd, which exists only while they are not the defaults
-// (chosen servers, or the time switched off, which the action that applies the file recognises by its marker line).
-func renderTimesyncd(cfg config.NetworkConfig) (string, bool) {
-	if !cfg.NTPDisabled && len(cfg.NTPServers) == 0 {
-		return "", false
-	}
+// renderTimesyncd writes the time servers file for systemd-timesyncd. It always exists: the servers are written out even while they
+// are the defaults, so what the page shows is what the clock follows (without it timesyncd uses the distribution's own list, which is
+// not the one the page names). With the time switched off it holds a marker line that the action applying the file recognises.
+func renderTimesyncd(cfg config.NetworkConfig) string {
 	var b strings.Builder
 	b.WriteString("# Managed by PeakRoute OS. Do not edit: this file is rewritten on every commit.\n")
 	if cfg.NTPDisabled {
 		b.WriteString("# " + ntpOffMarker + ".\n")
 	}
 	b.WriteString("[Time]\n")
-	if len(cfg.NTPServers) > 0 {
-		b.WriteString("NTP=" + strings.Join(cfg.NTPServers, " ") + "\n")
-	}
-	return b.String(), true
+	b.WriteString("NTP=" + strings.Join(cfg.EffectiveNTPServers(), " ") + "\n")
+	return b.String()
 }

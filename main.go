@@ -22,6 +22,7 @@ import (
 	"peakroute/internal/network"
 	"peakroute/internal/ovpn"
 	"peakroute/internal/presence"
+	"peakroute/internal/timeserver"
 	"peakroute/internal/translator"
 	"peakroute/internal/wanhealth"
 	"peakroute/internal/wg"
@@ -100,6 +101,23 @@ func main() {
 		},
 	}
 	whileRouter(wanProbe.Run)
+
+	// answer time questions on the networks that serve the time (the router's own clock follows its time servers; this repeats it)
+	timeServer := &timeserver.Server{
+		Addrs: func() []string { return cfgMgr.NetworkConfig().NTPAddrs() },
+		Clock: func(ctx context.Context) timeserver.State {
+			st, ok := network.ReadTimeStatus(ctx)
+			if !ok || !st.Synchronized {
+				return timeserver.State{}
+			}
+			stratum := st.Stratum + 1 // one further from the source than the server the router follows
+			if st.Stratum == 0 {
+				stratum = 3 // synchronised, but the stratum could not be read
+			}
+			return timeserver.State{Synchronized: true, Stratum: stratum, Upstream: st.ServerIP, LastSync: time.Now()}
+		},
+	}
+	whileRouter(timeServer.Run)
 
 	// Keep the names of the Dynamic DNS page pointed at the internet connection's address
 	ddnsUpdater := &ddns.Updater{

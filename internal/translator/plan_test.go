@@ -55,10 +55,10 @@ func TestAnEmptySystemNeedsEverythingCreatedInOrder(t *testing.T) {
 			t.Errorf("%s: kind = %s, want create", f.Path, f.Kind)
 		}
 	}
-	if len(plan.Files) != 4 { // the upstream DNS file is "remove" and absent: nothing to do
-		t.Errorf("%d files to write, want 4: %+v", len(plan.Files), plan.Files)
+	if len(plan.Files) != 5 { // the upstream DNS file is "remove" and absent: nothing to do; the time servers file is always there
+		t.Errorf("%d files to write, want 5: %+v", len(plan.Files), plan.Files)
 	}
-	if got := actionSummary(plan); got != "apply sysctl, restart networking, reload nftables, restart dnsmasq" {
+	if got := actionSummary(plan); got != "apply sysctl, restart networking, reload nftables, restart dnsmasq, restart ntp" {
 		t.Errorf("actions = %q", got)
 	}
 }

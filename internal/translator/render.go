@@ -291,11 +291,7 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	if cfg.Timezone != "" {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathTimezone, Content: []byte(cfg.Timezone + "\n"), Mode: 0644, Service: SvcTimezone})
 	}
-	if content, ok := renderTimesyncd(cfg); ok {
-		d.Artifacts = append(d.Artifacts, Artifact{Path: PathTimesyncd, Content: []byte(content), Mode: 0644, Service: SvcNTP})
-	} else {
-		d.Artifacts = append(d.Artifacts, Artifact{Path: PathTimesyncd, Remove: true, Service: SvcNTP})
-	}
+	d.Artifacts = append(d.Artifacts, Artifact{Path: PathTimesyncd, Content: []byte(renderTimesyncd(cfg)), Mode: 0644, Service: SvcNTP})
 
 	return d, nil
 }
@@ -406,6 +402,9 @@ func renderDnsmasqDHCP(cfg config.NetworkConfig, lan string) string {
 	fmt.Fprintf(&b, "dhcp-range=%s,%s,%s,%s\n", d.RangeStart, d.RangeEnd, cfg.LanSubnet, d.LeaseTime)
 	fmt.Fprintf(&b, "dhcp-option=option:router,%s\n", cfg.LanIP)
 	fmt.Fprintf(&b, "dhcp-option=option:dns-server,%s\n", dnsServerOption(cfg.LanDNSServers, cfg.LanIP))
+	if cfg.LanNTP {
+		fmt.Fprintf(&b, "dhcp-option=option:ntp-server,%s\n", cfg.LanIP)
+	}
 	writeReservations(&b, cfg)
 	return b.String()
 }

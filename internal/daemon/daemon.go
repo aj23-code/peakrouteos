@@ -428,6 +428,7 @@ func Start(o Options) *Core {
 	mux.HandleFunc("/api/v1/settings/country", requireAuth(netAPI.HandleSettingsCountry))
 	mux.HandleFunc("/api/v1/settings/domain", requireAuth(netAPI.HandleSettingsDomain))
 	netAPI.TimeStatus = network.ReadTimeStatus
+	netAPI.HardwareClock = func() bool { return network.HasHardwareClock("") }
 	netAPI.LinkUp = func(iface string) bool {
 		i, err := net.InterfaceByName(iface)
 		return err == nil && i.Flags&net.FlagUp != 0

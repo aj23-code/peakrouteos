@@ -415,3 +415,19 @@ func TestTheSyslogTest(t *testing.T) {
 		t.Errorf("GET: %d", rec.Code)
 	}
 }
+
+func TestTheSettingsSayWhenTheMachineHasNoClockChip(t *testing.T) {
+	e := standard(t)
+	e.api.TimeStatus = func(context.Context) (network.TimeStatus, bool) { return network.TimeStatus{NTPEnabled: true}, true }
+	if s := e.settings(); s.Time == nil || s.Time.NoHardwareClock {
+		t.Fatalf("not asked about, yet %+v", s.Time)
+	}
+	e.api.HardwareClock = func() bool { return true }
+	if s := e.settings(); s.Time.NoHardwareClock {
+		t.Errorf("%+v", s.Time)
+	}
+	e.api.HardwareClock = func() bool { return false }
+	if s := e.settings(); !s.Time.NoHardwareClock {
+		t.Errorf("%+v", s.Time)
+	}
+}

@@ -41,6 +41,9 @@ type TimeInfo struct {
 	NTPEnabled   bool   `json:"ntp_enabled"`
 	Synchronized bool   `json:"synchronized"`
 	Server       string `json:"server"`
+	// NoHardwareClock: the machine has no real-time clock chip (a battery cannot be asked about), so after every restart its clock
+	// is wrong until it has reached a time server. Absent when the machine does not say.
+	NoHardwareClock bool `json:"no_hardware_clock"`
 }
 
 func (a *API) timeInfo() *TimeInfo {
@@ -51,7 +54,9 @@ func (a *API) timeInfo() *TimeInfo {
 	if !ok {
 		return nil
 	}
-	return &TimeInfo{Now: time.Now().UnixMilli(), Timezone: st.Timezone, NTPEnabled: st.NTPEnabled, Synchronized: st.Synchronized, Server: st.Server}
+	info := &TimeInfo{Now: time.Now().UnixMilli(), Timezone: st.Timezone, NTPEnabled: st.NTPEnabled, Synchronized: st.Synchronized, Server: st.Server}
+	info.NoHardwareClock = a.HardwareClock != nil && !a.HardwareClock()
+	return info
 }
 
 // SyslogView is the draft's syslog forwarding.

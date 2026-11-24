@@ -179,10 +179,6 @@ func renderAccessPoint(cfg config.NetworkConfig) (Desired, error) {
 	if cfg.Timezone != "" {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathTimezone, Content: []byte(cfg.Timezone + "\n"), Mode: 0644, Service: SvcTimezone})
 	}
-	if content, ok := renderTimesyncd(cfg); ok {
-		d.Artifacts = append(d.Artifacts, Artifact{Path: PathTimesyncd, Content: []byte(content), Mode: 0644, Service: SvcNTP})
-	} else {
-		d.Artifacts = append(d.Artifacts, Artifact{Path: PathTimesyncd, Remove: true, Service: SvcNTP})
-	}
+	d.Artifacts = append(d.Artifacts, Artifact{Path: PathTimesyncd, Content: []byte(renderTimesyncd(cfg)), Mode: 0644, Service: SvcNTP})
 	return d, nil
 }

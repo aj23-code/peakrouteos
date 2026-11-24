@@ -54,7 +54,19 @@ leases, certificates. This card sets the **time zone** and the **time servers**.
   it). Switching it off stops and disables the service; the clock then drifts.
 - **Time servers**: up to four names or IPv4 addresses (names in lower case; a loopback or unspecified address is refused),
   separated by commas. Empty uses the default, `pool.ntp.org` (the NTP pool project, which any client may use). The router's own
-  DNS resolves the names.
+  DNS resolves the names. The default is written into the time service's file like any other choice (from v1.0.2-beta; before, no
+  file meant the distribution's own list of servers, which was not the one named here).
+- **A machine with no real-time clock chip** (`/sys/class/rtc` is empty: the UniFi 6 Plus, many single-board computers) starts every
+  time with a clock that is wrong until it reaches a time server. When the page sees no chip and the servers are the defaults (or the
+  time is off) it says so and asks for servers the device can reach (the provider's, or one you run). A battery cannot be asked about:
+  a machine with a chip is taken to have one.
+- **Serving the time** (routers only; Local Networks, "Serve the time (NTP) to this network"): per network, off by default. The
+  daemon answers NTP questions (UDP 123) on the router's address of each such network (`internal/timeserver`), the firewall lets that
+  network's port 123 in, and DHCP tells the network's clients to ask the router (option 42, `ntp-server`). It answers as the simple
+  kind of server (RFC 5905 SNTP): stratum one more than the server the router follows, the router's own clock, and "clock not set"
+  (leap 3, stratum 16: clients ignore it) while the router has not synchronised. An answer is never longer than the question. A
+  review note says so when a network serves the time while the router's own time is switched off. It is not a hardware-grade
+  server: no leap-second handling beyond what the clock does, no authentication, and no rate limit (it is for your own networks).
 
 A commit that changes only the zone runs one command (`ln -sf`) and restarts nothing; one that changes the servers (or switches
 the time off or on) restarts only `systemd-timesyncd`, after the network and DNS changes of the same commit.
@@ -146,8 +158,8 @@ machine take it, which is the first action of a commit and does not restart anyt
 `/etc/hosts`, because dnsmasq would hand such entries to the whole network.)
 
 The time zone is the `timezone` service (`/etc/timezone` written, then a shell one-liner points `/etc/localtime` at the zone and fails when
-the zone file is missing); the time servers are `/etc/systemd/timesyncd.conf.d/peakroute.conf`, present only while they are not the
-defaults (chosen servers, or the time switched off, marked by a comment line the `ntp` service's command looks for), applied by the
+the zone file is missing); the time servers are `/etc/systemd/timesyncd.conf.d/peakroute.conf`, always written (the chosen servers or
+the default; with the time switched off also a comment line the `ntp` service's command looks for), applied by the
 `ntp` service (`enable` and `restart`, or `disable --now`). The zone list is `internal/config/timezones.go`, generated from the time
 zone database's `zone.tab`; a test checks every name against the database of the machine it runs on. The clock is read with
 `timedatectl show` and `timedatectl timesync-status`.
@@ -162,8 +174,8 @@ restarted for a change.
 
 Looked at, because other routers have them, and left out for now:
 
-- **Setting the time by hand** (with the time servers off) and **serving time to the networks** (an NTP server for the LAN, and
-  telling DHCP clients about it). The clock follows time servers or it does not.
+- **Setting the time by hand** (with the time servers off). The clock follows time servers or it does not. (Serving time to the
+  networks is built, above.)
 - **Encrypted syslog (TLS)**, syslog over the VPN, per-server choices of what to send, and **syslog from other sources** (the DNS
   query log, a per-rule choice of server).
 - **The web interface's own address, port and certificate**, and allowing the web interface from the internet: certificates will

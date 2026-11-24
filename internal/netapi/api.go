@@ -52,6 +52,8 @@ type API struct {
 	DNSAddr string
 	// TimeStatus reads how the router's clock stands (the time zone, whether it follows a time server). Nil means it is not reported.
 	TimeStatus func(ctx context.Context) (network.TimeStatus, bool)
+	// HardwareClock says whether the machine has a real-time clock chip. Nil means it is not reported (and not warned about).
+	HardwareClock func() bool
 	// SyslogStatuses says how sending to each syslog server in effect is going; SyslogTest sends a test message to each.
 	// Nil means syslog forwarding is not reported.
 	SyslogStatuses func() []syslogfwd.ServerStatus

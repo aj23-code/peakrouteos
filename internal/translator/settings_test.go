@@ -26,13 +26,15 @@ func TestTheTimeServersFile(t *testing.T) {
 	cases := []struct {
 		name string
 		set  func(*config.NetworkConfig)
-		want string // "" : the file is removed
+		want string
 	}{
-		{"defaults", func(c *config.NetworkConfig) {}, ""},
+		// the default is written out, not left to the distribution's own list
+		{"defaults", func(c *config.NetworkConfig) {},
+			"# Managed by PeakRoute OS. Do not edit: this file is rewritten on every commit.\n[Time]\nNTP=pool.ntp.org\n"},
 		{"chosen servers", func(c *config.NetworkConfig) { c.NTPServers = []string{"time.cloudflare.com", "192.168.1.5"} },
 			"# Managed by PeakRoute OS. Do not edit: this file is rewritten on every commit.\n[Time]\nNTP=time.cloudflare.com 192.168.1.5\n"},
 		{"off", func(c *config.NetworkConfig) { c.NTPDisabled = true },
-			"# Managed by PeakRoute OS. Do not edit: this file is rewritten on every commit.\n# NTP is switched off.\n[Time]\n"},
+			"# Managed by PeakRoute OS. Do not edit: this file is rewritten on every commit.\n# NTP is switched off.\n[Time]\nNTP=pool.ntp.org\n"},
 		{"off, servers kept", func(c *config.NetworkConfig) { c.NTPDisabled = true; c.NTPServers = []string{"a.example"} },
 			"# Managed by PeakRoute OS. Do not edit: this file is rewritten on every commit.\n# NTP is switched off.\n[Time]\nNTP=a.example\n"},
 	}
@@ -40,12 +42,6 @@ func TestTheTimeServersFile(t *testing.T) {
 		a, ok := file(t, wanCfg(tc.set), PathTimesyncd)
 		if !ok || a.Service != SvcNTP {
 			t.Fatalf("%s: %+v %v", tc.name, a, ok)
-		}
-		if tc.want == "" {
-			if !a.Remove {
-				t.Errorf("%s: not removed: %q", tc.name, a.Content)
-			}
-			continue
 		}
 		if a.Remove || string(a.Content) != tc.want || a.Mode != 0644 {
 			t.Errorf("%s: %q", tc.name, a.Content)
@@ -96,9 +92,9 @@ func TestTimeChangesRestartOnlyWhatTheyNeed(t *testing.T) {
 	if p := apply(func(c *config.NetworkConfig) { c.Timezone = "Europe/Berlin"; c.NTPServers = []string{"a.example"} }); actionSummary(p) != "restart ntp" {
 		t.Fatalf("%s", actionSummary(p))
 	}
-	// back to the defaults removes the file and still re-runs the action (the time may have been switched off before)
+	// back to the defaults rewrites the file with them, and re-runs the action
 	p := apply(func(c *config.NetworkConfig) { c.Timezone = "Europe/Berlin" })
-	if actionSummary(p) != "restart ntp" || len(p.Files) != 1 || p.Files[0].Kind != Remove {
+	if actionSummary(p) != "restart ntp" || len(p.Files) != 1 || p.Files[0].Kind != Update {
 		t.Fatalf("%+v", p)
 	}
 	if p := apply(func(c *config.NetworkConfig) { c.Timezone = "Europe/Berlin" }); !p.Empty() {
@@ -181,18 +177,20 @@ func TestTheTimeServersCommandStartsOrStopsTimesyncd(t *testing.T) {
 		return strings.TrimSpace(string(calls)), func() error { _ = out; return err }()
 	}
 	conf := filepath.Join(dir, "peakroute.conf")
-	// no file (the defaults): on, and restarted to pick the change up
+	// the defaults: on, and restarted to pick the change up
+	data := renderTimesyncd(wanCfg(func(c *config.NetworkConfig) {}))
+	os.WriteFile(conf, []byte(data), 0644)
 	if calls, err := run(""); err != nil || calls != "enable systemd-timesyncd\nrestart systemd-timesyncd" {
 		t.Fatalf("%q %v", calls, err)
 	}
 	// servers chosen
-	data, _ := renderTimesyncd(wanCfg(func(c *config.NetworkConfig) { c.NTPServers = []string{"a.example"} }))
+	data = renderTimesyncd(wanCfg(func(c *config.NetworkConfig) { c.NTPServers = []string{"a.example"} }))
 	os.WriteFile(conf, []byte(data), 0644)
 	if calls, err := run(""); err != nil || calls != "enable systemd-timesyncd\nrestart systemd-timesyncd" {
 		t.Fatalf("%q %v", calls, err)
 	}
 	// switched off
-	data, _ = renderTimesyncd(wanCfg(func(c *config.NetworkConfig) { c.NTPDisabled = true }))
+	data = renderTimesyncd(wanCfg(func(c *config.NetworkConfig) { c.NTPDisabled = true }))
 	os.WriteFile(conf, []byte(data), 0644)
 	if calls, err := run(""); err != nil || calls != "disable --now systemd-timesyncd" {
 		t.Fatalf("%q %v", calls, err)

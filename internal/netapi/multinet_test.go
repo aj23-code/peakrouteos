@@ -632,3 +632,32 @@ func TestMDNSIsOffForANewNetworkAndSetPerNetwork(t *testing.T) {
 		t.Errorf("%d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestServingTheTimeIsOffForANewNetworkAndSetPerNetwork(t *testing.T) {
+	e := standard(t)
+	if rec := e.create(newGuest); rec.Code != http.StatusCreated {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	for _, n := range e.networks() {
+		if n.NTP {
+			t.Errorf("%s serves the time before anyone asked", n.ID)
+		}
+	}
+	if rec := e.net(http.MethodPut, "net2", `{"ip":"10.20.0.1","netmask":"255.255.255.0","ntp":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if rec := e.net(http.MethodPut, "lan", `{"ip":"192.168.1.1","netmask":"255.255.255.0","ntp":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	d := e.draft()
+	if !d.LanNTP || !d.Networks[0].NTP || strings.Join(d.NTPAddrs(), ",") != "192.168.1.1,10.20.0.1" {
+		t.Fatalf("%+v", d)
+	}
+	// a request that says nothing about it (the DHCP page) leaves it, and mDNS is its own switch
+	if rec := e.net(http.MethodPut, "net2", `{"ip":"10.20.0.1","netmask":"255.255.255.0","mdns":true}`); rec.Code != http.StatusOK || !e.draft().Networks[0].NTP {
+		t.Errorf("%d %s", rec.Code, rec.Body)
+	}
+	if rec := e.net(http.MethodPut, "net2", `{"ip":"10.20.0.1","netmask":"255.255.255.0","ntp":false}`); rec.Code != http.StatusOK || e.draft().Networks[0].NTP {
+		t.Errorf("%d %s", rec.Code, rec.Body)
+	}
+}
