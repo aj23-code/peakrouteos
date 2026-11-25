@@ -179,6 +179,9 @@ func renderDnsmasqDHCPNetworks(cfg config.NetworkConfig, lan string) string {
 	for _, n := range cfg.Networks {
 		fmt.Fprintf(&b, "interface=%s\n", networkIface(n))
 	}
+	if cfg.FilterOn() {
+		b.WriteString("interface=lo\n") // AdGuard Home asks this server over the loopback
+	}
 	scope := func(tag, routerIP, mask string, servers []string, d *config.DHCPConfig, ntp bool) {
 		if d == nil || !d.Enabled {
 			return
@@ -221,6 +224,10 @@ func nftablesNetworkRules(cfg config.NetworkConfig, lan string) (input, forward 
 		}
 		if n.NTP {
 			fmt.Fprintf(&in, "        iifname \"%s\" udp dport 123 accept\n", iface)
+		}
+		if n.Filter { // the questions arrive here after the redirect
+			fmt.Fprintf(&in, "        iifname \"%s\" udp dport %d accept\n", iface, DNSFilterPort)
+			fmt.Fprintf(&in, "        iifname \"%s\" tcp dport %d accept\n", iface, DNSFilterPort)
 		}
 		if n.Internet {
 			fmt.Fprintf(&fw, "        iifname \"%s\" oifname \"%s\" accept\n", iface, cfg.WanDevice())

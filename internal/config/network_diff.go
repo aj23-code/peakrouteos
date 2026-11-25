@@ -72,6 +72,7 @@ var networkSettings = []networkSetting{
 	}},
 	{"lan_mdns", "Default network mDNS", func(c NetworkConfig) string { return onOff(c.LanMDNS, "shared (mDNS on)", "off") }},
 	{"lan_ntp", "Default network time server", func(c NetworkConfig) string { return onOff(c.LanNTP, "serves the time", "off") }},
+	{"lan_filter", "Default network DNS filtering", func(c NetworkConfig) string { return onOff(c.LanFilter, "ads and trackers filtered", "off") }},
 	{"dhcp_enabled", "DHCP server", func(c NetworkConfig) string {
 		return dhcpValue(c, func(d *DHCPConfig) string {
 			if d.Enabled {
@@ -216,6 +217,9 @@ func networkText(n Network) string {
 	}
 	if n.NTP {
 		t += ", serves the time"
+	}
+	if n.Filter {
+		t += ", ads and trackers filtered"
 	}
 	if len(n.DNSServers) > 0 {
 		t += ", DNS " + strings.Join(n.DNSServers, ", ")

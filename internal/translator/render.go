@@ -287,6 +287,13 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathAvahi, Remove: true, Service: SvcMDNS})
 	}
 
+	// DNS filtering (AdGuard Home runs while a file says so)
+	if content, ok := renderFilteringMarker(cfg, lan); ok {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathFiltering, Content: []byte(content), Mode: 0644, Service: SvcFiltering})
+	} else {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathFiltering, Remove: true, Service: SvcFiltering})
+	}
+
 	// The time zone, and the time servers (a file only while they are not the defaults)
 	if cfg.Timezone != "" {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathTimezone, Content: []byte(cfg.Timezone + "\n"), Mode: 0644, Service: SvcTimezone})
@@ -399,6 +406,9 @@ func renderDnsmasqDHCP(cfg config.NetworkConfig, lan string) string {
 	d := cfg.DHCP
 	var b strings.Builder
 	fmt.Fprintf(&b, "interface=%s\n", lan)
+	if cfg.FilterOn() {
+		b.WriteString("interface=lo\n") // AdGuard Home asks this server over the loopback
+	}
 	fmt.Fprintf(&b, "dhcp-range=%s,%s,%s,%s\n", d.RangeStart, d.RangeEnd, cfg.LanSubnet, d.LeaseTime)
 	fmt.Fprintf(&b, "dhcp-option=option:router,%s\n", cfg.LanIP)
 	fmt.Fprintf(&b, "dhcp-option=option:dns-server,%s\n", dnsServerOption(cfg.LanDNSServers, cfg.LanIP))
@@ -461,7 +471,7 @@ table ip nat {
         oifname "%[2]s" masquerade
     }
 }
-%[9]s`, lan, cfg.WanDevice(), inputExtra, forwardExtra, mssClamp(cfg), fwParts.input, fwParts.forward, fwParts.preroute, renderAccounting(cfg))
+%[9]s`, lan, cfg.WanDevice(), inputExtra, forwardExtra, mssClamp(cfg), fwParts.input, fwParts.forward, fwParts.preroute+nftablesFilterChain(cfg, lan), renderAccounting(cfg))
 }
 
 // UsageTable is the nftables table the per-device usage is counted in (the daemon reads its sets, network/usage.go).

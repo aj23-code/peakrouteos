@@ -1,0 +1,41 @@
+#!/bin/sh
+# Writes AdGuard Home's first configuration, once: after that the file is AdGuard Home's own (its lists, rules and settings are changed
+# in its web interface and live in it). What this decides, and docs/dns-filtering.md says why:
+#   - the web interface is on the loopback only and has no accounts: the router's own sign-in stands in front of it (internal/filtering)
+#   - DNS is on port 5335 on every address: the router's firewall sends the questions of the networks that filter there
+#   - what AdGuard Home does not block is asked of the router's DNS server (dnsmasq, 127.0.0.1:53), so local names, forwarded domains and
+#     the router's choice of upstream servers all still apply, and device names (reverse lookups) come from the DHCP leases
+#   - no rate limit per device (the default of 20 questions a second throws away part of a busy browser's questions)
+#   - a day of query log and statistics: the data partition is not for keeping a history (this can be raised in its interface)
+set -eu
+dir="${1:?the folder AdGuard Home keeps its files in}"
+conf="${dir}/AdGuardHome.yaml"
+[ -s "${conf}" ] && exit 0
+tmp="${conf}.new"
+cat > "${tmp}" << 'YAML'
+http:
+  address: 127.0.0.1:3001
+users: []
+dns:
+  bind_hosts:
+    - 0.0.0.0
+  port: 5335
+  ratelimit: 0
+  upstream_dns:
+    - 127.0.0.1:53
+  bootstrap_dns:
+    - 127.0.0.1:53
+  local_ptr_upstreams:
+    - 127.0.0.1:53
+  use_private_ptr_resolvers: true
+  enable_dnssec: false
+querylog:
+  enabled: true
+  file_enabled: true
+  interval: 24h
+statistics:
+  enabled: true
+  interval: 24h
+schema_version: 34
+YAML
+mv "${tmp}" "${conf}"

@@ -36,6 +36,7 @@ type Network struct {
 	Isolated    bool     `json:"isolated"`     // cannot talk to other networks, and they cannot talk to it
 	MDNS        bool     `json:"mdns"`         // shares mDNS (Bonjour) with the other networks that have it on
 	NTP         bool     `json:"ntp"`          // the router answers time questions here and tells DHCP clients to ask it
+	Filter      bool     `json:"filter"`       // DNS questions go through AdGuard Home (ads and trackers)
 	Pending     bool     `json:"pending"`      // the draft differs from what is in effect
 }
 
@@ -47,7 +48,7 @@ type networksResponse struct {
 const lanID = config.DefaultNetworkID
 
 // The fields of the configuration the default network owns (the file's own names).
-var networkFields = []string{"lan_ip", "lan_subnet", "lan_interfaces", "lan_isolated", "lan_mdns", "lan_ntp", "dhcp_enabled", "dhcp_range_start", "dhcp_range_end", "dhcp_lease_time"}
+var networkFields = []string{"lan_ip", "lan_subnet", "lan_interfaces", "lan_isolated", "lan_mdns", "lan_ntp", "lan_filter", "dhcp_enabled", "dhcp_range_start", "dhcp_range_end", "dhcp_lease_time"}
 
 func toDHCP(d *config.DHCPConfig) *DHCP {
 	if d == nil {
@@ -91,7 +92,7 @@ func networkView(active, draft config.NetworkConfig, id string) (Network, bool) 
 	n := Network{ID: id, Default: id == lanID}
 	if n.Default {
 		n.Name, n.VLAN, n.IP, n.Netmask = "LAN", 1, draft.LanIP, draft.LanSubnet
-		n.DHCP, n.Internet, n.Isolated, n.MDNS, n.NTP = toDHCP(draft.DHCP), true, draft.LanIsolated, draft.LanMDNS, draft.LanNTP
+		n.DHCP, n.Internet, n.Isolated, n.MDNS, n.NTP, n.Filter = toDHCP(draft.DHCP), true, draft.LanIsolated, draft.LanMDNS, draft.LanNTP, draft.LanFilter
 		n.Pending = changedIn(active, draft, networkFields...)
 	} else {
 		d, ok := draft.FindNetwork(id)
@@ -99,7 +100,7 @@ func networkView(active, draft config.NetworkConfig, id string) (Network, bool) 
 			return Network{}, false
 		}
 		n.Name, n.VLAN, n.IP, n.Netmask = d.Name, d.VLAN, d.IP, d.Netmask
-		n.DHCP, n.Internet, n.Isolated, n.MDNS, n.NTP = toDHCP(d.DHCP), d.Internet, d.Isolated, d.MDNS, d.NTP
+		n.DHCP, n.Internet, n.Isolated, n.MDNS, n.NTP, n.Filter = toDHCP(d.DHCP), d.Internet, d.Isolated, d.MDNS, d.NTP, d.Filter
 		a, had := active.FindNetwork(id)
 		n.Pending = !had || !a.Equal(d)
 	}
@@ -173,6 +174,7 @@ type networkRequest struct {
 	Isolated *bool   `json:"isolated"`
 	MDNS     *bool   `json:"mdns"`
 	NTP      *bool   `json:"ntp"`
+	Filter   *bool   `json:"filter"`
 }
 
 // answer turns the result of staging into the response: field errors, a failure, or the network.
@@ -265,6 +267,7 @@ func (a *API) postNetwork(w http.ResponseWriter, r *http.Request) {
 			Isolated: req.Isolated == nil || *req.Isolated, // isolated unless told otherwise
 			MDNS:     req.MDNS != nil && *req.MDNS,
 			NTP:      req.NTP != nil && *req.NTP,
+			Filter:   req.Filter != nil && *req.Filter,
 		}
 		if req.Name != nil {
 			n.Name = strings.TrimSpace(*req.Name)
@@ -318,6 +321,9 @@ func (a *API) putNetwork(w http.ResponseWriter, r *http.Request, id string) {
 			if req.NTP != nil {
 				n.NTP = *req.NTP
 			}
+			if req.Filter != nil {
+				n.Filter = *req.Filter
+			}
 			v := c.Validate()
 			return withReservations(errorsForNetwork(v, i), v)
 		}
@@ -357,12 +363,15 @@ func (a *API) editDefault(c *config.NetworkConfig, req networkRequest) error {
 	if req.NTP != nil {
 		c.LanNTP = *req.NTP
 	}
+	if req.Filter != nil {
+		c.LanFilter = *req.Filter
+	}
 
 	// Only this network's own fields are checked here; the rest of the configuration (the WAN, say)
 	// is checked when the draft is committed. A disabled DHCP server needs no range, so only the
 	// fields that apply are reported. A new address that overlaps another network is reported too.
 	v := c.Validate()
-	return withReservations(ownedErrorsOrNil(v, "lan_ip", "lan_subnet", "dhcp_range_start", "dhcp_range_end", "dhcp_lease_time", "networks"), v)
+	return withReservations(ownedErrorsOrNil(v, "lan_ip", "lan_subnet", "dhcp_range_start", "dhcp_range_end", "dhcp_lease_time", "lan_dns_servers", "networks"), v)
 }
 
 func (a *API) deleteNetwork(w http.ResponseWriter, id string) {

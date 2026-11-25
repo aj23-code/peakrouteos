@@ -1,0 +1,39 @@
+[Unit]
+Description=AdGuard Home (DNS filtering for the networks that ask for it)
+# the router's own DNS server answers what AdGuard Home does not block, so it is up first
+After=network.target dnsmasq.service
+# the daemon writes this file while any network filters, and takes it away when none does (docs/dns-filtering.md)
+ConditionPathExists=/etc/adguardhome/peakroute-enabled
+
+[Service]
+Type=simple
+# no account of its own: it keeps what it learns (settings, lists, statistics) in /var/lib/adguardhome, which the data partition keeps
+DynamicUser=yes
+StateDirectory=adguardhome
+ExecStartPre=/usr/lib/peakroute/adguard-seed /var/lib/adguardhome
+ExecStart=/usr/lib/peakroute/AdGuardHome --no-check-update --no-permcheck -c /var/lib/adguardhome/AdGuardHome.yaml -w /var/lib/adguardhome
+Restart=always
+RestartSec=3
+
+# it answers questions from the networks: let it do that and nothing else
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

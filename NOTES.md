@@ -1104,6 +1104,22 @@ service. The access point build writes it the same way. (3) **No clock chip warn
 or the time is off. A battery cannot be asked about, so a machine with a chip is trusted to have one. Chrony would still be the way to
 serve hardware-grade time or to serve over IPv6; considered, not built.
 
+**DNS filtering with AdGuard Home (2026-11-24; design and the checks in `docs/dns-filtering.md`).** A sixth switch per network (`Network.Filter`
+/ `lan_filter`, off and unwritten by default); a network that filters cannot also have `dns_servers` (validation, on that field). How: nat
+`prerouting` redirect of port 53 to `:5335` on each filtering interface (a chain `dns_filter` of its own, so the port-forward chain is
+untouched), AdGuard Home on `0.0.0.0:5335` with dnsmasq on `127.0.0.1:53` as its upstream (`interface=lo` added to dnsmasq's file only while
+filtering). So overrides, local names, forwarded domains and upstream choice still apply, devices keep their own address, and hard-coded
+`8.8.8.8:53` is caught too. Input rules let only filtering networks reach 5335. The web interface is on `127.0.0.1:3001` with **no accounts**
+(verified: AdGuard Home turns authentication off when `users` is empty) and is offered by the daemon on `:3000` over HTTPS behind the router's
+session (`internal/filtering`: write accounts only, an `Origin` of the same page for changes, the session cookie not forwarded), only while a
+network filters (`RunWhile`), reachable from the default network only. The service is `peakroute-adguard.service` (DynamicUser, sandboxed;
+condition on `/etc/adguardhome/peakroute-enabled`, the file the translator writes; action `filtering`, verb apply, so a commit never restarts
+it); `adguard-seed` writes the first `AdGuardHome.yaml` only when none exists. **The build downloads the newest stable release each time**
+(checksum from the release's own `checksums.txt`; `ADGUARD_VERSION=` pins one). Checked with the real v1.0.0 binary in user space (seed accepted,
+a rule blocks, the rest passes to the upstream, no rate limit) and the ruleset in a real kernel's nftables. **Not checked:** the redirect with
+real devices, the unit's sandbox on the image, the build script (needs root; its checksum line was run against the real checksums file).
+Decision: Pi-hole not offered (PHP stack and its own dnsmasq fork do not fit the image).
+
 ## 7g. Wireless, and PeakRoute on access points (started 2026-10-08)
 
 **Direction (from the maintainer):** PeakRoute should also run on **access points**, with the same codebase.

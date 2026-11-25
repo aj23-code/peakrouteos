@@ -186,7 +186,7 @@ echo "[3/5] Configuring the root file system..."
 # (image/overlay), copied over what Debian made, owned by root.
 cp -a --no-preserve=ownership "${OVERLAY_DIR}/." "${ROOTFS_DIR}/"
 chown -R root:root "${ROOTFS_DIR}/etc" "${ROOTFS_DIR}/usr/lib/peakroute"
-chmod 755 "${ROOTFS_DIR}/usr/lib/peakroute/growdata" "${ROOTFS_DIR}/usr/lib/peakroute/trialwatch" \
+chmod 755 "${ROOTFS_DIR}/usr/lib/peakroute/growdata" "${ROOTFS_DIR}/usr/lib/peakroute/trialwatch" "${ROOTFS_DIR}/usr/lib/peakroute/adguard-seed" \
     "${ROOTFS_DIR}/etc/initramfs-tools/hooks/peakroute-state" "${ROOTFS_DIR}/etc/initramfs-tools/scripts/local-bottom/peakroute-state"
 # what earlier builds put in a root file system that is being reused
 rm -f "${ROOTFS_DIR}/usr/lib/peakroute/growroot" "${ROOTFS_DIR}/etc/systemd/system/peakroute-growroot.service" \
@@ -210,6 +210,28 @@ install -D -m 755 "${PROJECT_DIR}/internal/scripts/hostapd-run.sh" "${ROOTFS_DIR
 
 # the daemon (not under /usr/local: that is laid over from the data partition, where a copy could shadow the system's)
 install -D -m 755 "${GO_BINARY_PATH}" "${ROOTFS_DIR}/usr/lib/peakroute/peakroute"
+
+# AdGuard Home (DNS filtering, docs/dns-filtering.md): the newest stable release at the time of the build, so every image carries the
+# current one (ADGUARD_VERSION=v1.0.0, say, builds with that one instead). It is checked against the checksums published beside it, which
+# catches a damaged or swapped download, not a release that GitHub itself serves wrongly. It stays off until a network filters.
+if [ -n "${ADGUARD_VERSION:-}" ]; then
+    AGH_URL="https://github.com/AdguardTeam/AdGuardHome/releases/download/${ADGUARD_VERSION}"
+else
+    AGH_URL="https://github.com/AdguardTeam/AdGuardHome/releases/latest/download"
+fi
+AGH_DIR="${BUILD_DIR}/adguardhome"
+rm -rf "${AGH_DIR}"
+mkdir -p "${AGH_DIR}"
+wget -q -O "${AGH_DIR}/AdGuardHome_linux_amd64.tar.gz" "${AGH_URL}/AdGuardHome_linux_amd64.tar.gz"
+wget -q -O "${AGH_DIR}/checksums.txt" "${AGH_URL}/checksums.txt"
+(cd "${AGH_DIR}" && grep -F " ./AdGuardHome_linux_amd64.tar.gz" checksums.txt | sed 's| \./| |' | sha256sum -c --quiet -) \
+    || { echo "Error: the AdGuard Home download does not match its published checksum"; exit 1; }
+tar -xzf "${AGH_DIR}/AdGuardHome_linux_amd64.tar.gz" -C "${AGH_DIR}"
+install -D -m 755 "${AGH_DIR}/AdGuardHome/AdGuardHome" "${ROOTFS_DIR}/usr/lib/peakroute/AdGuardHome"
+install -D -m 644 "${AGH_DIR}/AdGuardHome/LICENSE.txt" "${ROOTFS_DIR}/usr/share/doc/peakroute/AdGuardHome.LICENSE.txt"
+AGH_VERSION="$("${ROOTFS_DIR}/usr/lib/peakroute/AdGuardHome" --version 2>/dev/null | sed 's/.*version //' || true)"
+echo "PEAKROUTE_ADGUARDHOME=${AGH_VERSION:-unknown}" >> "${ROOTFS_DIR}/usr/lib/peakroute/release"
+echo "      AdGuard Home ${AGH_VERSION:-(version unknown)}"
 
 # Bind-mount pseudo-filesystems for the chroot
 mount --bind /proc "${ROOTFS_DIR}/proc"

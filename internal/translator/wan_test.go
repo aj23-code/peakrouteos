@@ -202,7 +202,7 @@ func TestThePPPoEFileOnlyExistsForPPPoE(t *testing.T) {
 			order = append(order, a.Service)
 		}
 	}
-	if got := strings.Join(order, ","); got != "sysctl,networking,routes,regdomain,nftables,dnsmasq,mdns,ntp" {
+	if got := strings.Join(order, ","); got != "sysctl,networking,routes,regdomain,nftables,dnsmasq,mdns,filtering,ntp" {
 		t.Errorf("%s", got)
 	}
 }

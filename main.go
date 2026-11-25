@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"log"
 	"net/http"
 	"net/netip"
@@ -17,6 +18,7 @@ import (
 	"peakroute/internal/config"
 	"peakroute/internal/daemon"
 	"peakroute/internal/ddns"
+	"peakroute/internal/filtering"
 	"peakroute/internal/fwlog"
 	"peakroute/internal/netapi"
 	"peakroute/internal/network"
@@ -118,6 +120,14 @@ func main() {
 		},
 	}
 	whileRouter(timeServer.Run)
+
+	// AdGuard Home's own web interface (loopback only, no accounts of its own) is offered behind the router's sign-in, while a network filters
+	filterProxy := &filtering.Server{
+		Proxy: &filtering.Proxy{Sessions: c.Sessions, MainPort: c.Port},
+		TLS:   &tls.Config{GetCertificate: c.Certs.GetCertificate, MinVersion: tls.VersionTLS12},
+	}
+	go daemon.RunWhile(pollerCtx, routerWorkEvery, func() bool { return isRouter() && cfgMgr.NetworkConfig().FilterOn() }, filterProxy.Run)
+	netAPI.FilteringStatus = func(ctx context.Context) filtering.Status { return filtering.ReadStatus(ctx, filtering.Binary, "") }
 
 	// Keep the names of the Dynamic DNS page pointed at the internet connection's address
 	ddnsUpdater := &ddns.Updater{
@@ -265,6 +275,7 @@ func main() {
 	mux.HandleFunc("/api/v1/firewall/forwards/{id}", requireAuth(routerOnly(netAPI.HandleFirewallForward)))
 	netAPI.DDNSStatuses = ddnsUpdater.Statuses
 	netAPI.DDNSUpdate = ddnsUpdater.UpdateNow
+	mux.HandleFunc("/api/v1/filtering", requireAuth(routerOnly(netAPI.HandleFiltering)))
 	mux.HandleFunc("/api/v1/ddns", requireAuth(routerOnly(netAPI.HandleDDNS)))
 	mux.HandleFunc("/api/v1/ddns/{id}", requireAuth(routerOnly(netAPI.HandleDDNSEntry)))
 	mux.HandleFunc("/api/v1/ddns/{id}/update", requireAuth(routerOnly(netAPI.HandleDDNSUpdate)))

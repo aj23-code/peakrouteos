@@ -168,6 +168,7 @@ window.OverviewCards = (function () {
         if (n.isolated) tags.push('<span class="tag">Isolated</span>');
         if (n.mdns) tags.push('<span class="tag">mDNS</span>');
         if (n.ntp) tags.push('<span class="tag">Time server</span>');
+        if (n.filter) tags.push('<span class="tag">Ad filtering</span>');
         if (n.pending) tags.push('<span class="tag tag-draft">Draft</span>');
 
         let dhcp = '';

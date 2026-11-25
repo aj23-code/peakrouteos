@@ -261,6 +261,11 @@ function loadView(viewName, fromHistory) {
                 activeViewCleanup = window.DDNSModule.init();
             }
             break;
+        case 'filtering':
+            if (window.FilteringModule) {
+                activeViewCleanup = window.FilteringModule.init();
+            }
+            break;
         case 'ap-home':
             if (window.APHomeModule) {
                 activeViewCleanup = window.APHomeModule.init();

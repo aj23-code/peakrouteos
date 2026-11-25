@@ -20,6 +20,7 @@ import (
 	"peakroute/internal/config"
 	"peakroute/internal/ddns"
 	"peakroute/internal/diag"
+	"peakroute/internal/filtering"
 	"peakroute/internal/network"
 	"peakroute/internal/ovpn"
 	"peakroute/internal/syslogfwd"
@@ -52,6 +53,8 @@ type API struct {
 	DNSAddr string
 	// TimeStatus reads how the router's clock stands (the time zone, whether it follows a time server). Nil means it is not reported.
 	TimeStatus func(ctx context.Context) (network.TimeStatus, bool)
+	// FilteringStatus reports whether AdGuard Home is installed and answering. Nil means it is not reported.
+	FilteringStatus func(ctx context.Context) filtering.Status
 	// HardwareClock says whether the machine has a real-time clock chip. Nil means it is not reported (and not warned about).
 	HardwareClock func() bool
 	// SyslogStatuses says how sending to each syslog server in effect is going; SyslogTest sends a test message to each.

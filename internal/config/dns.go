@@ -158,8 +158,16 @@ func (c NetworkConfig) validateDNS(add func(field, format string, args ...any)) 
 		add("domain", "must be a domain name in lower case, such as lan or home.example.com (not local, localhost, invalid, test or example)")
 	}
 	validateServers(c.LanDNSServers, "lan_dns_servers", add)
+	// devices told to use other servers would go around the filter, so a network does one or the other
+	const clash = "a network that filters ads and trackers uses this router's DNS: remove these servers, or turn the filtering off"
+	if c.LanFilter && len(c.LanDNSServers) > 0 {
+		add("lan_dns_servers", clash)
+	}
 	for i, n := range c.Networks {
 		validateServers(n.DNSServers, fmt.Sprintf("networks[%d].dns_servers", i), add)
+		if n.Filter && len(n.DNSServers) > 0 {
+			add(fmt.Sprintf("networks[%d].dns_servers", i), clash)
+		}
 	}
 
 	if c.DNS == nil {
