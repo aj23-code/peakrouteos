@@ -93,6 +93,17 @@ func (c NetworkConfig) NetworkDNSServers(id string) []string {
 	return nil
 }
 
+// NetworkFilters reports whether a network sends its DNS through AdGuard Home.
+func (c NetworkConfig) NetworkFilters(id string) bool {
+	if id == DefaultNetworkID {
+		return c.LanFilter
+	}
+	if n, ok := c.FindNetwork(id); ok {
+		return n.Filter
+	}
+	return false
+}
+
 // ValidDNSName reports whether s is a host or domain name: dot separated labels of lower-case letters, digits and
 // hyphens (none starting or ending with one), each up to 63 characters, at most 253 in all. Names are kept in lower case.
 func ValidDNSName(s string) bool {

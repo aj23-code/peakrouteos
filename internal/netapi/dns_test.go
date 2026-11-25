@@ -490,3 +490,41 @@ func TestTheServersGoToTheNetworkThatWasAsked(t *testing.T) {
 		t.Fatalf("%+v", d.Networks)
 	}
 }
+
+func TestTheDNSPageChoosesRouterFilteredOrOtherServersPerNetwork(t *testing.T) {
+	e := fwEnv(t) // LAN and Guest (net2)
+	mode := func(id string) string { return e.network(t, id).Mode }
+	if mode("lan") != "router" || mode("net2") != "router" {
+		t.Fatalf("%s %s", mode("lan"), mode("net2"))
+	}
+	// the router with AdGuard Home in front
+	if rec := e.putDNSNetwork("net2", `{"servers":[],"filter":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if n := e.network(t, "net2"); n.Mode != "filter" || len(n.Servers) != 0 || !n.Pending {
+		t.Fatalf("%+v", n)
+	}
+	if !e.draft().Networks[0].Filter {
+		t.Error("the switch is not in the draft")
+	}
+	if mode("lan") != "router" {
+		t.Error("another network changed")
+	}
+	// servers of its own and the filter do not go together
+	if rec := e.putDNSNetwork("net2", `{"servers":["1.1.1.1"],"filter":true}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("both at once: %d %s", rec.Code, rec.Body)
+	}
+	// the other servers instead, which switches the filter off
+	if rec := e.putDNSNetwork("net2", `{"servers":["1.1.1.1"],"filter":false}`); rec.Code != http.StatusOK || mode("net2") != "custom" || e.draft().Networks[0].Filter {
+		t.Errorf("%d %s %s", rec.Code, rec.Body, mode("net2"))
+	}
+	// a request that says nothing about filtering leaves it alone
+	e.putDNSNetwork("net2", `{"servers":[],"filter":true}`)
+	if rec := e.putDNSNetwork("net2", `{"servers":[]}`); rec.Code != http.StatusOK || mode("net2") != "filter" {
+		t.Errorf("%d %s", rec.Code, mode("net2"))
+	}
+	// the default network too
+	if rec := e.putDNSNetwork("lan", `{"servers":[],"filter":true}`); rec.Code != http.StatusOK || mode("lan") != "filter" || !e.draft().LanFilter {
+		t.Errorf("%d %s", rec.Code, rec.Body)
+	}
+}

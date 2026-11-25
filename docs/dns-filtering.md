@@ -5,14 +5,15 @@ query log and statistics. It runs on the router itself. Routers only: an access 
 
 ## What a person sees
 
-- **Local Networks**: each network's card has *Block ads and trackers (DNS filtering)*, off by default. It is a draft like every other
-  change: AdGuard Home starts when the first network that filters is committed, and stops when the last one stops.
-- **Services, DNS filtering**: whether AdGuard Home is running, which networks filter, and *Open AdGuard Home*, which opens its own
-  interface (lists, rules, allow-lists, query log) in a new tab on port 3000. That interface has no accounts of its own: the router's sign-in
-  stands in front of it, and a read-only account can look but not change anything. Changes made there apply at once and are not part of
-  the draft; AdGuard Home keeps them in its own file.
-- A network that filters **cannot also be told to use other DNS servers** (DNS page): that would send its devices around the filter. The
-  commit is refused with a message on that field; remove the servers or turn the filtering off.
+- **DNS page, Local DNS**: each network's "Devices are told to use" has a third choice beside *This router* and *Other servers*:
+  **This router, blocking ads and trackers (AdGuard Home)**. It is a draft like every other change: AdGuard Home starts when the first
+  network that filters is committed, and stops when the last one stops. The three choices exclude each other, which is the rule that a
+  network that filters cannot also be told to use other DNS servers (the commit is refused otherwise, on that field).
+- **DNS page, Ad and tracker blocking** (a card at the top, shown once the image has AdGuard Home or a network uses it): whether
+  AdGuard Home is running, and *Open AdGuard Home*, which opens its own interface (lists, rules, allow-lists, query log) in a new tab on port
+  3000. That interface has no accounts of its own: the router's sign-in stands in front of it, and a read-only account can look but not change
+  anything. Changes made there apply at once and are not part of the draft; AdGuard Home keeps them in its own file.
+- The option is also in the API of Local Networks (`filter` on a network), which the pages do not use.
 
 ## How it works
 

@@ -1119,6 +1119,12 @@ it); `adguard-seed` writes the first `AdGuardHome.yaml` only when none exists. *
 a rule blocks, the rest passes to the upstream, no rate limit) and the ruleset in a real kernel's nftables. **Not checked:** the redirect with
 real devices, the unit's sandbox on the image, the build script (needs root; its checksum line was run against the real checksums file).
 Decision: Pi-hole not offered (PHP stack and its own dnsmasq fork do not fit the image).
+**First real run (v1.2.0-beta on the router) failed:** the unit's `RestrictAddressFamilies` had no `AF_NETLINK`, and AdGuard Home lists the
+machine's addresses over netlink ("route ip+net: netlinkrib: address family not supported by protocol"), so it died at every start. A user-space
+test cannot see a systemd sandbox; fixed in v1.2.1-beta with a test that pins the families (`image/adguard_unit_test.go`). **The choice moved
+to the DNS page** (the same day): a third mode, "This router, blocking ads and trackers", in each network's "Devices are told to use", and the
+AdGuard Home card (state, Open button) at the top of that page; the separate page and the Local Networks checkbox are gone. One control
+instead of two, and it makes "filter or other servers, not both" a choice, not an error. `PUT /dns/networks/{id}` takes `{"servers", "filter"}`.
 
 ## 7g. Wireless, and PeakRoute on access points (started 2026-10-08)
 

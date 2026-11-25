@@ -11,6 +11,7 @@ window.DNSModule = (function () {
     let confirmDelete = null;    // 'host:h1' / 'forward:f1'
     let busy = false;
     let wired = false;
+    let filt = null;             // GET /api/v1/filtering: AdGuard Home's state (null: not known)
 
     const $ = (id) => document.getElementById(id);
     const editable = () => !data || data.editable !== false;
@@ -112,6 +113,7 @@ window.DNSModule = (function () {
                 <div class="form-field"><label for="dns-net-mode-${id}">Devices are told to use</label>
                     <select id="dns-net-mode-${id}" class="role-select" data-net="${id}" data-field="mode"${lock ? ' disabled' : ''}>
                         <option value="router"${f.mode === 'router' ? ' selected' : ''}>This router (${escapeHtml(n.router)})</option>
+                        ${filt && (filt.installed || f.mode === 'filter') ? `<option value="filter"${f.mode === 'filter' ? ' selected' : ''}>This router, blocking ads and trackers (AdGuard Home)</option>` : ''}
                         <option value="custom"${f.mode === 'custom' ? ' selected' : ''}>Other servers</option></select></div>
                 <div class="form-field${f.mode === 'custom' ? '' : ' hidden'}" data-servers="${id}"><label for="dns-net-servers-${id}">Servers</label>
                     <input type="text" id="dns-net-servers-${id}" data-net="${id}" data-field="servers" value="${escapeHtml(f.servers)}" placeholder="192.168.1.5, 192.168.1.6" autocomplete="off" spellcheck="false" inputmode="decimal"${lock ? ' disabled' : ''}${f.errors.servers ? ' aria-invalid="true"' : ''}>
@@ -130,7 +132,7 @@ window.DNSModule = (function () {
     function networksHtml() {
         return `<section class="card">
             <div class="net-card-head"><h2>Local DNS</h2></div>
-            <p class="form-hint">When a device gets its address (DHCP) it is also told which DNS server to use. <strong>This router</strong> gives it the router&rsquo;s local names, device names and forwarding; <strong>other servers</strong> sends it to a server you run, such as a Pi-hole. Devices with a fixed address, or their own DNS settings, ignore it. A server on another network needs a firewall rule that lets this network reach it.</p>
+            <p class="form-hint">When a device gets its address (DHCP) it is also told which DNS server to use. <strong>This router</strong> gives it the router&rsquo;s local names, device names and forwarding; <strong>blocking ads and trackers</strong> does the same with AdGuard Home in front, which also catches devices that ask another DNS server by themselves; <strong>other servers</strong> sends it to a server you run. Devices with a fixed address, or their own DNS settings, ignore it. A server on another network needs a firewall rule that lets this network reach it.</p>
             ${data.networks.map(networkHtml).join('')}
         </section>`;
     }
@@ -211,9 +213,33 @@ window.DNSModule = (function () {
             ${editorFooter(editing.id ? 'Save to draft' : 'Add domain')}</section>`;
     }
 
+    // AdGuard Home: whether it is there and running, and the way into its own interface (lists, rules, the query log)
+    function filteringHtml() {
+        if (!filt || (!filt.installed && !filt.enabled)) return '';
+        const url = `https://${location.hostname}:${filt.ui_port || '3000'}/`;
+        const tag = !filt.installed ? '<span class="tag tag-warn">Not in this system image</span>'
+            : !filt.enabled ? '<span class="tag">Off</span>'
+            : filt.running ? '<span class="tag tag-ok">Running</span>' : '<span class="tag tag-warn">Not answering</span>';
+        let note;
+        if (!filt.installed) note = 'This system image does not include AdGuard Home. Update to a version that does (Updates).';
+        else if (filt.pending) note = 'There are changes in the draft. AdGuard Home starts, or stops, when you commit them.';
+        else if (filt.enabled && !filt.running) note = 'AdGuard Home is not answering. Devices on the filtered networks cannot look up names until it does; it restarts by itself within seconds, and if it keeps failing, look at System logs (peakroute-adguard).';
+        else if (!filt.enabled) note = 'No network blocks ads and trackers yet: choose it for a network under Local DNS below.';
+        else note = 'It filters the networks set to block ads and trackers below. Anything it does not block is answered by this router as usual.';
+        const version = filt.running && filt.version ? ` &middot; ${escapeHtml(filt.version)}${filt.protection_enabled === false ? ' &middot; protection is paused in its interface' : ''}` : '';
+        return `<section class="card" id="dns-filtering">
+            <div class="net-card-head"><h2>Ad and tracker blocking</h2>${tag}</div>
+            <p class="form-hint">AdGuard Home runs on this router${version}. ${escapeHtml(note)}</p>
+            <p>${filt.running
+                ? `<a class="cfg-btn cfg-btn--primary" href="${escapeHtml(url)}" target="_blank" rel="noopener">Open AdGuard Home</a>`
+                : '<button type="button" class="cfg-btn cfg-btn--primary" disabled>Open AdGuard Home</button>'}</p>
+            <p class="form-hint">Its own interface opens in a new tab on port ${escapeHtml(filt.ui_port || '3000')}, signed in with this router&rsquo;s account, from the default network only: there you choose the block lists, add rules and allow-lists, and see which device asked for what. Changes there apply at once and are not part of the draft. It blocks by name only: apps with their own encrypted DNS (DNS over HTTPS) are not filtered. It keeps a day of query log and statistics; you can lengthen that in its settings.</p>
+        </section>`;
+    }
+
     function render() {
         if (!data) return;
-        $('dns-body').innerHTML = upstreamHtml() + networksHtml() + hostsHtml() + forwardsHtml() +
+        $('dns-body').innerHTML = filteringHtml() + upstreamHtml() + networksHtml() + hostsHtml() + forwardsHtml() +
             (!editable() ? '<p class="form-hint">A change is being applied or waits for confirmation: DNS cannot be edited right now.</p>' : '');
     }
 
@@ -223,6 +249,8 @@ window.DNSModule = (function () {
         const res = await apiFetch('/api/v1/dns');
         if (!res || !res.ok) { showMessage('Could not load the DNS settings.', 'error'); return; }
         adopt(await res.json());
+        const f = await apiFetch('/api/v1/filtering');
+        filt = f && f.ok ? await f.json() : null;
         render();
     }
 
@@ -250,7 +278,7 @@ window.DNSModule = (function () {
         f.errors = {}; f.message = null;
         busy = true; render();
         const res = await apiFetch('/api/v1/dns/networks/' + encodeURIComponent(id), { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ servers: f.mode === 'custom' ? split(f.servers) : [] }) });
+            body: JSON.stringify({ servers: f.mode === 'custom' ? split(f.servers) : [], filter: f.mode === 'filter' }) });
         busy = false;
         if (!res || !res.ok) {
             const e = await errorOf(res, 'Saving failed.');

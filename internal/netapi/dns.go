@@ -27,7 +27,7 @@ type DNSNetwork struct {
 	ID      string   `json:"id"`
 	Name    string   `json:"name"`
 	Default bool     `json:"default"`
-	Mode    string   `json:"mode"`    // "router" or "custom"
+	Mode    string   `json:"mode"`    // "router", "filter" (the router, through AdGuard Home) or "custom"
 	Servers []string `json:"servers"` // the servers it is told to use when custom
 	Router  string   `json:"router"`  // the router's address on the network, what it is told otherwise
 	DHCP    bool     `json:"dhcp"`    // the router runs its DHCP server: without it nothing is told anything
@@ -119,9 +119,12 @@ func dnsNetworks(active, draft config.NetworkConfig) []DNSNetwork {
 		if len(servers) > 0 {
 			mode = "custom"
 		}
+		if draft.NetworkFilters(id) {
+			mode = "filter"
+		}
 		out = append(out, DNSNetwork{ID: id, Name: name, Default: def, Mode: mode, Servers: servers, Router: router,
 			DHCP: dhcp != nil && dhcp.Enabled, Notes: networkNotes(draft, id, servers, dhcp != nil && dhcp.Enabled, internet),
-			Pending: !sameStrings(active.NetworkDNSServers(id), draft.NetworkDNSServers(id))})
+			Pending: !sameStrings(active.NetworkDNSServers(id), draft.NetworkDNSServers(id)) || active.NetworkFilters(id) != draft.NetworkFilters(id)})
 		if out[len(out)-1].Notes == nil {
 			out[len(out)-1].Notes = []string{}
 		}
@@ -176,6 +179,7 @@ func (a *API) HandleDNS(w http.ResponseWriter, r *http.Request) {
 
 type serversRequest struct {
 	Servers []string `json:"servers"`
+	Filter  *bool    `json:"filter"` // through AdGuard Home (left out: as it is)
 }
 
 func cleanServers(in []string) []string {
@@ -229,8 +233,9 @@ func (a *API) HandleDNSUpstream(w http.ResponseWriter, r *http.Request) {
 	a.answerStaged(w, err, http.StatusOK, "These servers cannot be saved: ", a.dnsView())
 }
 
-// HandleDNSNetwork: PUT /api/v1/dns/networks/{id} {"servers": [...]} sets the servers a network is told to use instead of
-// the router; an empty list goes back to the router.
+// HandleDNSNetwork: PUT /api/v1/dns/networks/{id} {"servers": [...], "filter": bool} sets the servers a network is told to use instead of
+// the router (an empty list goes back to the router) and whether its questions go through AdGuard Home, which blocks ads and
+// trackers; a network that filters cannot have servers of its own.
 func (a *API) HandleDNSNetwork(w http.ResponseWriter, r *http.Request) {
 	if !allowMethods(w, r, http.MethodPut) {
 		return
@@ -255,10 +260,16 @@ func (a *API) HandleDNSNetwork(w http.ResponseWriter, r *http.Request) {
 		field := "lan_dns_servers"
 		if id == config.DefaultNetworkID {
 			c.LanDNSServers = servers
+			if req.Filter != nil {
+				c.LanFilter = *req.Filter
+			}
 		} else {
 			for i := range c.Networks {
 				if c.Networks[i].ID == id {
 					c.Networks[i].DNSServers = servers
+					if req.Filter != nil {
+						c.Networks[i].Filter = *req.Filter
+					}
 					field = fmt.Sprintf("networks[%d].dns_servers", i)
 				}
 			}
