@@ -529,6 +529,13 @@ func Start(o Options) *Core {
 	mux.HandleFunc("/api/v1/config/revert", requireAuth(configSvc.HandleRevert))
 	mux.HandleFunc("/api/v1/config/discard", requireAuth(configSvc.HandleDiscard))
 
+	// The watchdog's question to the web server (internal/daemon/watchdog.go): no sign-in, nothing read, nothing locked
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Write([]byte("ok\n"))
+	})
+
 	// Main application routing logic
 	mux.HandleFunc("/", c.handleRoot)
 	return c
@@ -551,6 +558,7 @@ func (c *Core) Serve() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
+	c.startWatchdog()
 	go func() {
 		fmt.Printf("[+] PeakRoute OS daemon active on https://0.0.0.0%s\n", c.Port)
 		if err := server.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {

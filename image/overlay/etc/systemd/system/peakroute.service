@@ -8,6 +8,10 @@ Type=simple
 ExecStart=/usr/lib/peakroute/peakroute
 Restart=always
 RestartSec=3
+# systemd restarts the daemon when it stops saying it is alive: the daemon says so every 30 s, but only while its own web server answers
+# (internal/daemon/watchdog.go). Generous, because the first start makes the certificate and reads everything.
+WatchdogSec=90
+NotifyAccess=main
 LimitNOFILE=65536
 
 # Limits on what the daemon (and what it starts) could be made to do if it were ever taken over. It stays root: it writes the system's

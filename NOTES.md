@@ -1119,6 +1119,13 @@ it); `adguard-seed` writes the first `AdGuardHome.yaml` only when none exists. *
 a rule blocks, the rest passes to the upstream, no rate limit) and the ruleset in a real kernel's nftables. **Not checked:** the redirect with
 real devices, the unit's sandbox on the image, the build script (needs root; its checksum line was run against the real checksums file).
 Decision: Pi-hole not offered (PHP stack and its own dnsmasq fork do not fit the image).
+**Watchdogs (2026-11-25, docs/image.md "Watchdogs and coming back by itself"):** `WatchdogSec=90` + `NotifyAccess=main` on `peakroute.service`; the
+daemon (`internal/daemon/watchdog.go`, both builds) feeds systemd every 30 s while `GET /healthz` on its own HTTPS port answers (the probe
+touches no lock, so a long commit is never taken for a hang; a 90 s grace at start). Router image also gets `RuntimeWatchdogSec=30s`
+(the U6+ board overlay already had it at the same path), `kernel.panic=10` and `panic_on_oops=1`, and a `Restart=on-failure` drop-in for
+dnsmasq. Verified against the real systemd (user instance): silence -> killed with `Result: watchdog`, `WATCHDOG=1` keeps it alive. x86
+hardware watchdog **not** verified (needs a driver for the machine's chip). A "safeguard" that would take the DNS redirect away when AdGuard
+Home hangs was considered and **declined** by the maintainer: systemd restarts a crash; revisit only if it proves flaky.
 **Remove a device from the Clients list (2026-11-24, `internal/forget`, docs/dhcp.md):** `DELETE /api/v1/clients/{mac}`, only for a device that
 is not online. Order: `dhcp_release iface ip mac` (interface from the lease's network label via the new `translator.InterfaceOfNetwork`), wait
 400 ms, and if the lease is still in the file: stop dnsmasq, `RemoveLease` (atomic, keeps the mode), start dnsmasq (started again even when the

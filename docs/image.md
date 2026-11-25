@@ -114,6 +114,31 @@ state is already on the data partition, so that is the natural line, but it chan
 and how the layers are seen, and it can only be tried properly by booting an image: do it with a test boot in the virtual machine above,
 and the same applies to anything that later runs from the data partition (plugins, a drop-in for the units).
 
+## Watchdogs and coming back by itself (2026-11-25)
+
+Four layers, each for a different way of dying:
+
+| What dies | What brings it back |
+|---|---|
+| a service (dnsmasq; the daemon; AdGuard Home) | systemd restarts it (`Restart=`; dnsmasq's drop-in `peakroute-restart.conf` is ours, Debian's unit has none) |
+| the daemon *alive but not answering* | **the service watchdog**: `WatchdogSec=90` in `peakroute.service`; the daemon sends `WATCHDOG=1` every 30 s, but only while a probe (`GET /healthz` on its own HTTPS port over the loopback, 5 s) is answered. Without it for 90 s systemd kills and restarts the daemon (`internal/daemon/watchdog.go`) |
+| systemd or the whole machine hung | **the hardware watchdog**: `RuntimeWatchdogSec=30s` (`system.conf.d/watchdog.conf`; the U6+ already had it) makes systemd feed `/dev/watchdog`; when the machine stops answering for 30 s the hardware restarts it |
+| the kernel panics, or oopses and half-lives | `kernel.panic = 10` and `kernel.panic_on_oops = 1` (`99-peakroute.conf`): it restarts after ten seconds |
+
+Details that matter:
+
+- The probe touches **only the web server**: no configuration lock, no command. A commit that takes a minute to apply is not a hang, and a
+  daemon restart at any moment is safe anyway: a commit waiting for confirmation is on disk and is resumed or reverted at the next start.
+- The first 90 seconds after the start feed the watchdog whatever the probe says (the first start makes the certificate and reads everything).
+- Without `NOTIFY_SOCKET`/`WATCHDOG_USEC` (a development run) nothing starts. `/healthz` answers `ok` to anyone and says nothing else.
+- The AP build has the same daemon, so the same service watchdog; its hardware watchdog is the SoC's (docs/u6plus.md).
+- A version on trial that keeps being restarted is still caught by `peakroute-trialwatch` (docs/updates.md).
+
+**Checked:** the probe against a real HTTPS server; the notify datagram against a real socket; and, with the real systemd (a user
+instance), that a service with `WatchdogSec` that sends nothing is killed with result `watchdog`, and one that sends `WATCHDOG=1` is
+not. **Not checked:** the hardware watchdog on the x86 router. Whether it works depends on the machine having a watchdog device and the
+kernel loading its driver; `ls /dev/watchdog*` on the router says (nothing is lost if there is none: systemd logs it once).
+
 ## The first start
 
 1. The boot loader starts the kernel with `rootwait` and both consoles.
