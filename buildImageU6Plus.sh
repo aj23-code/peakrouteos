@@ -169,6 +169,23 @@ mount --bind /dev/pts "${ROOTFS_DIR}/dev/pts"
 
 # the chroot's programs speak plain C (the build machine's language is not installed in it)
 export LC_ALL=C LANG=C
+
+# Security fixes. debootstrap installs only the plain "trixie" suite, which lacks what Debian published since its last point release
+# (kernel, openssl, ... come out of trixie-security first). So every build adds the security and updates suites and brings all packages
+# up to them: a release carries the fixes of the day it is built. The files we laid over the system are kept (--force-confold), and an
+# older kernel that the upgrade replaces is removed again.
+rm -f "${ROOTFS_DIR}/etc/apt/sources.list.d/debian.sources"
+cat > "${ROOTFS_DIR}/etc/apt/sources.list" << SOURCES
+deb http://deb.debian.org/debian trixie main non-free-firmware
+deb http://deb.debian.org/debian trixie-updates main non-free-firmware
+deb http://deb.debian.org/debian-security trixie-security main non-free-firmware
+SOURCES
+cp /etc/resolv.conf "${ROOTFS_DIR}/etc/resolv.conf"   # the download needs a name server (removed again below)
+chroot "${ROOTFS_DIR}" apt-get update -q
+chroot "${ROOTFS_DIR}" env DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y -q -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef
+chroot "${ROOTFS_DIR}" env DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y -q
+echo "      kernels in the image: $(ls "${ROOTFS_DIR}"/boot/vmlinuz-* | sed 's|.*/vmlinuz-||' | tr '\n' ' ')"
+
 chroot "${ROOTFS_DIR}" passwd -l root
 chroot "${ROOTFS_DIR}" systemctl enable peakroute.service peakroute-wifi.service peakroute-trialwatch.service nftables.service networking.service systemd-timesyncd.service
 chroot "${ROOTFS_DIR}" systemctl disable wpa_supplicant.service 2>/dev/null || true

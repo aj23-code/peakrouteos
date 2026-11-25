@@ -813,6 +813,16 @@ overwrite the running slot a.
 
 ## 7t. The disk image (built 2026-10-12; first real boot reached the welcome page)
 
+**Security fixes in every build (2026-11-24).** Both image scripts (`buildImage.sh`, `buildImageU6Plus.sh`) used to install only the plain `trixie`
+suite with debootstrap and never upgraded: a release lacked everything Debian had published to `trixie-security` since its last point
+release (kernel, openssl...), and no two builds were the same. After the bind mounts they now write `sources.list` with `trixie`,
+`trixie-updates` and `trixie-security`, run `apt-get update`, `dist-upgrade` (`--force-confold`, so the files laid over the system are
+kept) and `autoremove --purge` (the kernel the upgrade replaces), and print the kernels left in the image. **Not built or run here (needs
+root and the network):** the first release after this is its test. Watch for: a second kernel left in `/boot` (the router's boot loader
+uses the `/vmlinuz` links, the AP's script takes the newest), the AP's kernel growing past `MAX_FIT_BYTES`, and a package whose
+postinstall needs something the chroot lacks. Debian's own default of listing the suites in `debian.sources` is removed so they are not
+listed twice. The images are still not reproducible (they follow trixie as it is on the build day).
+
 Rules and how to use it: **`docs/image.md`**. `buildImage.sh` replaces `buildISO.sh`, `first_boot.sh` and the installer (all removed; the
 tests that compared the translator with `first_boot.sh`'s heredocs went with them, the scenarios stayed as ordinary render tests).
 Same packages as the ISO (the dependencies of everything the daemon uses stay covered) minus `live-boot` and `live-config`, plus what a
