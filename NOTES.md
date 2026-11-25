@@ -1123,7 +1123,8 @@ Decision: Pi-hole not offered (PHP stack and its own dnsmasq fork do not fit the
 is not online. Order: `dhcp_release iface ip mac` (interface from the lease's network label via the new `translator.InterfaceOfNetwork`), wait
 400 ms, and if the lease is still in the file: stop dnsmasq, `RemoveLease` (atomic, keeps the mode), start dnsmasq (started again even when the
 edit failed; nothing is forgotten if the lease stays); then `ip neigh flush to ip`, `presence.Tracker.Forget` and the nickname dropped. A -dev
-machine only drops the memory. Reservations are configuration and are not touched. Clients page: a new last column, Remove with a second click.
+machine only drops the memory. The device's reservation is taken out of the draft (`Service.Unreserve`, in `main.go`; the answer says `reservation_removed`, or a
+`reservation_note` when the draft is locked; the page refreshes the banner). Clients page: a new last column, Remove with a second click.
 Not run against a real `dhcp_release` (not installed here).
 **Nicknames reach AdGuard Home (2026-11-24):** `filtering.ClientSync` (run while a network filters) turns each nickname of `clientnames` into
 an AdGuard Home persistent client (`/control/clients/add|update|delete` on the loopback; ids: the device's addresses from `clientList` and its

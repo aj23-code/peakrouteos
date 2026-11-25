@@ -2,8 +2,9 @@
 // what the presence memory knows of it, and its nickname. A device that is here now cannot be removed (it would be back a moment later, with
 // its nickname gone for nothing); one that comes back after being removed is simply a new device with a new lease.
 //
-// A DHCP reservation is configuration, not a lease, so it is not touched: the DHCP page has it, and the device keeps its reserved address if
-// it returns.
+// A DHCP reservation is configuration, not a lease: removing the device takes it out of the draft (the person commits it like any change),
+// so that a device that is gone does not go on holding an address. If the draft cannot be changed just now, the device is removed all the
+// same and the answer says the reservation is still there.
 package forget
 
 import (
@@ -39,6 +40,8 @@ type Service struct {
 	// Real is false where nothing may be run or edited (a development machine): only the router's own memory of the device is dropped.
 	Real bool
 	// ForgetSeen drops the presence memory of the device; DropNickname takes its nickname away.
+	// Unreserve takes the device's DHCP reservation out of the draft; it says whether there was one.
+	Unreserve    func(mac string) (bool, error)
 	ForgetSeen   func(mac string)
 	DropNickname func(mac string) error
 	// Wait is how long the DHCP server gets to act on a release (400 ms when 0).
@@ -87,7 +90,15 @@ func (s *Service) HandleDevice(w http.ResponseWriter, r *http.Request) {
 		write(w, http.StatusInternalServerError, errorBody{err.Error()})
 		return
 	}
-	write(w, http.StatusOK, map[string]any{"removed": true, "mac": mac})
+	out := map[string]any{"removed": true, "mac": mac, "reservation_removed": false}
+	if s.Unreserve != nil {
+		removed, err := s.Unreserve(mac)
+		out["reservation_removed"] = removed
+		if err != nil {
+			out["reservation_note"] = "Its reserved address is still on the DHCP page: " + err.Error()
+		}
+	}
+	write(w, http.StatusOK, out)
 }
 
 func (s *Service) remove(ctx context.Context, dev network.ClientLease, mac string) error {

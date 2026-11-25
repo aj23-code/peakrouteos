@@ -137,7 +137,13 @@ window.DHCPModule = (function () {
             return;
         }
         const name = c ? (c.nickname || (c.hostname && c.hostname !== 'Unknown Device' ? c.hostname : '') || c.ip_address) : mac;
-        showMessage(`${name} was removed. If it comes back it is a new device, with no nickname.` + (c && c.reserved ? ' Its reserved address stays on the DHCP page.' : ''), 'ok');
+        let out = {};
+        try { out = await res.json(); } catch (e) { /* not JSON */ }
+        let text = `${name} was removed. If it comes back it is a new device, with no nickname.`;
+        if (out.reservation_removed) text += ' Its reserved address was taken out of the draft: review and commit it from the bar at the top.';
+        if (out.reservation_note) text += ' ' + out.reservation_note;
+        showMessage(text, 'ok');
+        if (out.reservation_removed && window.ConfigBanner) window.ConfigBanner.refresh();
         fetchAllLeases();
     }
 

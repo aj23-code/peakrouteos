@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"log"
 	"net/http"
 	"net/netip"
@@ -373,10 +374,34 @@ func main() {
 		Interface: func(l network.ClientLease) string {
 			return translator.InterfaceOfNetwork(cfgMgr.NetworkConfig(), l.Network)
 		},
-		Run:          runner.Run,
-		Leases:       func() []network.ClientLease { return network.ReadLeases(network.LeasePaths) },
-		LeaseFile:    leaseFile,
-		Real:         !c.Dev,
+		Run:       runner.Run,
+		Leases:    func() []network.ClientLease { return network.ReadLeases(network.LeasePaths) },
+		LeaseFile: leaseFile,
+		Real:      !c.Dev,
+		Unreserve: func(mac string) (bool, error) {
+			draft, _ := cfgMgr.StagedNetworkConfig()
+			has := false
+			for _, r := range draft.Reservations {
+				has = has || strings.EqualFold(r.MAC, mac)
+			}
+			if !has {
+				return false, nil
+			}
+			if netAPI.Editable != nil && !netAPI.Editable() {
+				return false, errors.New("a change is being applied or waits for confirmation, so remove it there once that is done")
+			}
+			err := cfgMgr.StageNetwork(func(c *config.NetworkConfig) error {
+				var keep []config.Reservation
+				for _, r := range c.Reservations {
+					if !strings.EqualFold(r.MAC, mac) {
+						keep = append(keep, r)
+					}
+				}
+				c.Reservations = keep
+				return nil
+			})
+			return err == nil, err
+		},
 		ForgetSeen:   presenceTracker.Forget,
 		DropNickname: func(mac string) error { return clientNames.Set(mac, "") },
 	}

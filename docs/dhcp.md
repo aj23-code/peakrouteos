@@ -44,7 +44,9 @@ from, at once, with no draft:
   this;
 - what the presence memory knows of it (when it was last seen, how it was connected), and its **nickname** (which also ends its named client in
   AdGuard Home);
-- not a DHCP reservation: that is configuration and stays on this page. A reserved device that comes back gets its reserved address.
+- its **DHCP reservation**, if it has one, is taken out of the *draft* (it is configuration: review and commit it from the bar at the top).
+  If the draft cannot be changed just then (a change is being applied), the device is removed anyway and the message says the reservation
+  is still on this page.
 
 A device that comes back later is a new one: a new lease, no nickname. `DELETE /api/v1/clients/{mac}`; 409 for a device that is here now,
 404 for one that is not in the list. Not checked on a real router: `dhcp_release` itself (it is not on the development machine), so the

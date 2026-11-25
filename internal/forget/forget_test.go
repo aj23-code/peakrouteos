@@ -183,3 +183,36 @@ func TestOnADevelopmentMachineNothingIsRunnedOrEdited(t *testing.T) {
 		t.Errorf("%v", f.runs)
 	}
 }
+
+func TestTheReservationOfARemovedDeviceIsTakenOutOfTheDraft(t *testing.T) {
+	f := newFixture(t)
+	f.releaseOK = true
+	var asked []string
+	f.svc.Unreserve = func(mac string) (bool, error) { asked = append(asked, mac); return true, nil }
+	rec := f.delete("aa:bb:cc:dd:ee:01")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"reservation_removed":true`) || len(asked) != 1 || asked[0] != "aa:bb:cc:dd:ee:01" {
+		t.Errorf("%d %s %v", rec.Code, rec.Body, asked)
+	}
+	// no reservation: nothing said about one
+	f2 := newFixture(t)
+	f2.releaseOK = true
+	f2.svc.Unreserve = func(string) (bool, error) { return false, nil }
+	if rec := f2.delete("aa:bb:cc:dd:ee:01"); !strings.Contains(rec.Body.String(), `"reservation_removed":false`) || strings.Contains(rec.Body.String(), "reservation_note") {
+		t.Errorf("%s", rec.Body)
+	}
+	// the draft cannot be changed now: the device is removed all the same, and the answer says the reservation is still there
+	f3 := newFixture(t)
+	f3.releaseOK = true
+	f3.svc.Unreserve = func(string) (bool, error) { return false, errors.New("changes are locked") }
+	rec = f3.delete("aa:bb:cc:dd:ee:01")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "still on the DHCP page: changes are locked") || len(f3.seen) != 1 {
+		t.Errorf("%d %s", rec.Code, rec.Body)
+	}
+	// a device that was refused (here now) keeps its reservation
+	f4 := newFixture(t)
+	f4.svc.Unreserve = func(string) (bool, error) {
+		t.Error("the reservation of a device that is here was removed")
+		return true, nil
+	}
+	f4.delete("aa:bb:cc:dd:ee:02")
+}
