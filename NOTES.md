@@ -1145,6 +1145,14 @@ to the DNS page** (the same day): a third mode, "This router, blocking ads and t
 AdGuard Home card (state, Open button) at the top of that page; the separate page and the Local Networks checkbox are gone. One control
 instead of two, and it makes "filter or other servers, not both" a choice, not an error. `PUT /dns/networks/{id}` takes `{"servers", "filter"}`.
 
+**IPv6 plan (2026-11-25; `docs/ipv6.md`, nothing built).** Facts found: IPv6 forwarding is already on in the image but the WAN cannot autoconfigure
+(`accept_ra` is ignored with forwarding on), the router's input chain has no ICMPv6 (only the AP's has), the `inet` firewall already applies
+forward rules to both families (so Internet/Isolate need no new switch), and NAT, port forwards, the DNS redirect and the rules page are IPv4
+only. Design: dhcpcd (trixie 10.1) on the WAN for RA + DHCPv6-PD with `ia_pd` handing a /64 per network; dnsmasq `constructor:` ranges for RA and
+stateless DHCPv6 (the prefix is dynamic, so it is never written to a file); a stable subnet id per network; per-network IPv6 switch; ICMPv6/
+DHCPv6/MSS rules; `ip6 nat` redirect so DNS filtering is not bypassed. Off by default, in three phases. Waiting on the maintainer's answers
+(ISP, default per network, inbound policy, phase 1 scope).
+
 ## 7g. Wireless, and PeakRoute on access points (started 2026-10-08)
 
 **Direction (from the maintainer):** PeakRoute should also run on **access points**, with the same codebase.

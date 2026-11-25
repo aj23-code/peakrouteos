@@ -122,7 +122,7 @@ Effort: S = under an hour, M = one session, L = multi-session.
 
 ## Longer-term gaps (needs design decisions first)
 
-IPv6 (NAT and ICMPv6 input rules), a watchdog, a recovery path (SSH or console tool), Secure Boot and BIOS boot, and the missing UI pages above.
+IPv6 (planned: docs/ipv6.md), a watchdog, a recovery path (SSH or console tool), Secure Boot and BIOS boot, and the missing UI pages above.
 
 ## Open decisions
 
