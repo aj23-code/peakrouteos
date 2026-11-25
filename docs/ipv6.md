@@ -95,11 +95,13 @@ names) and the VPNs are **phase 2 or 3**.
   particular provider does. The first real test is the maintainer's router, so phase 1 ships with IPv6 **off by default** and a clear
   way back.
 
-## 6. Questions for the maintainer (they change the design)
+## 6. Decisions (the maintainer's answers, 2026-11-25)
 
-1. **Your ISP and connection** (name, cable/fiber/DSL/PPPoE, and whether it advertises IPv6 or a prefix delegation). That decides
-   whether DHCPv6-PD is the path or something else is.
-2. **Default for a network when the WAN's IPv6 is switched on:** off until ticked per network (safest, my proposal), or on for every
-   network that already has internet access.
-3. **Inbound policy:** default deny with explicit *Allow incoming* rules in phase 2 (my proposal), or allow-by-network switches.
-4. **Phase 1 scope:** is "automatic only, no static/PPPoE until phase 2" acceptable for a first release?
+1. **ISP and connection:** *not known yet* (maybe IPv4 only or behind CGNAT). To find out before building: on the router, temporarily
+   `sudo sysctl -w net.ipv6.conf.<wan port>.accept_ra=2` (undone by a restart), wait half a minute and look at
+   `ip -6 addr show dev <wan port>` and `ip -6 route`: a global address (`2xxx:` or `3xxx:`) and a default route mean the ISP
+   advertises IPv6. A delegated prefix is a second question (DHCPv6-PD) that only the client can answer. **If the ISP offers nothing, phase 1
+   has nothing to test on the real router**; it could still be built and tested against a fake ISP in namespaces, but it would ship unproven.
+2. **Per network:** off until ticked, one IPv6 switch per network.
+3. **Phase 1:** automatic only. No fixed IPv6, no PPPoE IPv6, no inbound rules or pinholes: nothing is reachable from the internet
+   over IPv6 until phase 2.
