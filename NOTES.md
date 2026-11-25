@@ -1119,6 +1119,12 @@ it); `adguard-seed` writes the first `AdGuardHome.yaml` only when none exists. *
 a rule blocks, the rest passes to the upstream, no rate limit) and the ruleset in a real kernel's nftables. **Not checked:** the redirect with
 real devices, the unit's sandbox on the image, the build script (needs root; its checksum line was run against the real checksums file).
 Decision: Pi-hole not offered (PHP stack and its own dnsmasq fork do not fit the image).
+**Remove a device from the Clients list (2026-11-24, `internal/forget`, docs/dhcp.md):** `DELETE /api/v1/clients/{mac}`, only for a device that
+is not online. Order: `dhcp_release iface ip mac` (interface from the lease's network label via the new `translator.InterfaceOfNetwork`), wait
+400 ms, and if the lease is still in the file: stop dnsmasq, `RemoveLease` (atomic, keeps the mode), start dnsmasq (started again even when the
+edit failed; nothing is forgotten if the lease stays); then `ip neigh flush to ip`, `presence.Tracker.Forget` and the nickname dropped. A -dev
+machine only drops the memory. Reservations are configuration and are not touched. Clients page: a new last column, Remove with a second click.
+Not run against a real `dhcp_release` (not installed here).
 **Nicknames reach AdGuard Home (2026-11-24):** `filtering.ClientSync` (run while a network filters) turns each nickname of `clientnames` into
 an AdGuard Home persistent client (`/control/clients/add|update|delete` on the loopback; ids: the device's addresses from `clientList` and its
 MAC), every 30 s. Only the clients it made (names kept in `adguard_clients.json`) are updated (ids only: the rest of the client is sent back

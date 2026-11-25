@@ -4,6 +4,8 @@ window.DHCPModule = (function () {
     let pollInterval = null;
     let networkFilter = '';   // "" = every network
     let wired = false;
+    let forgetArmed = null;   // the device whose Remove was clicked once (a second click removes it)
+    let forgetTimer = null;
     let editingMac = null;    // the device whose nickname is being typed: the table is not redrawn under the cursor
     let lastLeases = [];      // what the table shows now, for the Reserve links
     let shownNetworks = '';   // the options in the filter now (rebuilt only when they change, or an open list would close every poll)
@@ -117,6 +119,28 @@ window.DHCPModule = (function () {
         fetchAllLeases();
     }
 
+    // The last cell: Remove, for a device that is gone. One that is here now would be back at once, so it has none. Two clicks, as elsewhere.
+    function removeCell(c) {
+        if (c.status === 'online') return '<td></td>';
+        const armed = forgetArmed === c.mac_address;
+        return `<td><a href="#" class="view-all-link" data-forget="${escapeHtml(c.mac_address)}" title="Take this device out of the list: its address, its entry in the ARP table and its nickname">${armed ? 'Click again to remove' : 'Remove'}</a></td>`;
+    }
+
+    async function forgetDevice(mac) {
+        showMessage('');
+        const c = lastLeases.find(x => x.mac_address === mac);
+        const res = await apiFetch('/api/v1/clients/' + encodeURIComponent(mac), { method: 'DELETE' });
+        if (!res || !res.ok) {
+            let err = {};
+            try { err = res ? await res.json() : {}; } catch (e) { /* not JSON */ }
+            showMessage(err.error || 'The device could not be removed.', 'error');
+            return;
+        }
+        const name = c ? (c.nickname || (c.hostname && c.hostname !== 'Unknown Device' ? c.hostname : '') || c.ip_address) : mac;
+        showMessage(`${name} was removed. If it comes back it is a new device, with no nickname.` + (c && c.reserved ? ' Its reserved address stays on the DHCP page.' : ''), 'ok');
+        fetchAllLeases();
+    }
+
     // "5 minutes ago" for a time in Unix seconds
     function ago(epoch) {
         const s = Math.max(0, Math.floor(Date.now() / 1000 - epoch));
@@ -179,7 +203,7 @@ window.DHCPModule = (function () {
         if (!tbody || (editingMac && !force)) return;
 
         if (!leases || leases.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="table-placeholder">No devices have an address from this router yet.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="8" class="table-placeholder">No devices have an address from this router yet.</td></tr>`;
             return;
         }
 
@@ -192,12 +216,14 @@ window.DHCPModule = (function () {
         <td>${connectionHtml(c)}${c.network ? ` <span class="chip" title="The local network this device is on">${escapeHtml(c.network)}</span>` : ''}${seenOnHtml(c)}</td>
         <td>${escapeHtml(c.expiry_text)}</td>
         <td>${formatBytes(c.total_bytes || 0)}</td>
+        ${removeCell(c)}
         </tr>
         `).join('');
     }
 
     function init() {
         editingMac = null;
+        forgetArmed = null;
         if (!wired) {
             wired = true;
             const select = document.getElementById('lease-network');
@@ -222,6 +248,17 @@ window.DHCPModule = (function () {
                 if (cancel) { e.preventDefault(); editingMac = null; draw(lastLeases, true); return; }
                 const save = e.target.closest('[data-name-save]');
                 if (save) { e.preventDefault(); finishName(body); return; }
+                const fg = e.target.closest('[data-forget]');
+                if (fg) {
+                    e.preventDefault();
+                    const mac = fg.dataset.forget;
+                    if (forgetArmed === mac) { forgetArmed = null; clearTimeout(forgetTimer); forgetDevice(mac); return; }
+                    forgetArmed = mac;
+                    clearTimeout(forgetTimer);
+                    forgetTimer = setTimeout(() => { forgetArmed = null; draw(lastLeases, false); }, 4000);
+                    draw(lastLeases, false);
+                    return;
+                }
                 const un = e.target.closest('[data-unreserve]');
                 if (un) { e.preventDefault(); unreserve(un.dataset.unreserve); return; }
                 const link = e.target.closest('[data-reserve]');

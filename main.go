@@ -19,6 +19,7 @@ import (
 	"peakroute/internal/daemon"
 	"peakroute/internal/ddns"
 	"peakroute/internal/filtering"
+	"peakroute/internal/forget"
 	"peakroute/internal/fwlog"
 	"peakroute/internal/netapi"
 	"peakroute/internal/network"
@@ -342,7 +343,7 @@ func main() {
 	mux.HandleFunc("/api/v1/networks/{id}", requireAuth(routerOnly(netAPI.HandleNetwork)))
 
 	// System DHCP List Endpoint
-	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.LeaseHandler(func(ctx context.Context) []network.ClientLease { return clientList(ctx) }, func(ctx context.Context, leases []network.ClientLease) {
+	annotateClients := func(ctx context.Context, leases []network.ClientLease) {
 		presenceTracker.Annotate(ctx, leases)
 		active := cfgMgr.NetworkConfig()
 		for i := range leases {
@@ -352,7 +353,34 @@ func main() {
 		if draft, ok := cfgMgr.StagedNetworkConfig(); ok {
 			network.MarkReservationChanges(leases, active, draft)
 		}
-	})))
+	}
+	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.LeaseHandler(func(ctx context.Context) []network.ClientLease { return clientList(ctx) }, annotateClients)))
+
+	// Removing a device that is gone from the Clients list: its lease, its neighbour (ARP) entry, the presence memory and its nickname
+	leaseFile := network.LeasePaths[len(network.LeasePaths)-1]
+	for _, p := range network.LeasePaths {
+		if _, err := os.Stat(p); err == nil {
+			leaseFile = p
+			break
+		}
+	}
+	forgetSvc := &forget.Service{
+		List: func(ctx context.Context) []network.ClientLease {
+			leases := clientList(ctx)
+			annotateClients(ctx, leases)
+			return leases
+		},
+		Interface: func(l network.ClientLease) string {
+			return translator.InterfaceOfNetwork(cfgMgr.NetworkConfig(), l.Network)
+		},
+		Run:          runner.Run,
+		Leases:       func() []network.ClientLease { return network.ReadLeases(network.LeasePaths) },
+		LeaseFile:    leaseFile,
+		Real:         !c.Dev,
+		ForgetSeen:   presenceTracker.Forget,
+		DropNickname: func(mac string) error { return clientNames.Set(mac, "") },
+	}
+	mux.HandleFunc("/api/v1/clients/{mac}", requireAuth(routerOnly(forgetSvc.HandleDevice)))
 
 	c.Serve()
 }

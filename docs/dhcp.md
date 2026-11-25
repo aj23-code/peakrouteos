@@ -30,6 +30,26 @@ offline is found the same way as for the others. A device whose address belongs 
 device plugged into the wrong VLAN, or with a wrong fixed address) shows an amber **Seen on <network>**. A static device can be given a
 reserved address too (below), after which it can be switched to DHCP on the device.
 
+### Removing a device that is gone
+
+A device that is **not here now** (offline, or one whose state cannot be told) has **Remove** at the end of its row (two clicks, as
+elsewhere); one that is here has none, because it would be back a moment later. Removing takes the device out of everything the list is made
+from, at once, with no draft:
+
+- its **DHCP lease**: `dhcp_release <interface> <address> <hardware address>` (the DHCP server's own tool, from `dnsmasq-utils`), on the
+  interface of the network its address is in. If the lease is still in the lease file after a moment, the server is stopped, the device's
+  line taken out of `/var/lib/misc/dnsmasq.leases`, and the server started again (a second without DHCP and DNS; it is started again
+  whatever happens to the file);
+- its entry in the router's **neighbour (ARP) table** (`ip neigh flush to <address>`); a device with an address of its own (Static) has only
+  this;
+- what the presence memory knows of it (when it was last seen, how it was connected), and its **nickname** (which also ends its named client in
+  AdGuard Home);
+- not a DHCP reservation: that is configuration and stays on this page. A reserved device that comes back gets its reserved address.
+
+A device that comes back later is a new one: a new lease, no nickname. `DELETE /api/v1/clients/{mac}`; 409 for a device that is here now,
+404 for one that is not in the list. Not checked on a real router: `dhcp_release` itself (it is not on the development machine), so the
+fallback of editing the lease file is what the tests exercise.
+
 ## 2. Reserved addresses
 
 A reserved address is the router-side way to give a device a fixed address, and the better one: the address is kept in one place, cannot

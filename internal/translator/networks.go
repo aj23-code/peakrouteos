@@ -42,6 +42,20 @@ func NetworkOfInterface(cfg config.NetworkConfig, dev string) string {
 	return ""
 }
 
+// InterfaceOfNetwork is the interface a network lives on, by the name the Clients list gives it ("LAN" or the network's name): the inverse
+// of NetworkOfInterface. "" when there is no such network.
+func InterfaceOfNetwork(cfg config.NetworkConfig, name string) string {
+	if name == "LAN" {
+		return LanTarget(cfg)
+	}
+	for _, n := range cfg.Networks {
+		if n.Name == name {
+			return networkIface(n)
+		}
+	}
+	return ""
+}
+
 // defaultPorts are the LAN ports whose untagged network is the default one, then the Wi-Fi links that join it.
 func defaultPorts(cfg config.NetworkConfig) []string {
 	var out []string

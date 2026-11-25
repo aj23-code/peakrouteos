@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -361,5 +362,20 @@ func TestTheFinalTimesAreSavedWhenTheTrackerStops(t *testing.T) {
 	r2.tr.Load()
 	if got := r2.tr.seen[macWired].LastSeen; got != last {
 		t.Fatalf("saved %d, the last time seen was %d", got, last)
+	}
+}
+
+func TestAForgottenDeviceIsNoLongerRemembered(t *testing.T) {
+	dir := t.TempDir()
+	tr := &Tracker{Path: dir + "/p.json"}
+	tr.seen = map[string]Record{"aa:bb:cc:dd:ee:01": {LastSeen: time.Now().Unix()}, "aa:bb:cc:dd:ee:02": {LastSeen: time.Now().Unix()}}
+	tr.Forget("aa:bb:cc:dd:ee:01")
+	tr.Forget("aa:bb:cc:dd:ee:99") // nothing to forget: no harm
+	b, err := os.ReadFile(dir + "/p.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "ee:01") || !strings.Contains(string(b), "ee:02") {
+		t.Errorf("%s", b)
 	}
 }

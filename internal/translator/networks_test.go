@@ -500,3 +500,22 @@ func TestTheDefaultNetworkChangesInterfaceWhenItsPortCountDoes(t *testing.T) {
 		t.Fatalf("%q: the default network moves from br0 to eth1, which the firewall and DHCP files name", got)
 	}
 }
+
+func TestTheInterfaceOfANetworkByTheNameTheClientsListUses(t *testing.T) {
+	cfg := netsCfg(guestNet())
+	if got := InterfaceOfNetwork(cfg, "LAN"); got != "br0" {
+		t.Errorf("%q", got)
+	}
+	if got := InterfaceOfNetwork(cfg, "Guest"); got != "br20" {
+		t.Errorf("%q", got)
+	}
+	if InterfaceOfNetwork(cfg, "Nowhere") != "" || InterfaceOfNetwork(cfg, "") != "" {
+		t.Error("an unknown network has an interface")
+	}
+	// the inverse of NetworkOfInterface
+	for _, name := range []string{"LAN", "Guest"} {
+		if NetworkOfInterface(cfg, InterfaceOfNetwork(cfg, name)) != name {
+			t.Errorf("%s", name)
+		}
+	}
+}

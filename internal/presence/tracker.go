@@ -198,6 +198,20 @@ func (t *Tracker) Annotate(ctx context.Context, leases []network.ClientLease) {
 	}
 }
 
+// Forget drops what is remembered of a device (a device that was removed from the Clients list).
+func (t *Tracker) Forget(mac string) {
+	t.mu.Lock()
+	_, had := t.seen[mac]
+	delete(t.seen, mac)
+	if had {
+		t.dirty = true
+	}
+	t.mu.Unlock()
+	if had {
+		t.Save(false)
+	}
+}
+
 // Save writes the memory when something worth keeping changed, or when only times moved and a while
 // has passed (flash storage should not be written every few seconds). force writes regardless.
 func (t *Tracker) Save(force bool) {
