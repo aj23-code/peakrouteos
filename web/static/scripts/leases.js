@@ -25,21 +25,19 @@ window.DHCPModule = (function () {
     }
 
     // The first cell: the nickname (or the name the device gives itself), a pencil to change it, and while it is being changed an input.
-    // The device's own name stays underneath a nickname, small, so that the two can be told apart.
+    // A nickname replaces the device's own name: nothing of the old name (or "Unknown Device") is shown beside or under it.
     function nameCell(c) {
         const mac = escapeHtml(c.mac_address);
         if (editingMac === c.mac_address) {
             return `<td><div class="client-name-edit">
-                <input type="text" class="client-name-input" data-name-input="${mac}" value="${escapeHtml(c.nickname || '')}" placeholder="${escapeHtml(c.hostname || 'Name this device')}" maxlength="40" autocomplete="off" spellcheck="false" aria-label="Nickname">
+                <input type="text" class="client-name-input" data-name-input="${mac}" value="${escapeHtml(c.nickname || '')}" placeholder="${escapeHtml(c.hostname && c.hostname !== 'Unknown Device' ? c.hostname : 'Name this device')}" maxlength="40" autocomplete="off" spellcheck="false" aria-label="Nickname">
                 <a href="#" class="view-all-link" data-name-save="${mac}">Save</a> <a href="#" class="view-all-link" data-name-cancel="${mac}">Cancel</a></div></td>`;
         }
         const shown = c.nickname || (c.static ? '' : c.hostname);
         let main = shown ? `<strong>${escapeHtml(shown)}</strong>` : '';
         if (c.static) main = `<span class="tag" title="This device has an address of its own: it did not ask this router for one">Static</span>` + (shown ? ` ${main}` : '');
-        const sub = c.nickname && c.hostname && c.nickname !== c.hostname
-            ? `<div class="form-hint" title="The name the device gives itself">${escapeHtml(c.hostname)}</div>` : '';
         const label = escapeHtml(shown || c.mac_address);
-        return `<td>${main} <button type="button" class="client-rename" data-rename="${mac}" title="${c.nickname ? 'Change the nickname' : 'Give this device a nickname'}" aria-label="Rename ${label}">&#9998;</button>${sub}</td>`;
+        return `<td>${main} <button type="button" class="client-rename" data-rename="${mac}" title="${c.nickname ? 'Change the nickname' : 'Give this device a nickname'}" aria-label="Rename ${label}">&#9998;</button></td>`;
     }
 
     // a device that was seen on another network than its address says (the wrong VLAN, or a wrong address of its own)
