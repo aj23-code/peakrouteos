@@ -233,7 +233,7 @@ window.DNSModule = (function () {
             <p>${filt.running
                 ? `<a class="cfg-btn cfg-btn--primary" href="${escapeHtml(url)}" target="_blank" rel="noopener">Open AdGuard Home</a>`
                 : '<button type="button" class="cfg-btn cfg-btn--primary" disabled>Open AdGuard Home</button>'}</p>
-            <p class="form-hint">Its own interface opens in a new tab on port ${escapeHtml(filt.ui_port || '3000')}, signed in with this router&rsquo;s account, from the default network only: there you choose the block lists, add rules and allow-lists, and see which device asked for what. Changes there apply at once and are not part of the draft. It blocks by name only: apps with their own encrypted DNS (DNS over HTTPS) are not filtered. It keeps a day of query log and statistics; you can lengthen that in its settings.</p>
+            <p class="form-hint">Its own interface opens in a new tab on port ${escapeHtml(filt.ui_port || '3000')}, signed in with this router&rsquo;s account, from the default network only: there you choose the block lists, add rules and allow-lists, and see which device asked for what, by the nickname you gave it on the Clients page (a device with none shows its host name or address). Changes there apply at once and are not part of the draft. It blocks by name only: apps with their own encrypted DNS (DNS over HTTPS) are not filtered. It keeps a day of query log and statistics; you can lengthen that in its settings.</p>
         </section>`;
     }
 

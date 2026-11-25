@@ -1119,6 +1119,11 @@ it); `adguard-seed` writes the first `AdGuardHome.yaml` only when none exists. *
 a rule blocks, the rest passes to the upstream, no rate limit) and the ruleset in a real kernel's nftables. **Not checked:** the redirect with
 real devices, the unit's sandbox on the image, the build script (needs root; its checksum line was run against the real checksums file).
 Decision: Pi-hole not offered (PHP stack and its own dnsmasq fork do not fit the image).
+**Nicknames reach AdGuard Home (2026-11-24):** `filtering.ClientSync` (run while a network filters) turns each nickname of `clientnames` into
+an AdGuard Home persistent client (`/control/clients/add|update|delete` on the loopback; ids: the device's addresses from `clientList` and its
+MAC), every 30 s. Only the clients it made (names kept in `adguard_clients.json`) are updated (ids only: the rest of the client is sent back
+as it came) or deleted, so the person's own clients and settings survive. Verified with the real binary that a client added through the API
+shows by name in the query log; the logic is tested against a fake of the API.
 **First real run (v1.2.0-beta on the router) failed:** the unit's `RestrictAddressFamilies` had no `AF_NETLINK`, and AdGuard Home lists the
 machine's addresses over netlink ("route ip+net: netlinkrib: address family not supported by protocol"), so it died at every start. A user-space
 test cannot see a systemd sandbox; fixed in v1.2.1-beta with a test that pins the families (`image/adguard_unit_test.go`). **The choice moved

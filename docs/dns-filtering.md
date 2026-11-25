@@ -15,6 +15,22 @@ query log and statistics. It runs on the router itself. Routers only: an access 
   anything. Changes made there apply at once and are not part of the draft; AdGuard Home keeps them in its own file.
 - The option is also in the API of Local Networks (`filter` on a network), which the pages do not use.
 
+## Names in AdGuard Home
+
+AdGuard Home shows a device by the first name it can find: a client of its own, then the reverse lookup of the address, which the
+router's DNS answers from the DHCP leases (the host name the device gave). The nicknames from the Clients page are not in either, so the
+daemon gives them to AdGuard Home (`internal/filtering/clients.go`, every 30 seconds while AdGuard Home runs):
+
+- each nickname becomes a **persistent client** named with it, with the addresses its device has now and its hardware address; two devices
+  with one nickname share one client (names are unique in AdGuard Home);
+- when a device's address changes, the client's addresses are updated and **everything else a person set on it in AdGuard Home (blocked
+  services, its own upstreams) is kept**; when a nickname is removed or renamed, its client goes;
+- only the clients made this way are ever changed or removed (their names are remembered in `adguard_clients.json`); a client a person
+  made in AdGuard Home, even one named like a nickname, is left alone;
+- a nickname whose device has no address now keeps its client as it was; a device with no nickname keeps showing its host name.
+
+Checked with the real AdGuard Home: a client added through its API with the device's address is shown by name in its query log.
+
 ## How it works
 
 ```

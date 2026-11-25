@@ -204,6 +204,20 @@ func main() {
 		}
 		return append(leases, network.StaticClients(leases, neighbours, cfg, func(dev string) string { return translator.NetworkOfInterface(cfg, dev) })...)
 	}
+	// The nicknames are given to AdGuard Home as named clients while it runs, so its log and statistics say "Alec's laptop"
+	clientSync := &filtering.ClientSync{
+		Names: clientNames.All,
+		Devices: func(ctx context.Context) []filtering.Device {
+			var out []filtering.Device
+			for _, l := range clientList(ctx) {
+				out = append(out, filtering.Device{MAC: l.MACAddress, IP: l.IPAddress})
+			}
+			return out
+		},
+		StatePath: filepath.Join(configDir, "adguard_clients.json"),
+		Log:       log.Printf,
+	}
+	go daemon.RunWhile(pollerCtx, routerWorkEvery, func() bool { return isRouter() && cfgMgr.NetworkConfig().FilterOn() }, clientSync.Run)
 	// Who is here: Wi-Fi devices from the access points' station lists, the others asked with ARP, all remembered
 	presenceTracker := &presence.Tracker{
 		Path: filepath.Join(configDir, "client_presence.json"),

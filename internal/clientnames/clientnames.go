@@ -1,6 +1,7 @@
 // Package clientnames keeps the nicknames a person gives the devices in the client list, by hardware address. A nickname is only a label
 // on the router's own pages: it changes nothing in the system, so it is saved at once (no draft, no commit) to a file of its own next
-// to the other state, and it never reaches DNS or DHCP (a reserved address has its own host name for that).
+// to the other state, and it never reaches DNS or DHCP (a reserved address has its own host name for that). The one place it is passed on
+// is AdGuard Home, while DNS filtering runs: there each nickname becomes a named client (internal/filtering).
 package clientnames
 
 import (
