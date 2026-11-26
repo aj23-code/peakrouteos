@@ -1153,6 +1153,15 @@ stateless DHCPv6 (the prefix is dynamic, so it is never written to a file); a st
 DHCPv6/MSS rules; `ip6 nat` redirect so DNS filtering is not bypassed. Off by default, in three phases. Waiting on the maintainer's answers
 (ISP, default per network, inbound policy, phase 1 scope).
 
+**Smart queue management (2026-11-26, `docs/sqm.md`).** `sqm` in the configuration (`config/sqm.go`: enabled, download/upload kbit, link kind, per-host
+fairness; off and unwritten by default; validation on `sqm.*`, the API speaks Mbit/s). No default speed on purpose (it is the line's): the page says
+90-95 % of a speed test. `translator/sqm.go` writes `/etc/default/peakroute-sqm` while shaping is on; service `sqm` (apply) runs the image's helper
+`/usr/lib/peakroute/sqm reconcile` (cake on the WAN device for upload, an `ifb-wan` for download through a mirred redirect, every keyword given every
+time because `tc qdisc replace` keeps what is not named: found by the test). `if-up.d` and `ppp/ip-up.d` hooks re-shape a device that comes back
+(`start-if`, never failing the interface). Card on the Internet page (`sqm.js`), status from `tc -j -s qdisc` (`network/sqmstatus.go`). Verified
+with the real kernel in user namespaces, including real throughput limiting (13.7 Gbit/s -> 7.5 Mbit/s at 8, both directions). Not verified: a real
+line, CPU on small hardware, the hooks under real ifupdown/pppd.
+
 ## 7g. Wireless, and PeakRoute on access points (started 2026-10-08)
 
 **Direction (from the maintainer):** PeakRoute should also run on **access points**, with the same codebase.

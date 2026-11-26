@@ -60,7 +60,7 @@ func TestNothingChangesWithoutDNSSettings(t *testing.T) {
 			order = append(order, a.Service)
 		}
 	}
-	if got := strings.Join(order, ","); got != "sysctl,networking,routes,regdomain,nftables,dnsmasq,mdns,filtering,ntp" {
+	if got := strings.Join(order, ","); got != "sysctl,networking,routes,regdomain,nftables,dnsmasq,mdns,filtering,sqm,ntp" {
 		t.Errorf("%s", got)
 	}
 }

@@ -1,0 +1,6 @@
+#!/bin/sh
+# When an interface comes up, shape it if it is the internet connection (docs/sqm.md). Never fails: a missing helper or a kernel without
+# the queue discipline must not stop the interface from coming up.
+[ -x /usr/lib/peakroute/sqm ] || exit 0
+/usr/lib/peakroute/sqm start-if "$IFACE" >/dev/null 2>&1 || true
+exit 0

@@ -186,7 +186,7 @@ echo "[3/5] Configuring the root file system..."
 # (image/overlay), copied over what Debian made, owned by root.
 cp -a --no-preserve=ownership "${OVERLAY_DIR}/." "${ROOTFS_DIR}/"
 chown -R root:root "${ROOTFS_DIR}/etc" "${ROOTFS_DIR}/usr/lib/peakroute"
-chmod 755 "${ROOTFS_DIR}/usr/lib/peakroute/growdata" "${ROOTFS_DIR}/usr/lib/peakroute/trialwatch" "${ROOTFS_DIR}/usr/lib/peakroute/adguard-seed" \
+chmod 755 "${ROOTFS_DIR}/usr/lib/peakroute/growdata" "${ROOTFS_DIR}/usr/lib/peakroute/trialwatch" "${ROOTFS_DIR}/usr/lib/peakroute/adguard-seed" "${ROOTFS_DIR}/usr/lib/peakroute/sqm" \
     "${ROOTFS_DIR}/etc/initramfs-tools/hooks/peakroute-state" "${ROOTFS_DIR}/etc/initramfs-tools/scripts/local-bottom/peakroute-state"
 # what earlier builds put in a root file system that is being reused
 rm -f "${ROOTFS_DIR}/usr/lib/peakroute/growroot" "${ROOTFS_DIR}/etc/systemd/system/peakroute-growroot.service" \

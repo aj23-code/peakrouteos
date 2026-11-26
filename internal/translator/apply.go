@@ -180,6 +180,7 @@ var serviceCommands = map[string]command{
 	SvcDnsmasq:    {"systemctl", []string{"restart", "dnsmasq"}},
 	SvcMDNS:       mdnsCommand,
 	SvcFiltering:  filterCommand,
+	SvcSQM:        sqmCommand,
 	SvcRoutes:     routesApplyCommand(PathRoutes),
 	// the kernel's regulatory country; with no file (the country was taken out) the world setting, 00. A machine without Wi-Fi tools has nothing to tell.
 	SvcRegdom:    {"sh", []string{"-c", `command -v iw >/dev/null 2>&1 || exit 0; cc=$(sed -n 's/.*ieee80211_regdom=//p' ` + PathRegdom + ` 2>/dev/null); iw reg set "${cc:-00}"`}},

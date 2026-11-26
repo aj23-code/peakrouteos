@@ -120,6 +120,7 @@ var networkSettings = []networkSetting{
 // The internet connection's carrier settings (VLAN, MTU, MAC, host name, PPPoE), shown right after the
 // addressing lines. The PPPoE password is handled apart (diffWanSecret): it is never shown.
 var wanCarrierSettings = []networkSetting{
+	{"sqm", "Smart queue management", func(c NetworkConfig) string { return c.SQMSettings().SQMText() }},
 	{"wan_vlan", "WAN VLAN", func(c NetworkConfig) string {
 		if c.WanVlan == 0 {
 			return "none"

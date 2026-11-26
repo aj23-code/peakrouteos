@@ -201,11 +201,13 @@ function loadView(viewName, fromHistory) {
                 activeViewCleanup = window.DHCPModule.init();
             }
             break;
-        case 'internet':
-            if (window.InternetModule) {
-                activeViewCleanup = window.InternetModule.init();
-            }
+        case 'internet': {
+            const cleanups = [];
+            if (window.InternetModule) cleanups.push(window.InternetModule.init());
+            if (window.SQMModule) cleanups.push(window.SQMModule.init());
+            activeViewCleanup = () => cleanups.forEach(f => { if (typeof f === 'function') f(); });
             break;
+        }
         case 'network-physical':
             if (window.PortsModule) {
                 activeViewCleanup = window.PortsModule.init();

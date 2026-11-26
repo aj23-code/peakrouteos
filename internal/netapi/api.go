@@ -53,6 +53,8 @@ type API struct {
 	DNSAddr string
 	// TimeStatus reads how the router's clock stands (the time zone, whether it follows a time server). Nil means it is not reported.
 	TimeStatus func(ctx context.Context) (network.TimeStatus, bool)
+	// SQMStatus reads how the shaping of the internet connection is doing. Nil means it is not reported.
+	SQMStatus func(ctx context.Context) network.SQMStatus
 	// FilteringStatus reports whether AdGuard Home is installed and answering. Nil means it is not reported.
 	FilteringStatus func(ctx context.Context) filtering.Status
 	// HardwareClock says whether the machine has a real-time clock chip. Nil means it is not reported (and not warned about).

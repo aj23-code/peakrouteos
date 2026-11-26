@@ -1,0 +1,5 @@
+#!/bin/sh
+# A PPPoE session is a new interface at every connection: shape it when it is the internet connection (docs/sqm.md).
+[ -x /usr/lib/peakroute/sqm ] || exit 0
+/usr/lib/peakroute/sqm start-if "$PPP_IFACE" >/dev/null 2>&1 || true
+exit 0

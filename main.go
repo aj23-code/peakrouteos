@@ -292,6 +292,10 @@ func main() {
 	netAPI.DDNSStatuses = ddnsUpdater.Statuses
 	netAPI.DDNSUpdate = ddnsUpdater.UpdateNow
 	mux.HandleFunc("/api/v1/filtering", requireAuth(routerOnly(netAPI.HandleFiltering)))
+	mux.HandleFunc("/api/v1/sqm", requireAuth(routerOnly(netAPI.HandleSQM)))
+	netAPI.SQMStatus = func(ctx context.Context) network.SQMStatus {
+		return network.ReadSQMStatus(ctx, cfgMgr.NetworkConfig().WanDevice())
+	}
 	mux.HandleFunc("/api/v1/ddns", requireAuth(routerOnly(netAPI.HandleDDNS)))
 	mux.HandleFunc("/api/v1/ddns/{id}", requireAuth(routerOnly(netAPI.HandleDDNSEntry)))
 	mux.HandleFunc("/api/v1/ddns/{id}/update", requireAuth(routerOnly(netAPI.HandleDDNSUpdate)))

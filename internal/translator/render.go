@@ -294,6 +294,17 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathFiltering, Remove: true, Service: SvcFiltering})
 	}
 
+	// Smart queue management (the file is there while the connection is shaped)
+	if err := ensureSafeSQM(cfg); err != nil {
+		return Desired{}, err
+	}
+	if content, ok := renderSQM(cfg); ok {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathSQM, Content: []byte(content), Mode: 0644, Service: SvcSQM})
+	} else {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathSQM, Remove: true, Service: SvcSQM})
+	}
+	d.Notes = append(d.Notes, sqmNotes(cfg)...)
+
 	// The time zone, and the time servers (a file only while they are not the defaults)
 	if cfg.Timezone != "" {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathTimezone, Content: []byte(cfg.Timezone + "\n"), Mode: 0644, Service: SvcTimezone})

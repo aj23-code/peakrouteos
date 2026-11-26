@@ -1,0 +1,106 @@
+#!/bin/sh
+# Smart queue management for the internet connection (docs/sqm.md). The daemon writes /etc/default/peakroute-sqm while shaping is on and
+# removes it when it is off; this makes the kernel match: the cake queue discipline on the connection for what goes out, and, for what comes
+# in, an ifb device that the incoming packets are redirected to and cake shapes there.
+#
+#   sqm reconcile     with the file: start; without it: stop        (what a commit runs)
+#   sqm start         shape the device named in the file            (also safe to run again: it replaces)
+#   sqm start-if DEV  start, but only when DEV is the device the file names (the hooks that run when an interface comes up)
+#   sqm stop          take the shaping away again
+#
+# SQM_CONF and SQM_STATE can name other files (the tests do).
+set -u
+CONF="${SQM_CONF:-/etc/default/peakroute-sqm}"
+STATE="${SQM_STATE:-/run/peakroute/sqm.dev}"
+IFB="ifb-wan"
+
+say() { echo "sqm: $*"; }
+
+# the pieces the kernel needs, as modules (a kernel with them built in has no module to load)
+load_modules() {
+    for m in sch_cake ifb act_mirred cls_matchall; do modprobe -q "$m" 2>/dev/null || true; done
+}
+
+link_keyword() {
+    case "$1" in
+        docsis) echo docsis ;;
+        vdsl) echo pppoe-ptm ;;
+        adsl) echo pppoe-vcmux ;;
+        *) echo ethernet ;;
+    esac
+}
+
+# take away what is on a device and on the ifb (nothing there is not an error)
+clear_shaping() {
+    dev="$1"
+    [ -n "$dev" ] || return 0
+    tc qdisc del dev "$dev" root 2>/dev/null || true
+    tc qdisc del dev "$dev" ingress 2>/dev/null || true
+    ip link del "$IFB" 2>/dev/null || true
+}
+
+stop() {
+    dev=""
+    [ -f "$STATE" ] && dev="$(cat "$STATE")"
+    # a device named in the file that is being taken away is known from the state; one that was never started has nothing to stop
+    clear_shaping "$dev"
+    rm -f "$STATE"
+}
+
+start() {
+    [ -f "$CONF" ] || { say "no configuration: nothing to start"; return 0; }
+    # shellcheck disable=SC1090
+    . "$CONF"
+    dev="${SQM_DEV:-}"
+    [ -n "$dev" ] || { say "the configuration names no device" >&2; return 1; }
+    ip link show "$dev" >/dev/null 2>&1 || { say "$dev is not there (yet): it is shaped when it comes up"; return 0; }
+    up="${SQM_UP_KBIT:-0}"
+    down="${SQM_DOWN_KBIT:-0}"
+    kw="$(link_keyword "${SQM_LINK:-ethernet}")"
+    # (every keyword is given every time: replacing a queue keeps what is not named, so a setting taken away would stay)
+    if [ "${SQM_PERHOST:-1}" = "1" ]; then out_fair="dual-srchost"; in_fair="dual-dsthost"; else out_fair="triple-isolate"; in_fair="triple-isolate"; fi
+
+    load_modules
+    # a device that was shaped before and is not any more
+    if [ -f "$STATE" ] && [ "$(cat "$STATE")" != "$dev" ]; then clear_shaping "$(cat "$STATE")"; fi
+    mkdir -p "$(dirname "$STATE")"
+
+    if [ "$up" -gt 0 ]; then
+        # shellcheck disable=SC2086
+        tc qdisc replace dev "$dev" root cake bandwidth "${up}kbit" diffserv3 $out_fair nat nowash "$kw" \
+            || { say "cannot shape what goes out on $dev (is the cake queue discipline in this kernel?)" >&2; return 1; }
+    else
+        tc qdisc del dev "$dev" root 2>/dev/null || true
+    fi
+
+    if [ "$down" -gt 0 ]; then
+        ip link show "$IFB" >/dev/null 2>&1 || ip link add "$IFB" type ifb \
+            || { say "cannot make the $IFB device for what comes in" >&2; return 1; }
+        ip link set "$IFB" up
+        tc qdisc replace dev "$dev" handle ffff: ingress \
+            || { say "cannot shape what comes in on $dev" >&2; return 1; }
+        tc filter del dev "$dev" parent ffff: 2>/dev/null || true
+        tc filter add dev "$dev" parent ffff: protocol all prio 10 matchall action mirred egress redirect dev "$IFB" \
+            || { say "cannot send what comes in to $IFB" >&2; return 1; }
+        # shellcheck disable=SC2086
+        tc qdisc replace dev "$IFB" root cake bandwidth "${down}kbit" diffserv3 $in_fair nat wash ingress "$kw" \
+            || { say "cannot shape what comes in on $IFB" >&2; return 1; }
+    else
+        tc qdisc del dev "$dev" ingress 2>/dev/null || true
+        ip link del "$IFB" 2>/dev/null || true
+    fi
+    echo "$dev" > "$STATE"
+}
+
+case "${1:-}" in
+    reconcile) if [ -f "$CONF" ]; then start; else stop; fi ;;
+    start) start ;;
+    start-if)
+        [ -f "$CONF" ] || exit 0
+        # shellcheck disable=SC1090
+        . "$CONF"
+        [ "${2:-}" = "${SQM_DEV:-}" ] && start
+        exit 0 ;;
+    stop) stop ;;
+    *) echo "usage: sqm reconcile | start | start-if DEVICE | stop" >&2; exit 2 ;;
+esac

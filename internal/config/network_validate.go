@@ -172,6 +172,7 @@ func (c NetworkConfig) Validate() error {
 	// DNS servers: required with a static address; with DHCP or PPPoE they replace the provider's
 	validateServers(c.WanDNS, "wan_dns", add)
 	c.validateWan(add)
+	c.validateSQM(add)
 
 	// --- LAN ---
 	if len(c.LanInterfaces) == 0 {

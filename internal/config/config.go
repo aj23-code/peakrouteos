@@ -116,6 +116,7 @@ type NetworkConfig struct {
 	NTPServers    []string      `json:"ntp_servers,omitempty"`   // empty: the default (pool.ntp.org)
 	Syslog        *SyslogConfig `json:"syslog,omitempty"`        // send the logs to syslog servers
 	DDNS          *DDNSConfig   `json:"ddns,omitempty"`          // names kept pointed at the internet connection's address
+	SQM           *SQMConfig    `json:"sqm,omitempty"`           // shaping of the internet connection against bufferbloat (sqm.go)
 	VPN           *VPNConfig    `json:"vpn,omitempty"`           // tunnels between sites and remote access
 	WanPPPoE      *PPPoEConfig  `json:"wan_pppoe,omitempty"`
 	LanInterfaces []string      `json:"lan_interfaces,omitempty"`
@@ -237,6 +238,10 @@ func (c NetworkConfig) clone() NetworkConfig {
 	if c.DDNS != nil {
 		d := c.DDNS.clone()
 		c.DDNS = &d
+	}
+	if c.SQM != nil {
+		s := c.SQM.clone()
+		c.SQM = &s
 	}
 	if c.VPN != nil {
 		v := c.VPN.clone()
