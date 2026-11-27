@@ -3,6 +3,8 @@ name: checks
 # and this one exists to run the tests that need real tools (WireGuard, OpenVPN, dnsmasq) on a clean machine when that is wanted.
 on:
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   check:
     runs-on: ubuntu-latest

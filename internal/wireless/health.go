@@ -51,7 +51,7 @@ func ParseSurvey(out string) []Survey {
 		}
 		switch k {
 		case "frequency":
-			list[cur].MHz = int(num())
+			list[cur].MHz = int(min(num(), 1<<20)) // far above any radio frequency; keeps the conversion in range
 			list[cur].InUse = strings.Contains(v, "[in use]")
 		case "noise":
 			f := strings.Fields(v)
