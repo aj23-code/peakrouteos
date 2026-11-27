@@ -125,6 +125,13 @@ Settings (new, on the Internet page, shown when there is a second uplink):
   on the connection that is waiting); when sharing, a **new connection from a network** is given to a connection that is up by weight
   (`numgen random` over the weights, `vmap`), and stays on it; every packet carries its connection's mark through the router and out of
   it (`type route` output chain for the router's own).
+- **Services follow a failover** (`failover.MoveServices`, `Controller.OnChange`, main.go): three seconds after the routes change, every
+  WireGuard peer's endpoint is set again (the tunnel remembers the address it last sent from, the old connection's, and would send with
+  it through the new one), OpenVPN tunnels where the router is the client are restarted (`systemctl try-restart openvpn-client@*`), and
+  Dynamic DNS updates every name at once, without the web address it had kept for minutes (`Updater.Moved`). Port forwards and VPN
+  servers work on both connections already; the other end finds them at the new address through the name, within that name's TTL. With
+  the default five second checks, three failures and the 3 s wait a service is back within about 20-25 s of the line failing, and a
+  DDNS name as soon as its provider's TTL lets clients see it.
 - **Not shared:** the router's own traffic (updates, DNS, time) follows the main table, the preferred connection; one connection is
   never split over both lines; a site that ties a session to the visitor's address sees a change when a *new* connection takes the other
   line. A UDP service in the router that answers with the address the route to the sender picks (rather than the address it was reached

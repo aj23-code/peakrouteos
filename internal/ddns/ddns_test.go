@@ -403,6 +403,27 @@ func TestTheAddressCanBeAskedOfAnInternetService(t *testing.T) {
 	}
 }
 
+func TestWhenTheTrafficMovesTheNamesAreUpdatedAtOnceWithoutTheKeptWebAddress(t *testing.T) {
+	web := newService(t, say("203.0.113.50"))
+	dd := newService(t, say("good"))
+	e := dyn(dd.host())
+	e.Source = config.DDNSSourceWeb
+	l := newLab(t, dd, e)
+	l.wan = netip.MustParseAddr("192.168.100.2")
+	l.u.WebIPURLs = []string{web.ts.URL}
+	l.u.Client = &http.Client{Transport: web.ts.Client().Transport}
+	pool := web.ts.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs
+	pool.AddCert(dd.ts.Certificate())
+	l.tick()
+	// a minute later the traffic goes through another connection: the web says another address, and the answer that was kept is not used
+	l.clock = l.clock.Add(time.Minute)
+	web.handler = say("198.51.100.77")
+	l.u.Moved(context.Background())
+	if web.count() != 2 || dd.count() != 2 || !strings.Contains(dd.last().query, "myip=198.51.100.77") {
+		t.Fatalf("%d %d %+v", web.count(), dd.count(), dd.all())
+	}
+}
+
 func TestTheNextAddressServiceIsTriedWhenOneFails(t *testing.T) {
 	bad := newService(t, say("not an address"))
 	private := newService(t, say("10.1.1.1"))

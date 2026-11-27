@@ -64,6 +64,9 @@ type Controller struct {
 	Now    func() time.Time
 	Every  time.Duration // between looks (2 s when zero)
 	RunDir string        // where the table of firewall rules is written (/run/peakroute when empty)
+	// OnChange, when set, is called (in a goroutine of its own) after the traffic has moved to the other connection, with the routes
+	// already changed: the services that have to follow (names, tunnels) are told here.
+	OnChange func(Event)
 
 	mu        sync.Mutex
 	active    string
@@ -213,6 +216,11 @@ func (c *Controller) Step(ctx context.Context) {
 		c.active, c.since, c.reason = next, now, why
 	}
 	active := c.active
+	var moved *Event
+	if left != "" && left != active && len(c.events) > 0 {
+		e := c.events[0]
+		moved = &e
+	}
 	c.mu.Unlock()
 
 	devices := map[string]string{}
@@ -223,6 +231,9 @@ func (c *Controller) Step(ctx context.Context) {
 	}
 	c.apply(ctx, devices, active, states)
 	c.syncBalance(ctx, cfg, devices, states)
+	if moved != nil && c.OnChange != nil {
+		go c.OnChange(*moved)
+	}
 	if left != "" && left != active {
 		// connections that were translated to the address of the connection that was left cannot go on: forget them, so that the devices
 		// start again (through the new one) instead of waiting for a timeout

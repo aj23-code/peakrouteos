@@ -305,3 +305,37 @@ func TestTheRoutesAreParsedFromWhatIpPrints(t *testing.T) {
 		t.Fatalf("%v", as)
 	}
 }
+
+func TestTheServicesAreToldOnceForEachMoveAndNeverForAnythingElse(t *testing.T) {
+	r := newRig(t)
+	var mu sync.Mutex
+	var told []Event
+	r.c.OnChange = func(e Event) { mu.Lock(); told = append(told, e); mu.Unlock() }
+	count := func() int {
+		time.Sleep(50 * time.Millisecond) // (it is called in a goroutine of its own)
+		mu.Lock()
+		defer mu.Unlock()
+		return len(told)
+	}
+	r.step(0)
+	r.step(time.Second)
+	if count() != 0 {
+		t.Fatalf("told with nothing moved: %+v", told)
+	}
+	r.state["wan"] = "offline"
+	r.step(time.Second)
+	r.step(time.Second) // (and again: still the same move)
+	if count() != 1 || told[0].From != "wan" || told[0].To != "wan2" {
+		t.Fatalf("%+v", told)
+	}
+	// it is told after the routes were changed, not before
+	if r.m.metrics() != "eth0=1000 eth2=100" {
+		t.Fatalf("%s", r.m.metrics())
+	}
+	r.state["wan"] = "online"
+	r.step(time.Second)
+	r.step(200 * time.Second)
+	if count() != 2 || told[1].To != "wan" {
+		t.Fatalf("%+v", told)
+	}
+}

@@ -220,6 +220,12 @@ func main() {
 		},
 	}
 	whileRouter(ddnsUpdater.Run)
+	// when the traffic moves to the other connection: the names and the tunnels follow it at once, a few seconds after the routes changed
+	failoverCtl.OnChange = func(failover.Event) {
+		time.Sleep(3 * time.Second)
+		failover.MoveServices(pollerCtx, runner)
+		ddnsUpdater.Moved(pollerCtx)
+	}
 
 	// Keep the firewall log: the packets that rules with logging matched, read from the kernel log into a database
 	// of their own (the journal is shared and size limited)

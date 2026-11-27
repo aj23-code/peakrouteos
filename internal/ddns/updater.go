@@ -145,6 +145,15 @@ func (u *Updater) Run(ctx context.Context) {
 	}
 }
 
+// Moved is told that the traffic has moved to another internet connection: what the web says the address is may be the old one's for
+// minutes, so it is asked again, and every name is looked at at once.
+func (u *Updater) Moved(ctx context.Context) {
+	u.mu.Lock()
+	u.web.at = time.Time{}
+	u.mu.Unlock()
+	u.Tick(ctx)
+}
+
 // Tick looks at every enabled entry once and updates those that need it.
 func (u *Updater) Tick(ctx context.Context) {
 	entries := u.Entries()
