@@ -61,6 +61,7 @@ var networkSettings = []networkSetting{
 	{"wan_subnet", "WAN netmask", func(c NetworkConfig) string { return text(c.WanSubnet) }},
 	{"wan_gateway", "WAN gateway", func(c NetworkConfig) string { return text(c.WanGateway) }},
 	{"wan_dns", "WAN DNS servers", func(c NetworkConfig) string { return list(c.WanDNS) }},
+	{"wan_probe", "Internet health check", func(c NetworkConfig) string { return c.ProbeText() }},
 	{"wan2", "Second internet connection", func(c NetworkConfig) string { return c.Wan2Text() }},
 	{"wan_preferred", "Preferred internet connection", func(c NetworkConfig) string { return c.WanPreferredText() }},
 	{"lan_interfaces", "LAN ports", func(c NetworkConfig) string { return list(c.LanInterfaces) }},
@@ -816,7 +817,7 @@ func diffWan2Details(active, candidate NetworkConfig) []Change {
 	details := []struct{ field, label string }{
 		{"wan2.mode", "Second connection addressing"}, {"wan2.ip", "Second connection IP address"}, {"wan2.subnet", "Second connection netmask"},
 		{"wan2.gateway", "Second connection gateway"}, {"wan2.dns", "Second connection DNS servers"}, {"wan2.vlan", "Second connection VLAN"},
-		{"wan2.mtu", "Second connection MTU"}, {"wan2.mac", "Second connection MAC address"},
+		{"wan2.mtu", "Second connection MTU"}, {"wan2.mac", "Second connection MAC address"}, {"wan2.probe", "Second connection health check"},
 		{"wan2.pppoe_username", "Second connection PPPoE user name"}, {"wan2.pppoe_service", "Second connection PPPoE service name"},
 	}
 	for _, d := range details {
@@ -862,6 +863,8 @@ func wan2Value(v NetworkConfig, present bool, field string) string {
 			return "the port's own"
 		}
 		return v.WanMAC
+	case "wan2.probe":
+		return v.ProbeText()
 	case "wan2.pppoe_username":
 		if v.WanPPPoE == nil {
 			return valueNone

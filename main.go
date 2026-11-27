@@ -80,32 +80,76 @@ func main() {
 			log.Printf("[-] Error closing WAN health history: %v", err)
 		}
 	})
-	wanProbe := &wanhealth.Prober{
-		Store:   healthStore,
-		Pinger:  &wanhealth.AutoPinger{},
-		Every:   5 * time.Second,
-		Timeout: 2 * time.Second,
-		Target: func() (wanhealth.Target, bool) {
-			cfg := cfgMgr.NetworkConfig()
-			if cfg.WanInterface == "" {
-				return wanhealth.Target{}, false
-			}
-			resolvers, source := network.UpstreamResolvers(cfg, os.ReadFile)
-			if len(resolvers) == 0 {
-				return wanhealth.Target{}, false
-			}
-			return wanhealth.Target{Addr: resolvers[0], Source: source}, true
-		},
-		Gateway: func() (wanhealth.Target, bool) {
-			cfg := cfgMgr.NetworkConfig()
-			if cfg.WanInterface == "" {
-				return wanhealth.Target{}, false
-			}
-			gw, ok := network.UpstreamGateway(cfg, os.ReadFile)
-			return wanhealth.Target{Addr: gw, Source: "default gateway"}, ok
-		},
+	// one prober for each internet connection. Each asks about its own connection (the view of the configuration that is its own: first or
+	// second), and, when there are two, sends its probes out of that connection's interface only.
+	newProber := func(id string) *wanhealth.Prober {
+		view := func() (config.NetworkConfig, bool) { return cfgMgr.NetworkConfig().WanView(id) }
+		return &wanhealth.Prober{
+			Store: healthStore,
+			ID:    id,
+			Pinger: &wanhealth.AutoPinger{Device: func() string {
+				if cfg := cfgMgr.NetworkConfig(); cfg.HasWan2() {
+					if v, ok := cfg.WanView(id); ok {
+						return v.WanDevice()
+					}
+				}
+				return "" // a router with one connection probes as it always did
+			}},
+			Every:   5 * time.Second,
+			Timeout: 2 * time.Second,
+			EveryFn: func() time.Duration {
+				v, _ := view()
+				return v.ProbeSettings().Every
+			},
+			DownAfter: func() int {
+				v, _ := view()
+				return v.ProbeSettings().DownAfter
+			},
+			Target: func() (wanhealth.Target, bool) {
+				cfg, ok := view()
+				if !ok || cfg.WanInterface == "" {
+					return wanhealth.Target{}, false
+				}
+				resolvers, source := network.UpstreamResolvers(cfg, os.ReadFile)
+				if len(resolvers) == 0 {
+					return wanhealth.Target{}, false
+				}
+				return wanhealth.Target{Addr: resolvers[0], Source: source}, true
+			},
+			Gateway: func() (wanhealth.Target, bool) {
+				cfg, ok := view()
+				if !ok || cfg.WanInterface == "" {
+					return wanhealth.Target{}, false
+				}
+				gw, ok := network.UpstreamGateway(cfg, os.ReadFile)
+				return wanhealth.Target{Addr: gw, Source: "default gateway"}, ok
+			},
+			// the addresses the administrator added, and the public ones unless they are turned off
+			Extra: func() []wanhealth.Target {
+				cfg, ok := view()
+				if !ok || cfg.WanInterface == "" {
+					return nil
+				}
+				set := cfg.ProbeSettings()
+				var out []wanhealth.Target
+				for _, a := range set.Targets {
+					out = append(out, wanhealth.Target{Addr: a, Source: "added by you"})
+				}
+				if set.Fallbacks {
+					for _, s := range config.PublicProbeTargets {
+						if a, err := netip.ParseAddr(s); err == nil {
+							out = append(out, wanhealth.Target{Addr: a, Source: "public address"})
+						}
+					}
+				}
+				return out
+			},
+		}
 	}
+	wanProbe := newProber(config.WanFirst)
+	wanProbe2 := newProber(config.WanSecond)
 	whileRouter(wanProbe.Run)
+	go daemon.RunWhile(pollerCtx, routerWorkEvery, func() bool { return isRouter() && cfgMgr.NetworkConfig().HasWan2() }, wanProbe2.Run)
 
 	// answer time questions on the networks that serve the time (the router's own clock follows its time servers; this repeats it)
 	timeServer := &timeserver.Server{
@@ -348,11 +392,18 @@ func main() {
 	mux.HandleFunc("/api/v1/uplinks", requireAuth(routerOnly(netAPI.HandleUplinks)))
 	mux.HandleFunc("/api/v1/uplinks/{id}", requireAuth(routerOnly(netAPI.HandleUplink)))
 	mux.HandleFunc("/api/v1/uplinks/{id}/health", requireAuth(func(w http.ResponseWriter, r *http.Request) {
-		if r.PathValue("id") != "wan" {
+		switch r.PathValue("id") {
+		case config.WanFirst:
+			wanProbe.HandleHistory(w, r)
+		case config.WanSecond:
+			if !cfgMgr.NetworkConfig().HasWan2() {
+				http.NotFound(w, r)
+				return
+			}
+			wanProbe2.HandleHistory(w, r)
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		wanProbe.HandleHistory(w, r)
 	}))
 	mux.HandleFunc("/api/v1/ports", requireAuth(routerOnly(netAPI.HandlePorts)))
 	mux.HandleFunc("/api/v1/networks", requireAuth(routerOnly(netAPI.HandleNetworks)))

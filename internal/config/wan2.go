@@ -40,6 +40,7 @@ type WanConfig struct {
 	MTU       int          `json:"mtu,omitempty"`
 	MAC       string       `json:"mac,omitempty"`
 	PPPoE     *PPPoEConfig `json:"pppoe,omitempty"`
+	Probe     *ProbeConfig `json:"probe,omitempty"` // how this connection is watched
 }
 
 func (w WanConfig) clone() WanConfig {
@@ -47,6 +48,10 @@ func (w WanConfig) clone() WanConfig {
 	if w.PPPoE != nil {
 		p := *w.PPPoE
 		w.PPPoE = &p
+	}
+	if w.Probe != nil {
+		p := w.Probe.clone()
+		w.Probe = &p
 	}
 	return w
 }
@@ -69,7 +74,7 @@ func (c NetworkConfig) WanView(id string) (NetworkConfig, bool) {
 		w := c.Wan2.clone()
 		v := c.clone()
 		v.WanInterface, v.WanMode, v.WanIP, v.WanSubnet, v.WanGateway = w.Interface, w.Mode, w.IP, w.Subnet, w.Gateway
-		v.WanDNS, v.WanVlan, v.WanMTU, v.WanMAC, v.WanPPPoE = w.DNS, w.Vlan, w.MTU, w.MAC, w.PPPoE
+		v.WanDNS, v.WanVlan, v.WanMTU, v.WanMAC, v.WanPPPoE, v.WanProbe = w.DNS, w.Vlan, w.MTU, w.MAC, w.PPPoE, w.Probe
 		v.uplink = 2 // and, like the first's view, the second connection and the preference stay (WanMetric)
 		return v, true
 	}
@@ -167,6 +172,8 @@ func (c NetworkConfig) validateWan2(add func(field, format string, args ...any),
 	prefix, havePrefix := v.validateWanLink(func(field, format string, args ...any) {
 		if name, ok := wan2Fields[field]; ok {
 			add(name, format, args...)
+		} else if strings.HasPrefix(field, "wan_probe") {
+			add("wan2.probe"+strings.TrimPrefix(field, "wan_probe"), format, args...)
 		}
 	})
 	if v.WanInterface == c.WanInterface {
@@ -233,6 +240,10 @@ func (c NetworkConfig) WanSettings(id string) WanConfig {
 	}
 	w := WanConfig{Interface: c.WanInterface, Mode: c.WanMode, IP: c.WanIP, Subnet: c.WanSubnet, Gateway: c.WanGateway,
 		DNS: append([]string(nil), c.WanDNS...), Vlan: c.WanVlan, MTU: c.WanMTU, MAC: c.WanMAC}
+	if c.WanProbe != nil {
+		p := c.WanProbe.clone()
+		w.Probe = &p
+	}
 	if c.WanPPPoE != nil {
 		p := *c.WanPPPoE
 		w.PPPoE = &p
@@ -251,7 +262,7 @@ func (c *NetworkConfig) SetWanSettings(id string, w WanConfig) {
 		return
 	}
 	c.WanMode, c.WanIP, c.WanSubnet, c.WanGateway, c.WanDNS = w.Mode, w.IP, w.Subnet, w.Gateway, w.DNS
-	c.WanVlan, c.WanMTU, c.WanMAC, c.WanPPPoE = w.Vlan, w.MTU, w.MAC, w.PPPoE
+	c.WanVlan, c.WanMTU, c.WanMAC, c.WanPPPoE, c.WanProbe = w.Vlan, w.MTU, w.MAC, w.PPPoE, w.Probe
 }
 
 // WanIsPreferred says whether the connection is the one the traffic prefers.

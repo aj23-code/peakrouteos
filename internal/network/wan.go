@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -61,6 +62,10 @@ func SystemResolvers(read func(string) ([]byte, error)) []netip.Addr {
 // UpstreamResolvers returns the DNS servers the internet connection uses, and where they came
 // from: the configured ones for a static address, the provider's otherwise.
 func UpstreamResolvers(cfg config.NetworkConfig, read func(string) ([]byte, error)) ([]netip.Addr, string) {
+	return upstreamResolvers(cfg, read, "/run/peakroute")
+}
+
+func upstreamResolvers(cfg config.NetworkConfig, read func(string) ([]byte, error), runDir string) ([]netip.Addr, string) {
 	var configured []netip.Addr
 	for _, s := range cfg.WanDNS {
 		if a, err := netip.ParseAddr(s); err == nil && a.Is4() {
@@ -72,7 +77,32 @@ func UpstreamResolvers(cfg config.NetworkConfig, read func(string) ([]byte, erro
 	if len(configured) > 0 || strings.EqualFold(cfg.WanMode, "static") {
 		return configured, "DNS server you configured"
 	}
+	// the second connection does not write the resolver file (the first's resolvers are what the router uses): its DHCP script keeps
+	// what the provider said for it
+	if cfg.IsSecondWan() && cfg.WanKind() == config.WanDHCP {
+		if data, err := read(filepath.Join(runDir, "udhcpc."+cfg.WanDevice())); err == nil {
+			return ParseUdhcpcDNS(data), "DNS server from your provider"
+		}
+		return nil, "DNS server from your provider"
+	}
 	return SystemResolvers(read), "DNS server from your provider"
+}
+
+// ParseUdhcpcDNS returns the resolvers in the state file the router's DHCP script keeps for a connection ("dns=1.1.1.1 9.9.9.9").
+func ParseUdhcpcDNS(data []byte) []netip.Addr {
+	var out []netip.Addr
+	for _, line := range strings.Split(string(data), "\n") {
+		v, ok := strings.CutPrefix(line, "dns=")
+		if !ok {
+			continue
+		}
+		for _, f := range strings.Fields(v) {
+			if a, err := netip.ParseAddr(f); err == nil && a.Is4() && !a.IsUnspecified() {
+				out = append(out, a)
+			}
+		}
+	}
+	return out
 }
 
 // DefaultGateway finds the default route's gateway for a port in /proc/net/route text.

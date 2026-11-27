@@ -317,6 +317,7 @@
               <div id="inet-state-text" class="inet-state-text">Checking&hellip;</div>
               <div id="inet-target" class="form-hint"></div>
               <div id="inet-diagnosis" class="inet-diagnosis hidden"></div>
+              <ul id="inet-targets" class="inet-targets hidden" aria-label="The addresses this connection is checked against"></ul>
             </div>
           </div>
           <dl class="inet-stats">
@@ -447,6 +448,34 @@
                 <input type="text" id="inet-mac" autocomplete="off" placeholder="the port's own" spellcheck="false" autocapitalize="off">
                 <p class="form-hint">If your provider only accepts one known device, enter that device's MAC address (like 00:11:22:33:44:55). Empty uses the port's own address.</p>
                 <p class="field-error hidden" data-error="mac"></p>
+              </div>
+            </div>
+          </details>
+
+          <details class="inet-advanced" id="inet-probe-box">
+            <summary>Health check</summary>
+            <p class="form-hint">The router checks this connection every few seconds by pinging its provider&rsquo;s DNS server and the addresses below, through this connection only. The connection counts as down when every address that answers has stopped answering.</p>
+            <div class="form-grid">
+              <div class="form-field form-field--wide" data-field="probe.targets">
+                <label for="inet-probe-targets">More addresses to check <span class="form-hint">(optional)</span></label>
+                <input type="text" id="inet-probe-targets" autocomplete="off" placeholder="8.8.8.8, 208.67.222.222" spellcheck="false">
+                <p class="form-hint">IPv4 addresses that answer a ping, separated by commas (up to 8).</p>
+                <p class="field-error hidden" data-error="probe.targets"></p>
+              </div>
+              <div class="form-field form-field--wide">
+                <label class="check"><input type="checkbox" id="inet-probe-public"> Also check <span id="inet-probe-public-list">1.1.1.1 and 9.9.9.9</span><span class="form-hint">Public addresses that nearly always answer, so a provider whose own servers ignore pings is still judged fairly.</span></label>
+              </div>
+              <div class="form-field" data-field="probe.every_seconds">
+                <label for="inet-probe-every">Check every (seconds)</label>
+                <input type="text" id="inet-probe-every" inputmode="numeric" autocomplete="off" spellcheck="false">
+                <p class="form-hint">2 to 60.</p>
+                <p class="field-error hidden" data-error="probe.every_seconds"></p>
+              </div>
+              <div class="form-field" data-field="probe.down_after">
+                <label for="inet-probe-down">Down after (failed checks in a row)</label>
+                <input type="text" id="inet-probe-down" inputmode="numeric" autocomplete="off" spellcheck="false">
+                <p class="form-hint">2 to 20. With the defaults, a line that has stopped is found down in about 15 seconds.</p>
+                <p class="field-error hidden" data-error="probe.down_after"></p>
               </div>
             </div>
           </details>

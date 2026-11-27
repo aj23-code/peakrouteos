@@ -82,6 +82,7 @@ window.InternetModule = (function () {
         $('inet-target').textContent = target;
         $('inet-diagnosis').textContent = st.diagnosis || '';
         $('inet-diagnosis').classList.toggle('hidden', !st.diagnosis);
+        renderTargets(st.targets || []);
 
         $('inet-now').textContent = state === 'offline' ? 'No answer' : formatMs(st.rtt_ms);
         $('inet-avg').textContent = formatMs(sum.avg_ms);
@@ -97,6 +98,17 @@ window.InternetModule = (function () {
         gwEl.title = [gw.target ? `Gateway ${gw.target}` : '', gw.problem || ''].filter(Boolean).join(' – ');
         $('inet-gw-key').classList.toggle('hidden', !(history.gateway.timestamps || []).length);
         renderAvailability();
+    }
+
+    // the addresses the connection is checked against, and how each one answers
+    function renderTargets(list) {
+        const ul = $('inet-targets');
+        ul.classList.toggle('hidden', list.length < 2);
+        ul.innerHTML = list.length < 2 ? '' : list.map(t => {
+            const word = t.state === 'online' ? formatMs(t.rtt_ms) : t.state === 'offline' ? 'no answer' : '\u2013';
+            const note = t.note ? ` <span class="form-hint">${escapeHtml(t.note)}</span>` : '';
+            return `<li class="inet-target inet-target--${escapeHtml(t.state)}${t.counts ? '' : ' inet-target--out'}"><code>${escapeHtml(t.addr)}</code> <span class="form-hint">${escapeHtml(t.source || '')}</span> ${escapeHtml(word)}${note}</li>`;
+        }).join('');
     }
 
     function fmtDuration(seconds) {
@@ -353,10 +365,11 @@ window.InternetModule = (function () {
     }
 
     async function loadHealth() {
-        const res = await apiFetch('/api/v1/uplinks/wan/health?range=' + range);
+        const id = selectedId;
+        const res = await apiFetch('/api/v1/uplinks/' + encodeURIComponent(id) + '/health?range=' + range);
         if (!res || !res.ok) return;
         const data = await res.json();
-        if (data.range !== range) return; // the person switched ranges while this was loading
+        if (data.range !== range || id !== selectedId) return; // the person switched ranges or connections while this was loading
         history = data;
         hoverT = null;
         renderStatus();
@@ -417,7 +430,9 @@ window.InternetModule = (function () {
         const res = await apiFetch('/api/v1/system/stats');
         if (!res || !res.ok) return;
         const stats = await res.json();
-        const entry = Object.entries(stats.interfaces || {}).find(([, m]) => m.role === 'wan');
+        const own = uplink && uplink.port;
+        const entry = Object.entries(stats.interfaces || {}).find(([n, m]) => m.role === 'wan' && (!own || n === own))
+            || Object.entries(stats.interfaces || {}).find(([, m]) => m.role === 'wan');
         if (!entry) {
             if (wanPort !== null) { wanPort = null; }
             clearUsage('No port is set as the internet port yet. Choose one on the Ports page.');
@@ -518,6 +533,23 @@ window.InternetModule = (function () {
         // the advanced settings open by themselves when any is in use
         if (u.vlan || u.mtu || u.mac) $('inet-advanced').open = true;
         $('inet-preferred').checked = !!u.preferred;
+        const pr = u.probe || {};
+        $('inet-probe-targets').value = (pr.targets || []).join(', ');
+        $('inet-probe-public').checked = pr.public_fallbacks !== false;
+        $('inet-probe-public-list').textContent = (pr.public_targets || ['1.1.1.1', '9.9.9.9']).join(' and ');
+        $('inet-probe-every').value = String(pr.every_seconds || 5);
+        $('inet-probe-down').value = String(pr.down_after || 3);
+        if ((pr.targets || []).length || pr.public_fallbacks === false || (pr.every_seconds && pr.every_seconds !== pr.default_every_seconds) ||
+            (pr.down_after && pr.down_after !== pr.default_down_after)) $('inet-probe-box').open = true;
+    }
+
+    function probeValues() {
+        return {
+            targets: $('inet-probe-targets').value.split(/[\s,]+/).filter(Boolean),
+            publicFallbacks: $('inet-probe-public').checked,
+            every: intOf($('inet-probe-every').value),
+            down: intOf($('inet-probe-down').value),
+        };
     }
 
     // What differs from the saved draft. Only the settings of the chosen type count.
@@ -525,6 +557,9 @@ window.InternetModule = (function () {
         if (!uplink) return false;
         const v = formValues();
         if ($('inet-preferred').checked !== !!uplink.preferred) return true;
+        const pv = probeValues(), pr = uplink.probe || {};
+        if (pv.targets.join(',') !== (pr.targets || []).join(',') || pv.publicFallbacks !== (pr.public_fallbacks !== false) ||
+            pv.every !== (pr.every_seconds || 5) || pv.down !== (pr.down_after || 3)) return true;
         if (v.mode !== uplink.mode) return true;
         const same = (a, b) => String(a) === String(b);
         if (!same(v.vlan, uplink.vlan || '') || !same(v.mtu, uplink.mtu || '') || v.mac !== (uplink.mac || '')) return true;
@@ -541,6 +576,8 @@ window.InternetModule = (function () {
         const v = formValues();
         const out = { mode: v.mode, vlan: intOf(v.vlan), mtu: intOf(v.mtu), mac: v.mac };
         if ($('inet-preferred').checked) out.preferred = true;
+        const pv = probeValues();
+        out.probe = { targets: pv.targets, public_fallbacks: pv.publicFallbacks, every_seconds: pv.every, down_after: pv.down };
         if (v.mode === 'static') {
             Object.assign(out, { ip: v.ip, netmask: v.netmask, gateway: v.gateway, dns: v.dns });
         } else {
@@ -598,10 +635,11 @@ window.InternetModule = (function () {
 
         const lock = !editable || saving;
         ['inet-mode-dhcp', 'inet-mode-static', 'inet-mode-pppoe', 'inet-ip', 'inet-netmask', 'inet-gateway', 'inet-dns',
-            'inet-vlan', 'inet-mtu', 'inet-mac', 'inet-pppoe-user', 'inet-pppoe-pass', 'inet-pppoe-service', 'inet-pppoe-reveal', 'inet-preferred']
+            'inet-vlan', 'inet-mtu', 'inet-mac', 'inet-pppoe-user', 'inet-pppoe-pass', 'inet-pppoe-service', 'inet-pppoe-reveal', 'inet-preferred', 'inet-probe-targets', 'inet-probe-public', 'inet-probe-every', 'inet-probe-down']
             .forEach(id => { $(id).disabled = lock; });
 
-        const bad = ['vlan', 'mtu'].filter(k => Number.isNaN(intOf(formValues()[k])));
+        const bad = ['vlan', 'mtu'].filter(k => Number.isNaN(intOf(formValues()[k])))
+            .concat(Number.isNaN(probeValues().every) || Number.isNaN(probeValues().down) ? ['probe'] : []);
         const dirty = isDirty();
         $('inet-hint').textContent = !editable
             ? 'A change is being applied or waits for confirmation: the connection cannot be edited right now.'
@@ -627,6 +665,9 @@ window.InternetModule = (function () {
         clearFieldErrors();
         showMessage('');
         const bad = ['vlan', 'mtu'].filter(k => Number.isNaN(intOf(formValues()[k])));
+        const pv = probeValues();
+        if (Number.isNaN(pv.every)) bad.push('probe.every_seconds');
+        if (Number.isNaN(pv.down)) bad.push('probe.down_after');
         if (bad.length) {
             bad.forEach(k => showFieldErrors([{ field: k, message: 'must be a whole number' }]));
             showMessage('Some settings need attention.', 'error');
@@ -681,6 +722,9 @@ window.InternetModule = (function () {
             showMessage('');
             const next = uplinks.find(u => u.id === selectedId);
             if (next) { uplink = next; fillForm(uplink); renderForm(); }
+            history = null;
+            drawChart();
+            loadHealth();
         });
         $('inet-card').addEventListener('input', renderForm);
         $('inet-card').addEventListener('change', renderForm);

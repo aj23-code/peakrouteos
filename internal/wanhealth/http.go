@@ -57,7 +57,7 @@ func (p *Prober) HandleHistory(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	resp := historyResponse{Range: name, Status: p.Status()}
 	for _, series := range allSeries {
-		points, summary, err := p.Store.History(series, rng, now)
+		points, summary, err := p.Store.History(p.series(series), rng, now)
 		if err != nil {
 			http.Error(w, "could not read the history", http.StatusInternalServerError)
 			return

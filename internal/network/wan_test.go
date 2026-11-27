@@ -236,3 +236,36 @@ func TestParsePeer(t *testing.T) {
 		}
 	}
 }
+
+func TestTheSecondDHCPConnectionsResolversComeFromItsDHCPScriptsStateFile(t *testing.T) {
+	cfg := config.NetworkConfig{WanInterface: "eth0", WanMode: "dhcp", LanInterfaces: []string{"eth1"},
+		Wan2: &config.WanConfig{Interface: "eth2", Mode: "dhcp"}}
+	second, _ := cfg.WanView(config.WanSecond)
+	read := func(path string) ([]byte, error) {
+		switch path {
+		case "/run/peakroute/udhcpc.eth2":
+			return []byte("router=198.51.100.1\nmetric=200\ndns=198.51.100.53 9.9.9.9\n"), nil
+		case "/etc/resolv.conf":
+			return []byte("nameserver 203.0.113.53\n"), nil
+		}
+		return nil, os.ErrNotExist
+	}
+	got, source := UpstreamResolvers(second, read)
+	if len(got) != 2 || got[0].String() != "198.51.100.53" || source != "DNS server from your provider" {
+		t.Fatalf("second: %v %q", got, source)
+	}
+	// the first keeps reading the resolver file, as it does with one connection
+	first, _ := cfg.WanView(config.WanFirst)
+	if got, _ := UpstreamResolvers(first, read); len(got) != 1 || got[0].String() != "203.0.113.53" {
+		t.Fatalf("first: %v", got)
+	}
+	// no state file yet (the lease is not there): nothing, and not the first connection's
+	if got, _ := UpstreamResolvers(second, func(string) ([]byte, error) { return nil, os.ErrNotExist }); len(got) != 0 {
+		t.Fatalf("%v", got)
+	}
+	// servers set by hand win here as everywhere
+	second.WanDNS = []string{"1.0.0.1"}
+	if got, source := UpstreamResolvers(second, read); len(got) != 1 || got[0].String() != "1.0.0.1" || source != "DNS server you configured" {
+		t.Fatalf("%v %q", got, source)
+	}
+}

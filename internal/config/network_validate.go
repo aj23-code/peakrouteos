@@ -252,6 +252,7 @@ func (c NetworkConfig) validateWanLink(add func(field, format string, args ...an
 	// DNS servers: required with a static address; with DHCP or PPPoE they replace the provider's
 	validateServers(c.WanDNS, "wan_dns", add)
 	c.validateWan(add)
+	c.validateProbe(add)
 	return wanPrefix, haveWanPrefix
 }
 

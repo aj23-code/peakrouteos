@@ -1,4 +1,4 @@
-# A second internet connection: failover and load balancing (plan, 2026-11-27; phase 1 built 2026-11-27)
+# A second internet connection: failover and load balancing (plan, 2026-11-27; phases 1 and 2 built 2026-11-27)
 
 Goal: a router that can have **two internet connections** (WAN and WAN 2), watches each one, and either **fails over** from the
 first to the second when the first stops working, or **balances** the networks' traffic over both, switched on and managed like
@@ -54,8 +54,11 @@ Settings (new, on the Internet page, shown when there is a second uplink):
 
 ## 4. Watching an uplink
 
-- **Each probe goes out through its own uplink**: `SO_BINDTODEVICE` to the uplink's device (`ppp0` for PPPoE, `eth0.100` for a VLAN) and
-  the uplink's address as the source, so the answer comes back the same way regardless of the routing table.
+- **Each probe goes out through its own uplink**: `SO_BINDTODEVICE` to the uplink's device (`ppp0` for PPPoE, `eth0.100` for a VLAN),
+  so the answer comes back the same way regardless of which route the table prefers. **Only when there are two connections** (a router
+  with one probes as it always did). A bound probe still needs a route through that device: with none, the kernel treats the target as
+  directly reachable on the device and gets no answer. So phase 3 must **keep** a down uplink's route (raise its metric) and not delete
+  it, or the probes could never see it come back.
 - **Targets, per uplink**: (1) its **gateway**, (2) its **upstream DNS servers as they are now** (the ones the connection got from
   DHCP/PPPoE or that were set; re-read every round, because they change), (3) the **targets the administrator added**, (4) with
   *public fallbacks* on, 1.1.1.1 and 9.9.9.9. The Internet page lists them with their last result.
@@ -72,8 +75,9 @@ Settings (new, on the Internet page, shown when there is a second uplink):
 ## 5. Routing
 
 - **Failover.** Both uplinks have their default route in the main table, the preferred one with the lower metric. The daemon
-  (a reconcile loop like SQM's, started also by the interface hooks) **removes the default route of an uplink that is down** and
-  puts it back when it is up and past its recovery time (or immediately, for the secondary). A DHCP renewal that puts the route back
+  (a reconcile loop like SQM's, started also by the interface hooks) **raises the metric of the default route of an uplink that is
+  down** (to 1000, so it stays for the probes to use, section 4) and sets it back when it is up and past its recovery time (or
+  immediately, for the secondary). A DHCP renewal that puts the route back
   is undone by the next round (at most the probe interval). Connections that were on the failed line break; new ones use the other.
   The router's own traffic follows the main table.
 - **Load balanced.** Each uplink has its own routing table (100, 101) with a default route through its gateway. nftables marks **a new
@@ -103,6 +107,30 @@ Settings (new, on the Internet page, shown when there is a second uplink):
 | Wireless (the AP/cellular case) | a USB tethering dongle or a second router shows up as a port; nothing special |
 
 ## 7. Phases
+
+**Phase 2 is built** (2026-11-27): the watching.
+
+- **Settings** per connection (`config.ProbeConfig`: `wan_probe` for the first, `wan2.probe` for the second; nothing is written for the
+  defaults): the addresses the administrator added (IPv4, at most 8, not loopback, multicast, link-local or 0.0.0.0), *also use the
+  public addresses* (1.1.1.1 and 9.9.9.9, on by default), *check every* (2-60 s, default 5) and *down after* (2-20 checks, default 3).
+  Names are not accepted yet, only addresses. `GET/PUT /api/v1/uplinks/{id}` carry them (`probe`), the review lists them.
+- **One `wanhealth.Prober` per connection** (`ID` `wan` or `wan2`). The first keeps its history series `dns` and `gateway`; the second's
+  are `wan2.dns` and `wan2.gateway`. A round asks the DNS server (what the chart draws) and every other target together, then the
+  gateway (evidence for the diagnosis only). **The verdict:** online when a target that counts answered last time; offline when every
+  target that counts has failed *down after* times in a row; otherwise as it was. **A target counts once it has answered**, until
+  something has answered every target counts (so a line that is down from the start is found down). The settings are asked every round.
+- **Resolvers of the second connection** come from its DHCP script's state file (`/run/peakroute/udhcpc.<device>`, `dns=`), since it
+  does not write the resolver file; a second PPPoE connection has none of its own (its provider's end and the public addresses are
+  probed).
+- **The Internet page:** the status card follows the selected connection and lists the addresses with how each answers (those left out
+  of the decision are marked); a *Health check* section in the connection card holds the settings; the chart, uptime and outage list,
+  and the traffic card follow the selected connection. `GET /api/v1/uplinks/{id}/health` serves either.
+- Tested: the decision rules (fake pinger), concurrency of the probes and the race detector, settings and their limits, the API, and
+  **the real kernel**: with two upstream namespaces that both own 9.9.9.9 and only one answers, a probe bound to a connection is
+  answered or not by that connection's upstream whatever the routing table prefers, and two probers give online and offline
+  (`wanhealth/bound_test.go`). The page's script ran in a browser against its real markup with two mocked connections. **Not run on a
+  router with two lines.**
+- Nothing acts on the verdict yet: failover is phase 3.
 
 **Phase 1 is built** (2026-11-27). What it does and where it stops:
 

@@ -489,7 +489,7 @@ func TestEchoReplyMatching(t *testing.T) {
 }
 
 func TestPingICMPLoopback(t *testing.T) {
-	rtt, err := pingICMP(context.Background(), netip.MustParseAddr("127.0.0.1"), time.Second)
+	rtt, err := pingICMP(context.Background(), netip.MustParseAddr("127.0.0.1"), time.Second, "")
 	if errors.Is(err, ErrNoPermission) {
 		t.Skip("this process may not send ICMP echo requests")
 	}
@@ -533,7 +533,7 @@ func TestDNSQueryShape(t *testing.T) {
 
 func TestQueryDNSMeasuresTheAnswer(t *testing.T) {
 	addr, port := fakeDNS(t, true)
-	rtt, err := queryDNS(context.Background(), netip.AddrPortFrom(addr, port), time.Second)
+	rtt, err := queryDNS(context.Background(), netip.AddrPortFrom(addr, port), time.Second, "")
 	if err != nil || rtt <= 0 || rtt > time.Second {
 		t.Fatalf("rtt %v err %v", rtt, err)
 	}
@@ -559,7 +559,7 @@ func TestQueryDNSIgnoresAnswersThatAreNotForUs(t *testing.T) {
 		pc.WriteTo(notAResponse, from) // our own query echoed back: QR bit not set
 	}()
 	port := uint16(pc.LocalAddr().(*net.UDPAddr).Port)
-	_, err = queryDNS(context.Background(), netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), port), 300*time.Millisecond)
+	_, err = queryDNS(context.Background(), netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), port), 300*time.Millisecond, "")
 	if !errors.Is(err, ErrTimeout) {
 		t.Fatalf("err = %v, want a timeout (no valid answer arrived)", err)
 	}
@@ -568,7 +568,7 @@ func TestQueryDNSIgnoresAnswersThatAreNotForUs(t *testing.T) {
 func TestQueryDNSTimesOutWithoutAnAnswer(t *testing.T) {
 	addr, port := fakeDNS(t, false)
 	start := time.Now()
-	_, err := queryDNS(context.Background(), netip.AddrPortFrom(addr, port), 200*time.Millisecond)
+	_, err := queryDNS(context.Background(), netip.AddrPortFrom(addr, port), 200*time.Millisecond, "")
 	if !errors.Is(err, ErrTimeout) || time.Since(start) > 2*time.Second {
 		t.Fatalf("err %v after %v", err, time.Since(start))
 	}
@@ -579,7 +579,7 @@ func TestQueryDNSStopsWhenCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { time.Sleep(50 * time.Millisecond); cancel() }()
 	start := time.Now()
-	_, err := queryDNS(ctx, netip.AddrPortFrom(addr, port), 5*time.Second)
+	_, err := queryDNS(ctx, netip.AddrPortFrom(addr, port), 5*time.Second, "")
 	if !errors.Is(err, context.Canceled) || time.Since(start) > 2*time.Second {
 		t.Fatalf("err %v after %v", err, time.Since(start))
 	}

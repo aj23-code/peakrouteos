@@ -141,3 +141,66 @@ func TestPreferringTheSecondConnectionIsADraftChange(t *testing.T) {
 		t.Fatalf("%q", staged.WanPreferred)
 	}
 }
+
+func TestAConnectionsHealthCheckIsSetPerConnectionAndTheDefaultsAreNotStored(t *testing.T) {
+	e := standard(t)
+	e.putJSON(e.api.HandlePorts, `{"assignments":{"eth2":"wan2"}}`)
+	u := decodeInto[Uplink](t, e.uplinkOf("wan", http.MethodGet, ""))
+	if !u.Probe.PublicFallbacks || u.Probe.EverySeconds != 5 || u.Probe.DownAfter != 3 || len(u.Probe.Targets) != 0 || len(u.Probe.PublicTargets) != 2 {
+		t.Fatalf("defaults: %+v", u.Probe)
+	}
+	rec := e.uplinkOf("wan2", http.MethodPut, `{"mode":"dhcp","probe":{"targets":[" 8.8.8.8 ","1.0.0.1"],"public_fallbacks":false,"every_seconds":10,"down_after":4}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT = %d: %s", rec.Code, rec.Body)
+	}
+	got := decodeInto[Uplink](t, rec).Probe
+	if len(got.Targets) != 2 || got.Targets[0] != "8.8.8.8" || got.PublicFallbacks || got.EverySeconds != 10 || got.DownAfter != 4 {
+		t.Fatalf("%+v", got)
+	}
+	staged, _ := e.mgr.StagedNetworkConfig()
+	if staged.WanProbe != nil || staged.Wan2.Probe == nil || len(staged.Wan2.Probe.Targets) != 2 || !staged.Wan2.Probe.NoFallbacks {
+		t.Fatalf("the settings went to the wrong connection: %+v / %+v", staged.WanProbe, staged.Wan2.Probe)
+	}
+	fields := map[string]bool{}
+	for _, c := range e.staged() {
+		fields[c.Field] = true
+	}
+	if !fields["wan2.probe"] || fields["wan_probe"] {
+		t.Errorf("staged: %+v", e.staged())
+	}
+	// what is left out stays; putting the defaults back leaves nothing stored
+	e.uplinkOf("wan2", http.MethodPut, `{"mode":"dhcp","probe":{"public_fallbacks":true}}`)
+	if staged, _ = e.mgr.StagedNetworkConfig(); staged.Wan2.Probe == nil || staged.Wan2.Probe.NoFallbacks || len(staged.Wan2.Probe.Targets) != 2 {
+		t.Fatalf("%+v", staged.Wan2.Probe)
+	}
+	e.uplinkOf("wan2", http.MethodPut, `{"mode":"dhcp","probe":{"targets":[],"every_seconds":5,"down_after":3}}`)
+	if staged, _ = e.mgr.StagedNetworkConfig(); staged.Wan2.Probe != nil {
+		t.Fatalf("defaults were stored: %+v", staged.Wan2.Probe)
+	}
+	// the first connection's own
+	if rec = e.uplinkOf("wan", http.MethodPut, `{"mode":"dhcp","probe":{"targets":["8.8.4.4"]}}`); rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if staged, _ = e.mgr.StagedNetworkConfig(); staged.WanProbe == nil || staged.WanProbe.Targets[0] != "8.8.4.4" {
+		t.Fatalf("%+v", staged.WanProbe)
+	}
+}
+
+func TestMistakesInTheHealthCheckAreReportedOnTheFormsFields(t *testing.T) {
+	e := standard(t)
+	for body, field := range map[string]string{
+		`{"mode":"dhcp","probe":{"targets":["not an address"]}}`:    "probe.targets",
+		`{"mode":"dhcp","probe":{"targets":["127.0.0.1"]}}`:         "probe.targets",
+		`{"mode":"dhcp","probe":{"targets":["8.8.8.8","8.8.8.8"]}}`: "probe.targets",
+		`{"mode":"dhcp","probe":{"every_seconds":1}}`:               "probe.every_seconds",
+		`{"mode":"dhcp","probe":{"down_after":99}}`:                 "probe.down_after",
+	} {
+		rec := e.uplinkOf("wan", http.MethodPut, body)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"field":"`+field+`"`) {
+			t.Errorf("%s: %d %s", body, rec.Code, rec.Body)
+		}
+	}
+	if staged, _ := e.mgr.StagedNetworkConfig(); staged.WanProbe != nil {
+		t.Errorf("a refused change was staged: %+v", staged.WanProbe)
+	}
+}

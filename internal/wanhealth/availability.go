@@ -83,9 +83,14 @@ func (s *Store) minutesSince(series string, since time.Time, now time.Time) (map
 	return totals, minutes, nil
 }
 
-// Availability computes the uptime and the outage list of the DNS series as of now.
+// Availability computes the uptime and the outage list of the first connection's DNS series as of now.
 func (s *Store) Availability(now time.Time) (Availability, error) {
-	totals, minutes, err := s.minutesSince(SeriesDNS, now.Add(-availabilityWindow), now)
+	return s.AvailabilityOf(SeriesDNS, now)
+}
+
+// AvailabilityOf computes the uptime and the outage list of a DNS series as of now.
+func (s *Store) AvailabilityOf(series string, now time.Time) (Availability, error) {
+	totals, minutes, err := s.minutesSince(series, now.Add(-availabilityWindow), now)
 	if err != nil {
 		return Availability{}, err
 	}
@@ -171,7 +176,7 @@ func (p *Prober) availability(now time.Time) (Availability, error) {
 	if c.ok && now.Sub(c.at) < availabilityTTL && now.After(c.at) {
 		return c.data, nil
 	}
-	a, err := p.Store.Availability(now)
+	a, err := p.Store.AvailabilityOf(p.series(SeriesDNS), now)
 	if err != nil {
 		return Availability{}, err
 	}

@@ -1445,6 +1445,10 @@ height: 260px;
 #inet-static-fields { margin-top: 1rem; }
 .inet-key--gw { background: #00A86B; height: 3px; }
 .inet-diagnosis { margin-top: 0.4rem; font-size: 0.85rem; color: var(--accent-amber); max-width: 46rem; }
+.inet-targets { list-style: none; margin: 0.5rem 0 0; padding: 0; font-size: 0.85rem; display: grid; gap: 0.15rem; max-width: 46rem; }
+.inet-target { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: baseline; }
+.inet-target--offline { color: var(--accent-amber); }
+.inet-target--out { opacity: 0.7; }
 .inet-outages { margin-top: 1rem; }
 .inet-outages .table-container { margin-top: 0.75rem; }
 

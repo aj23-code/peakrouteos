@@ -32,6 +32,9 @@ var ErrTimeout = errors.New("no reply")
 // times a small DNS query to the same address, which needs no privileges. The appliance daemon
 // runs with the right to ping; a developer running it as a normal user usually does not.
 type AutoPinger struct {
+	// Device, when set, names the interface every probe is sent through (asked at each probe: a connection's device can change).
+	Device func() string
+
 	mu         sync.Mutex
 	icmpDenied bool
 	last       string
@@ -58,12 +61,20 @@ func (p *AutoPinger) Ping(ctx context.Context, addr netip.Addr, timeout time.Dur
 	denied := p.icmpDenied
 	p.mu.Unlock()
 
+	dev := ""
+	if p.Device != nil {
+		dev = p.Device()
+	}
 	icmp, dns := p.icmp, p.dns
 	if icmp == nil {
-		icmp = pingICMP
+		icmp = func(ctx context.Context, addr netip.Addr, timeout time.Duration) (time.Duration, error) {
+			return pingICMP(ctx, addr, timeout, dev)
+		}
 	}
 	if dns == nil {
-		dns = pingDNS
+		dns = func(ctx context.Context, addr netip.Addr, timeout time.Duration) (time.Duration, error) {
+			return pingDNS(ctx, addr, timeout, dev)
+		}
 	}
 
 	if !denied {
@@ -138,8 +149,17 @@ func echoReplyMatches(b []byte, id, seq uint16, checkID bool) bool {
 
 // listenICMP opens an unprivileged "ping" socket if the system allows it (net.ipv4.ping_group_range)
 // and a raw socket otherwise.
-func listenICMP() (conn net.PacketConn, datagram bool, err error) {
+func listenICMP(dev string) (conn net.PacketConn, datagram bool, err error) {
 	fd, serr := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM|syscall.SOCK_CLOEXEC, syscall.IPPROTO_ICMP)
+	if serr == nil && dev != "" {
+		if berr := bindToDevice(fd, dev); berr != nil {
+			syscall.Close(fd)
+			if isPermission(berr) {
+				return nil, false, ErrNoPermission
+			}
+			return nil, false, berr // the interface is not there: this connection cannot be probed
+		}
+	}
 	if serr == nil {
 		f := os.NewFile(uintptr(fd), "icmp")
 		defer f.Close()
@@ -149,7 +169,8 @@ func listenICMP() (conn net.PacketConn, datagram bool, err error) {
 		}
 		return pc, true, nil
 	}
-	pc, rerr := net.ListenPacket("ip4:icmp", "0.0.0.0")
+	lc := net.ListenConfig{Control: dialControl(dev)}
+	pc, rerr := lc.ListenPacket(context.Background(), "ip4:icmp", "0.0.0.0")
 	if rerr == nil {
 		return pc, false, nil
 	}
@@ -163,11 +184,11 @@ func isPermission(err error) bool {
 	return errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) || errors.Is(err, os.ErrPermission)
 }
 
-func pingICMP(ctx context.Context, addr netip.Addr, timeout time.Duration) (time.Duration, error) {
+func pingICMP(ctx context.Context, addr netip.Addr, timeout time.Duration, dev string) (time.Duration, error) {
 	if !addr.Is4() {
 		return 0, fmt.Errorf("only IPv4 addresses can be pinged")
 	}
-	conn, datagram, err := listenICMP()
+	conn, datagram, err := listenICMP(dev)
 	if err != nil {
 		return 0, err
 	}
@@ -238,12 +259,12 @@ func dnsQuery(id uint16) []byte {
 //
 // Caveat: some networks redirect all outgoing DNS to their own resolver, which then answers for
 // any address. That makes this a weaker check than a real ping, so it is only the fallback.
-func pingDNS(ctx context.Context, addr netip.Addr, timeout time.Duration) (time.Duration, error) {
-	return queryDNS(ctx, netip.AddrPortFrom(addr, 53), timeout)
+func pingDNS(ctx context.Context, addr netip.Addr, timeout time.Duration, dev string) (time.Duration, error) {
+	return queryDNS(ctx, netip.AddrPortFrom(addr, 53), timeout, dev)
 }
 
-func queryDNS(ctx context.Context, server netip.AddrPort, timeout time.Duration) (time.Duration, error) {
-	d := net.Dialer{Timeout: timeout}
+func queryDNS(ctx context.Context, server netip.AddrPort, timeout time.Duration, dev string) (time.Duration, error) {
+	d := net.Dialer{Timeout: timeout, Control: dialControl(dev)}
 	conn, err := d.DialContext(ctx, "udp", server.String())
 	if err != nil {
 		return 0, err

@@ -46,7 +46,8 @@ case "$1" in
             ip -4 route replace default via "$router" dev "$interface" metric "$METRIC" $onlink
         fi
         mkdir -p "$RUN"
-        printf 'router=%s\nmetric=%s\n' "$router" "$METRIC" > "$STATE"
+        # (the resolvers are kept too: the router's health check asks them, whether or not this connection owns the resolver file)
+        printf 'router=%s\nmetric=%s\ndns=%s\n' "$router" "$METRIC" "$dns" > "$STATE"
         if [ "$IF_PEAKROUTE_RESOLV" != no ]; then
             R="$(
                 [ -z "$domain" ] || echo "domain $domain"

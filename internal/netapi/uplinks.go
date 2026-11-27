@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"peakroute/internal/config"
 )
@@ -20,6 +21,28 @@ type Live struct {
 	MTU     int      `json:"mtu"`
 }
 
+// ProbeInfo is how a connection is watched: the addresses added by the administrator, whether the public ones are used too, and the
+// timing. The defaults are what an empty field means.
+type ProbeInfo struct {
+	Targets          []string `json:"targets"`
+	PublicFallbacks  bool     `json:"public_fallbacks"`
+	EverySeconds     int      `json:"every_seconds"`
+	DownAfter        int      `json:"down_after"`
+	PublicTargets    []string `json:"public_targets"` // what the public fallbacks are
+	DefaultEvery     int      `json:"default_every_seconds"`
+	DefaultDownAfter int      `json:"default_down_after"`
+}
+
+func probeInfo(c config.NetworkConfig) ProbeInfo {
+	set := c.ProbeSettings()
+	info := ProbeInfo{Targets: []string{}, PublicFallbacks: set.Fallbacks, EverySeconds: int(set.Every / time.Second), DownAfter: set.DownAfter,
+		PublicTargets: append([]string{}, config.PublicProbeTargets...), DefaultEvery: config.DefaultProbeEvery, DefaultDownAfter: config.DefaultDownAfter}
+	for _, a := range set.Targets {
+		info.Targets = append(info.Targets, a.String())
+	}
+	return info
+}
+
 // PPPoE is the PPPoE login as it is shown: the password is never sent back.
 type PPPoE struct {
 	Username    string `json:"username"`
@@ -30,23 +53,24 @@ type PPPoE struct {
 // Uplink is a connection to the internet. Today there is one (id "wan"); a second uplink would be
 // another of these.
 type Uplink struct {
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
-	Port      string   `json:"port"`      // the physical port it uses; chosen on the Ports page
-	Mode      string   `json:"mode"`      // "dhcp", "static" or "pppoe"
-	IP        string   `json:"ip"`        // static only
-	Netmask   string   `json:"netmask"`   // static only
-	Gateway   string   `json:"gateway"`   // static only
-	DNS       []string `json:"dns"`       // static: the servers; DHCP and PPPoE: servers used instead of the provider's
-	Vlan      int      `json:"vlan"`      // 0: none
-	MTU       int      `json:"mtu"`       // 0: the usual one for the type
-	UsualMTU  int      `json:"usual_mtu"` // what 0 means for this type
-	MAC       string   `json:"mac"`       // "": the port's own address
-	PPPoE     *PPPoE   `json:"pppoe"`     // PPPoE only
-	Device    string   `json:"device"`    // the interface that will carry the connection
-	Pending   bool     `json:"pending"`   // the draft differs from what is in effect
-	Preferred bool     `json:"preferred"` // the traffic prefers this connection (with two, the other is the one it falls back to)
-	Live      *Live    `json:"live,omitempty"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Port      string    `json:"port"`      // the physical port it uses; chosen on the Ports page
+	Mode      string    `json:"mode"`      // "dhcp", "static" or "pppoe"
+	IP        string    `json:"ip"`        // static only
+	Netmask   string    `json:"netmask"`   // static only
+	Gateway   string    `json:"gateway"`   // static only
+	DNS       []string  `json:"dns"`       // static: the servers; DHCP and PPPoE: servers used instead of the provider's
+	Vlan      int       `json:"vlan"`      // 0: none
+	MTU       int       `json:"mtu"`       // 0: the usual one for the type
+	UsualMTU  int       `json:"usual_mtu"` // what 0 means for this type
+	MAC       string    `json:"mac"`       // "": the port's own address
+	PPPoE     *PPPoE    `json:"pppoe"`     // PPPoE only
+	Device    string    `json:"device"`    // the interface that will carry the connection
+	Pending   bool      `json:"pending"`   // the draft differs from what is in effect
+	Preferred bool      `json:"preferred"` // the traffic prefers this connection (with two, the other is the one it falls back to)
+	Probe     ProbeInfo `json:"probe"`     // how the connection is watched
+	Live      *Live     `json:"live,omitempty"`
 }
 
 type uplinksResponse struct {
@@ -57,10 +81,10 @@ type uplinksResponse struct {
 const wanID = config.WanFirst
 
 // The fields of the configuration an uplink owns (the file's own names): the first connection's, and the second's.
-var uplinkFields = []string{"wan_mode", "wan_ip", "wan_subnet", "wan_gateway", "wan_dns",
+var uplinkFields = []string{"wan_probe", "wan_mode", "wan_ip", "wan_subnet", "wan_gateway", "wan_dns",
 	"wan_vlan", "wan_mtu", "wan_mac", "wan_pppoe", "pppoe_username", "pppoe_password", "pppoe_service"}
 
-var uplink2Fields = []string{"wan2", "wan2.mode", "wan2.ip", "wan2.subnet", "wan2.gateway", "wan2.dns", "wan2.vlan", "wan2.mtu", "wan2.mac",
+var uplink2Fields = []string{"wan2.probe", "wan2", "wan2.mode", "wan2.ip", "wan2.subnet", "wan2.gateway", "wan2.dns", "wan2.vlan", "wan2.mtu", "wan2.mac",
 	"wan2.pppoe_username", "wan2.pppoe_password", "wan2.pppoe_service", "wan2.pppoe", "wan2.interface"}
 
 func ownFields(id string) []string {
@@ -94,6 +118,7 @@ func wanUplink(active, draft config.NetworkConfig, id string) (Uplink, bool) {
 		Device:    v.WanDevice(),
 		Pending:   changedIn(active, draft, append(append([]string{}, ownFields(id)...), "wan_preferred")...),
 		Preferred: draft.WanIsPreferred(id),
+		Probe:     probeInfo(v),
 	}
 	if id == config.WanSecond {
 		u.Name = "Internet 2"
@@ -170,8 +195,50 @@ type putUplinkRequest struct {
 	MTU     *int             `json:"mtu"`
 	MAC     *string          `json:"mac"`
 	PPPoE   *putPPPoERequest `json:"pppoe"`
+	// Probe changes how the connection is watched; what is left out stays.
+	Probe *putProbeRequest `json:"probe"`
 	// Preferred makes this connection the one the traffic prefers (with two connections: the other is then the one it falls back to).
 	Preferred *bool `json:"preferred"`
+}
+
+type putProbeRequest struct {
+	Targets         *[]string `json:"targets"`
+	PublicFallbacks *bool     `json:"public_fallbacks"`
+	EverySeconds    *int      `json:"every_seconds"`
+	DownAfter       *int      `json:"down_after"`
+}
+
+// applyProbe changes a connection's health check settings as asked; a value that is the default is not stored.
+func applyProbe(cur *config.ProbeConfig, req *putProbeRequest) *config.ProbeConfig {
+	p := config.ProbeConfig{}
+	if cur != nil {
+		p = *cur
+		p.Targets = append([]string(nil), cur.Targets...)
+	}
+	if req != nil {
+		if req.Targets != nil {
+			p.Targets = trimmedDNS(*req.Targets)
+		}
+		if req.PublicFallbacks != nil {
+			p.NoFallbacks = !*req.PublicFallbacks
+		}
+		if req.EverySeconds != nil {
+			p.Every = *req.EverySeconds
+			if p.Every == config.DefaultProbeEvery {
+				p.Every = 0
+			}
+		}
+		if req.DownAfter != nil {
+			p.DownAfter = *req.DownAfter
+			if p.DownAfter == config.DefaultDownAfter {
+				p.DownAfter = 0
+			}
+		}
+	}
+	if len(p.Targets) == 0 && !p.NoFallbacks && p.Every == 0 && p.DownAfter == 0 {
+		return nil
+	}
+	return &p
 }
 
 func trimmedDNS(in []string) []string {
@@ -256,6 +323,7 @@ func (a *API) putWAN(w http.ResponseWriter, r *http.Request, id string) {
 				s.PPPoE = nil
 			}
 		}
+		s.Probe = applyProbe(s.Probe, req.Probe)
 		c.SetWanSettings(id, s)
 
 		// which connection the traffic prefers (only with two)

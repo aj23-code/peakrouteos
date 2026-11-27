@@ -3,8 +3,10 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 func twoWans() NetworkConfig {
@@ -174,5 +176,81 @@ func TestTheSecondConnectionShowsInTheReviewOfChanges(t *testing.T) {
 	}
 	if got := DiffNetwork(draft, draft); len(got) != 0 {
 		t.Errorf("no change shows %+v", got)
+	}
+}
+
+func TestAConnectionsHealthCheckSettingsHaveDefaultsAndLimits(t *testing.T) {
+	c := validNet()
+	set := c.ProbeSettings()
+	if !set.Fallbacks || set.Every != 5*time.Second || set.DownAfter != 3 || len(set.Targets) != 0 {
+		t.Fatalf("%+v", set)
+	}
+	if b, _ := json.Marshal(c); strings.Contains(string(b), "probe") {
+		t.Fatalf("nothing is stored for the defaults: %s", b)
+	}
+	c.WanProbe = &ProbeConfig{Targets: []string{"8.8.8.8", "1.0.0.1"}, NoFallbacks: true, Every: 10, DownAfter: 5}
+	set = c.ProbeSettings()
+	if set.Fallbacks || set.Every != 10*time.Second || set.DownAfter != 5 || len(set.Targets) != 2 || set.Targets[0].String() != "8.8.8.8" {
+		t.Fatalf("%+v", set)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	bad := map[string]func(*ProbeConfig){
+		"wan_probe.targets":       nil,
+		"wan_probe.every_seconds": func(p *ProbeConfig) { p.Every = 1 },
+		"wan_probe.down_after":    func(p *ProbeConfig) { p.DownAfter = 21 },
+	}
+	for field, change := range bad {
+		c := validNet()
+		c.WanProbe = &ProbeConfig{}
+		switch field {
+		case "wan_probe.targets":
+			for _, target := range []string{"nope", "127.0.0.1", "0.0.0.0", "224.0.0.1", "169.254.1.1", "255.255.255.255", "::1"} {
+				d := validNet()
+				d.WanProbe = &ProbeConfig{Targets: []string{target}}
+				if !errorFields(d.Validate())[field] {
+					t.Errorf("target %q accepted", target)
+				}
+			}
+			d := validNet()
+			d.WanProbe = &ProbeConfig{Targets: []string{"8.8.8.8", "8.8.8.8"}}
+			if !errorFields(d.Validate())[field] {
+				t.Error("a target listed twice was accepted")
+			}
+			d.WanProbe = &ProbeConfig{Targets: make([]string, MaxProbeTargets+1)}
+			for i := range d.WanProbe.Targets {
+				d.WanProbe.Targets[i] = fmt.Sprintf("8.8.8.%d", i+1)
+			}
+			if !errorFields(d.Validate())[field] {
+				t.Error("too many targets were accepted")
+			}
+		default:
+			change(c.WanProbe)
+			if !errorFields(c.Validate())[field] {
+				t.Errorf("%s accepted", field)
+			}
+		}
+	}
+	// the second connection's settings are checked under its own names, and are its own
+	d := twoWans()
+	d.Wan2.Probe = &ProbeConfig{Targets: []string{"nope"}, Every: 500}
+	f := errorFields(d.Validate())
+	if !f["wan2.probe.targets"] || !f["wan2.probe.every_seconds"] || f["wan_probe.targets"] {
+		t.Errorf("%v", f)
+	}
+	second, _ := d.WanView(WanSecond)
+	if second.WanProbe == nil || second.WanProbe.Every != 500 || second.WanProbe == d.Wan2.Probe || d.WanProbe != nil {
+		t.Error("the views do not keep the settings apart")
+	}
+	// the review names a change, and a connection's own
+	a, b := validNet(), validNet()
+	b.WanProbe = &ProbeConfig{Targets: []string{"8.8.8.8"}}
+	got := map[string]Change{}
+	for _, ch := range DiffNetwork(a, b) {
+		got[ch.Field] = ch
+	}
+	if ch := got["wan_probe"]; !strings.Contains(ch.New, "8.8.8.8") {
+		t.Errorf("%+v", got)
 	}
 }
