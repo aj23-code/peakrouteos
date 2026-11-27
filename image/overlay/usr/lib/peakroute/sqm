@@ -8,6 +8,11 @@
 #   sqm start-if DEV  start, but only when DEV is the device the file names (the hooks that run when an interface comes up)
 #   sqm stop          take the shaping away again
 #
+# With SQM_CLASSES in the file (a share of the line for each network, docs/sqm.md "Per network") the line is not one cake queue but a tree:
+# an htb class for the whole line, a class for each network under it (an assured rate, a ceiling, a priority), and in each a cake queue that
+# only shares the class between the devices. Packets are sorted by the mark the firewall put on their connection: what goes out carries it
+# on the packet, what comes in is given it from the connection tracking (the ctinfo action) on its way to the ifb device.
+#
 # SQM_CONF and SQM_STATE can name other files (the tests do).
 set -u
 CONF="${SQM_CONF:-/etc/default/peakroute-sqm}"
@@ -18,7 +23,7 @@ say() { echo "sqm: $*"; }
 
 # the pieces the kernel needs, as modules (a kernel with them built in has no module to load)
 load_modules() {
-    for m in sch_cake ifb act_mirred cls_matchall; do modprobe -q "$m" 2>/dev/null || true; done
+    for m in sch_cake ifb act_mirred cls_matchall sch_htb cls_fw act_ctinfo; do modprobe -q "$m" 2>/dev/null || true; done
 }
 
 link_keyword() {
@@ -28,6 +33,40 @@ link_keyword() {
         adsl) echo pppoe-vcmux ;;
         *) echo ethernet ;;
     esac
+}
+
+# what the link adds to each packet, as htb's size table wants it: overhead, link layer, smallest packet
+link_stab() {
+    case "$1" in
+        docsis) echo "overhead 18 linklayer ethernet mpu 64" ;;
+        vdsl) echo "overhead 30 linklayer ethernet" ;;
+        adsl) echo "overhead 32 linklayer atm" ;;
+        *) echo "overhead 38 linklayer ethernet mpu 84" ;;
+    esac
+}
+
+# build the tree of shares on a device for one direction: $1 device, $2 the whole line (kbit/s), $3 "up" or "down", $4 the cake keywords
+# for fairness between devices, $5 more cake keywords
+build_tree() {
+    dev="$1"; total="$2"; side="$3"; fair="$4"; more="$5"
+    tc qdisc del dev "$dev" root 2>/dev/null || true
+    # shellcheck disable=SC2046
+    tc qdisc add dev "$dev" root handle 1: stab $(link_stab "${SQM_LINK:-ethernet}") htb default 2 r2q 10 || return 1
+    tc class add dev "$dev" parent 1: classid 1:1 htb rate "${total}kbit" ceil "${total}kbit" quantum 6000 || return 1
+    list="$(mktemp)"
+    printf '%s\n' "$SQM_CLASSES" > "$list"
+    while read -r mark minor prio up_r up_c down_r down_c; do
+        [ -n "$mark" ] || continue
+        if [ "$side" = up ]; then rate="$up_r"; ceil="$up_c"; else rate="$down_r"; ceil="$down_c"; fi
+        [ "$rate" -ge 1 ] 2>/dev/null || continue
+        tc class add dev "$dev" parent 1:1 classid "1:$minor" htb rate "${rate}kbit" ceil "${ceil}kbit" prio "$prio" quantum 6000 || { rm -f "$list"; return 1; }
+        # shellcheck disable=SC2086
+        tc qdisc add dev "$dev" parent "1:$minor" handle "$minor:" cake unlimited besteffort $fair nat $more raw || { rm -f "$list"; return 1; }
+        if [ "$mark" != "0x0" ]; then
+            tc filter add dev "$dev" parent 1: protocol all prio 1 handle "$mark/0x00ff0000" fw classid "1:$minor" || { rm -f "$list"; return 1; }
+        fi
+    done < "$list"
+    rm -f "$list"
 }
 
 # take away what is on a device and on the ifb (nothing there is not an error)
@@ -66,9 +105,16 @@ start() {
     mkdir -p "$(dirname "$STATE")"
 
     if [ "$up" -gt 0 ]; then
-        # shellcheck disable=SC2086
-        tc qdisc replace dev "$dev" root cake bandwidth "${up}kbit" diffserv3 $out_fair nat nowash "$kw" \
-            || { say "cannot shape what goes out on $dev (is the cake queue discipline in this kernel?)" >&2; return 1; }
+        if [ -n "${SQM_CLASSES:-}" ]; then
+            build_tree "$dev" "$up" up "$out_fair" "" \
+                || { say "cannot divide what goes out on $dev between the networks" >&2; return 1; }
+        else
+            # a tree from before is taken away first: replacing keeps what is not named
+            tc qdisc del dev "$dev" root 2>/dev/null || true
+            # shellcheck disable=SC2086
+            tc qdisc add dev "$dev" root cake bandwidth "${up}kbit" diffserv3 $out_fair nat nowash "$kw" \
+                || { say "cannot shape what goes out on $dev (is the cake queue discipline in this kernel?)" >&2; return 1; }
+        fi
     else
         tc qdisc del dev "$dev" root 2>/dev/null || true
     fi
@@ -80,11 +126,20 @@ start() {
         tc qdisc replace dev "$dev" handle ffff: ingress \
             || { say "cannot shape what comes in on $dev" >&2; return 1; }
         tc filter del dev "$dev" parent ffff: 2>/dev/null || true
-        tc filter add dev "$dev" parent ffff: protocol all prio 10 matchall action mirred egress redirect dev "$IFB" \
-            || { say "cannot send what comes in to $IFB" >&2; return 1; }
-        # shellcheck disable=SC2086
-        tc qdisc replace dev "$IFB" root cake bandwidth "${down}kbit" diffserv3 $in_fair nat wash ingress "$kw" \
-            || { say "cannot shape what comes in on $IFB" >&2; return 1; }
+        if [ -n "${SQM_CLASSES:-}" ]; then
+            # the connection's mark goes onto the packet on its way to the ifb, where the classes are told apart by it
+            tc filter add dev "$dev" parent ffff: protocol all prio 10 matchall action ctinfo cpmark 0x00ff0000 pipe action mirred egress redirect dev "$IFB" \
+                || { say "cannot send what comes in to $IFB (is the ctinfo action in this kernel?)" >&2; return 1; }
+            build_tree "$IFB" "$down" down "$in_fair" "wash" \
+                || { say "cannot divide what comes in on $IFB between the networks" >&2; return 1; }
+        else
+            tc filter add dev "$dev" parent ffff: protocol all prio 10 matchall action mirred egress redirect dev "$IFB" \
+                || { say "cannot send what comes in to $IFB" >&2; return 1; }
+            tc qdisc del dev "$IFB" root 2>/dev/null || true
+            # shellcheck disable=SC2086
+            tc qdisc add dev "$IFB" root cake bandwidth "${down}kbit" diffserv3 $in_fair nat wash ingress "$kw" \
+                || { say "cannot shape what comes in on $IFB" >&2; return 1; }
+        fi
     else
         tc qdisc del dev "$dev" ingress 2>/dev/null || true
         ip link del "$IFB" 2>/dev/null || true

@@ -18,14 +18,18 @@ window.SQMModule = (function () {
     const text = (n) => (n ? String(n) : '');
 
     function formOf(d) {
-        return { enabled: !!d.enabled, down: text(d.download_mbit), up: text(d.upload_mbit), percent: String(d.percent || d.default_percent || 95), link: d.link || 'ethernet', perHost: !!d.per_host };
+        const nets = {};
+        (d.networks || []).forEach(n => { nets[n.id] = { priority: n.priority || 'normal', down: text(n.limit_down_mbit), up: text(n.limit_up_mbit) }; });
+        return { enabled: !!d.enabled, down: text(d.download_mbit), up: text(d.upload_mbit), percent: String(d.percent || d.default_percent || 95), link: d.link || 'ethernet', perHost: !!d.per_host, nets };
     }
     const pct = (f) => { const v = parseInt(String(f.percent), 10); return Number.isFinite(v) ? v : 0; };
     const nice = (n) => (Math.round(n * 10) / 10).toString();
     // what the router will shape to, from the form as typed
     const shaped = (mbit, f) => (mbit > 0 ? nice(Math.max(0.001, mbit * pct(f) / 100)) : null);
     const num = (s) => { const v = parseFloat(String(s).replace(',', '.')); return Number.isFinite(v) && v > 0 ? v : 0; };
-    const same = (a, b) => a.enabled === b.enabled && num(a.down) === num(b.down) && num(a.up) === num(b.up) && pct(a) === pct(b) && a.link === b.link && a.perHost === b.perHost;
+    const sameNets = (a, b) => Object.keys(a).length === Object.keys(b).length &&
+        Object.keys(a).every(id => b[id] && a[id].priority === b[id].priority && num(a[id].down) === num(b[id].down) && num(a[id].up) === num(b[id].up));
+    const same = (a, b) => a.enabled === b.enabled && num(a.down) === num(b.down) && num(a.up) === num(b.up) && pct(a) === pct(b) && a.link === b.link && a.perHost === b.perHost && sameNets(a.nets, b.nets);
     const dirty = () => !!(data && form && !same(form, formOf(data)));
 
     function showMessage(t, kind) {
@@ -51,6 +55,35 @@ window.SQMModule = (function () {
         return `<div class="form-actions" style="justify-content:flex-start;gap:12px">
             <button type="button" class="cfg-btn" id="sqm-measure"${lock || running ? ' disabled' : ''}>${running ? 'Measuring&hellip;' : 'Measure my speed'}</button>${line}</div>
             <p class="form-hint">The test downloads and uploads test data (up to about 400 MB each way, less on a slower line) with Cloudflare&rsquo;s public speed test (speed.cloudflare.com). It is an estimate: run it when nothing else is using the line, and use your plan&rsquo;s speeds instead if you know them.</p>`;
+    }
+
+    const PRIORITIES = [['low', 'Low'], ['normal', 'Normal'], ['high', 'High']];
+
+    // each network's priority and limits on the shaped line, and what that makes of it (the numbers follow the form as typed)
+    function networksHtml(lock) {
+        const nets = data.networks || [];
+        if (!nets.length) return '';
+        const err = (id, k) => (errors[`net.${id}.${k}`] ? `<p class="field-error">${escapeHtml(errors[`net.${id}.${k}`])}</p>` : '');
+        const rows = nets.map(n => {
+            const f = form.nets[n.id] || { priority: 'normal', down: '', up: '' };
+            const opts = PRIORITIES.map(([v, l]) => `<option value="${v}"${f.priority === v ? ' selected' : ''}>${l}</option>`).join('');
+            const fresh = same(form, formOf(data)); // the numbers below are the server's: they follow the saved draft, not what is half typed
+            const share = fresh && (n.assured_down_mbit || n.assured_up_mbit)
+                ? `<span class="form-hint">assured ${n.assured_down_mbit ? nice(n.assured_down_mbit) + ' down' : ''}${n.assured_down_mbit && n.assured_up_mbit ? ', ' : ''}${n.assured_up_mbit ? nice(n.assured_up_mbit) + ' up' : ''} Mbit/s when the line is full</span>` : '';
+            const note = fresh && n.inactive ? `<p class="form-hint net-warn">${escapeHtml(n.name)}: ${escapeHtml(n.inactive)}.</p>` : '';
+            return `<div class="sqm-net" data-net="${escapeHtml(n.id)}">
+                <div class="net-card-head"><strong>${escapeHtml(n.name)}</strong> ${share}</div>
+                <div class="form-grid">
+                    <div class="form-field"><label for="sqm-pr-${escapeHtml(n.id)}">Priority</label>
+                        <select id="sqm-pr-${escapeHtml(n.id)}" class="role-select" data-sqm-net="${escapeHtml(n.id)}" data-field="priority"${lock ? ' disabled' : ''}>${opts}</select>${err(n.id, 'priority')}</div>
+                    <div class="form-field"><label for="sqm-nd-${escapeHtml(n.id)}">Download limit (Mbit/s)</label>
+                        <input type="text" id="sqm-nd-${escapeHtml(n.id)}" data-sqm-net="${escapeHtml(n.id)}" data-field="down" inputmode="decimal" value="${escapeHtml(f.down)}" placeholder="no limit" autocomplete="off"${lock ? ' disabled' : ''}>${err(n.id, 'limit_down_mbit')}</div>
+                    <div class="form-field"><label for="sqm-nu-${escapeHtml(n.id)}">Upload limit (Mbit/s)</label>
+                        <input type="text" id="sqm-nu-${escapeHtml(n.id)}" data-sqm-net="${escapeHtml(n.id)}" data-field="up" inputmode="decimal" value="${escapeHtml(f.up)}" placeholder="no limit" autocomplete="off"${lock ? ' disabled' : ''}>${err(n.id, 'limit_up_mbit')}</div>
+                </div>${note}</div>`;
+        }).join('');
+        return `<h3 class="form-section">Per network</h3>
+            <p class="form-hint">When the line is full, a <strong>High</strong> priority network is served first and is assured four times the share of a <strong>Low</strong> one (Normal is twice); a network that leaves its share idle lets the others use it. A <strong>limit</strong> is the most a network may use, whatever the others are doing: handy for a guest network. Everything is left as it is until you change one (all Normal, no limits).</p>${rows}`;
     }
 
     function statusHtml() {
@@ -99,6 +132,7 @@ window.SQMModule = (function () {
                         <select id="sqm-link" class="role-select" data-sqm="link"${lock || !on ? ' disabled' : ''}>${links}</select>${err('link')}</div>
                 </div>
                 <p class="form-hint">A line rarely delivers all of what it is sold at, and the queue only works while the router is the slowest point, so the default is ${data.default_percent || 95} %. Test with a bufferbloat test, such as <a href="https://www.waveform.com/tools/bufferbloat" target="_blank" rel="noopener">waveform.com/tools/bufferbloat</a>, after committing: if the grade does not rise, lower the share a little (90 %, then 85 %).</p>
+                ${networksHtml(lock)}
                 <label class="toggle toggle--block"><input type="checkbox" data-sqm="perHost"${form.perHost ? ' checked' : ''}${lock || !on ? ' disabled' : ''}><span><strong>Share the line fairly between devices</strong><span class="form-hint">One device with many connections cannot take the line from the others. On is right for a home.</span></span></label>
             </div>
             ${err('enabled')}
@@ -124,7 +158,8 @@ window.SQMModule = (function () {
         showMessage('');
         busy = true; render();
         const res = await apiFetch('/api/v1/sqm', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enabled: form.enabled, download_mbit: num(form.down), upload_mbit: num(form.up), percent: pct(form), link: form.link, per_host: form.perHost }) });
+            body: JSON.stringify({ enabled: form.enabled, download_mbit: num(form.down), upload_mbit: num(form.up), percent: pct(form), link: form.link, per_host: form.perHost,
+                networks: Object.keys(form.nets).map(id => ({ id, priority: form.nets[id].priority, limit_down_mbit: num(form.nets[id].down), limit_up_mbit: num(form.nets[id].up) })) }) });
         busy = false;
         if (!res || !res.ok) {
             let e = {};
@@ -175,6 +210,18 @@ window.SQMModule = (function () {
         const view = $('view-internet');
         if (!view) return;
         view.addEventListener('input', (e) => {
+            const nid = e.target.dataset && e.target.dataset.sqmNet;
+            if (nid && form && form.nets[nid]) {
+                const f = e.target.dataset.field;
+                form.nets[nid][f] = e.target.value;
+                delete errors[`net.${nid}.${f === 'down' ? 'limit_down_mbit' : 'limit_up_mbit'}`];
+                const state = view.querySelector('#sqm-section .form-actions .form-hint');
+                const sv = $('sqm-save'), rs = $('sqm-reset');
+                if (state) state.textContent = dirty() ? 'You have unsaved changes.' : '';
+                if (sv) sv.disabled = !dirty() || !editable();
+                if (rs) rs.disabled = !dirty();
+                return;
+            }
             const k = e.target.dataset && e.target.dataset.sqm;
             if (!k || !form) return;
             if (k === 'down' || k === 'up') { form[k] = e.target.value; delete errors[k === 'down' ? 'download_mbit' : 'upload_mbit']; }
@@ -188,6 +235,8 @@ window.SQMModule = (function () {
             if (reset) reset.disabled = !dirty();
         });
         view.addEventListener('change', (e) => {
+            const nid = e.target.dataset && e.target.dataset.sqmNet;
+            if (nid && form && form.nets[nid] && e.target.dataset.field === 'priority') { form.nets[nid].priority = e.target.value; delete errors[`net.${nid}.priority`]; render(); return; }
             const k = e.target.dataset && e.target.dataset.sqm;
             if (!k || !form) return;
             if (k === 'enabled' || k === 'perHost') form[k] = e.target.checked;

@@ -128,12 +128,16 @@ type NetworkConfig struct {
 	Reservations []Reservation `json:"reservations,omitempty"`
 	// Further local networks, and which LAN ports carry them. LanIsolated is the default network's
 	// own isolation switch (the extra networks carry theirs).
-	LanIsolated  bool                    `json:"lan_isolated,omitempty"`
-	LanMDNS      bool                    `json:"lan_mdns,omitempty"`   // the default network's own mDNS switch (Network.MDNS)
-	LanNTP       bool                    `json:"lan_ntp,omitempty"`    // ... and its switch for serving the time (Network.NTP)
-	LanFilter    bool                    `json:"lan_filter,omitempty"` // ... and its switch for filtering DNS (Network.Filter)
-	Networks     []Network               `json:"networks,omitempty"`
-	PortNetworks map[string]PortNetworks `json:"port_networks,omitempty"`
+	LanIsolated bool `json:"lan_isolated,omitempty"`
+	LanMDNS     bool `json:"lan_mdns,omitempty"`   // the default network's own mDNS switch (Network.MDNS)
+	LanNTP      bool `json:"lan_ntp,omitempty"`    // ... and its switch for serving the time (Network.NTP)
+	LanFilter   bool `json:"lan_filter,omitempty"` // ... and its switch for filtering DNS (Network.Filter)
+	// ... and its priority and limits on the shaped internet line (Network.QoSPriority and the limits)
+	LanQoSPriority      string                  `json:"lan_qos_priority,omitempty"`
+	LanQoSLimitDownKbit int                     `json:"lan_qos_limit_down_kbit,omitempty"`
+	LanQoSLimitUpKbit   int                     `json:"lan_qos_limit_up_kbit,omitempty"`
+	Networks            []Network               `json:"networks,omitempty"`
+	PortNetworks        map[string]PortNetworks `json:"port_networks,omitempty"`
 	// The country this router is used in (ISO 3166-1 code). A router-wide setting: today Wi-Fi uses it to know
 	// which channels and powers are allowed.
 	Country string `json:"country,omitempty"`

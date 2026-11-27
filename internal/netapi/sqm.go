@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +44,7 @@ type sqmResponse struct {
 	Running        bool               `json:"running"` // shaping is in effect now (the committed configuration)
 	Status         *network.SQMStatus `json:"status"`  // how the kernel's queues are doing (null: not reported)
 	WanDevice      string             `json:"wan_device"`
+	Networks       []sqmNetwork       `json:"networks"` // each network's priority and limits, and the share of the line it is assured
 	Editable       bool               `json:"editable"`
 }
 
@@ -55,11 +57,61 @@ func (a *API) sqmView(ctx context.Context) sqmResponse {
 		Percent: s.EffectivePercent(), DefaultPercent: config.DefaultSQMPercent,
 		ShapedDownMbit: float64(s.ShapedDownKbit()) / 1000, ShapedUpMbit: float64(s.ShapedUpKbit()) / 1000,
 		Link: s.Link, Links: sqmLinks, PerHost: s.PerHost,
-		Pending: active.SQMSettings() != draft.SQMSettings(), Running: active.SQMActive(), WanDevice: draft.WanDevice(), Editable: a.editable(),
+		Pending: active.SQMSettings() != draft.SQMSettings() || sqmQoSDiffers(active, draft), Running: active.SQMActive(), WanDevice: draft.WanDevice(), Editable: a.editable(),
+		Networks: a.sqmNetworks(draft),
 	}
 	if out.Running && a.SQMStatus != nil {
 		st := a.SQMStatus(ctx)
+		// a line divided between networks is not one queue with one speed: the speeds are the shaped ones
+		as := active.SQMSettings()
+		if st.Upload.Active && st.Upload.BandwidthKbit == 0 {
+			st.Upload.BandwidthKbit = int64(as.ShapedUpKbit())
+		}
+		if st.Download.Active && st.Download.BandwidthKbit == 0 {
+			st.Download.BandwidthKbit = int64(as.ShapedDownKbit())
+		}
 		out.Status = &st
+	}
+	return out
+}
+
+// sqmNetwork is one network's place in the shaped line.
+type sqmNetwork struct {
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Priority      string  `json:"priority"`
+	LimitDownMbit float64 `json:"limit_down_mbit"` // 0: no limit
+	LimitUpMbit   float64 `json:"limit_up_mbit"`
+	// what it is assured when the line is full, and the most it can use, in Mbit/s (0: that direction is not shaped); only while some
+	// network has a priority or a limit (the draft's, as it would be)
+	AssuredDown float64 `json:"assured_down_mbit"`
+	AssuredUp   float64 `json:"assured_up_mbit"`
+	CeilDown    float64 `json:"ceil_down_mbit"`
+	CeilUp      float64 `json:"ceil_up_mbit"`
+	// Inactive says why the setting does nothing right now (shaping is off, or that direction is not shaped); empty when it does
+	Inactive string `json:"inactive,omitempty"`
+}
+
+func (a *API) sqmNetworks(draft config.NetworkConfig) []sqmNetwork {
+	classes := map[string]config.QoSClass{}
+	for _, cl := range draft.QoSClasses() {
+		classes[cl.ID] = cl
+	}
+	div := draft.QoSActive()
+	mb := func(k int) float64 { return float64(k) / 1000 }
+	out := []sqmNetwork{}
+	add := func(id, name string) {
+		q := draft.NetworkQoS(id)
+		n := sqmNetwork{ID: id, Name: name, Priority: q.Priority, LimitDownMbit: mb(q.LimitDownKbit), LimitUpMbit: mb(q.LimitUpKbit)}
+		n.Inactive = draft.QoSInactive(id)
+		if cl, ok := classes[id]; ok && div {
+			n.AssuredDown, n.AssuredUp, n.CeilDown, n.CeilUp = mb(cl.DownRate), mb(cl.UpRate), mb(cl.DownCeil), mb(cl.UpCeil)
+		}
+		out = append(out, n)
+	}
+	add(config.DefaultNetworkID, "LAN")
+	for _, n := range draft.Networks {
+		add(n.ID, strings.TrimSpace(n.Name))
 	}
 	return out
 }
@@ -81,8 +133,14 @@ func (a *API) HandleSQM(w http.ResponseWriter, r *http.Request) {
 		DownloadMbit *float64 `json:"download_mbit"`
 		UploadMbit   *float64 `json:"upload_mbit"`
 		Percent      *int     `json:"percent"`
-		Link         *string  `json:"link"`
-		PerHost      *bool    `json:"per_host"`
+		Networks     []struct {
+			ID            string   `json:"id"`
+			Priority      *string  `json:"priority"`
+			LimitDownMbit *float64 `json:"limit_down_mbit"`
+			LimitUpMbit   *float64 `json:"limit_up_mbit"`
+		} `json:"networks"`
+		Link    *string `json:"link"`
+		PerHost *bool   `json:"per_host"`
 	}
 	if !decode(w, r, &req) {
 		return
@@ -112,7 +170,26 @@ func (a *API) HandleSQM(w http.ResponseWriter, r *http.Request) {
 			s.PerHost = *req.PerHost
 		}
 		c.SQM = &s
-		return ownedErrorsOrNil(c.Validate(), "sqm.download_kbit", "sqm.upload_kbit", "sqm.percent", "sqm.link", "sqm.enabled")
+		for _, in := range req.Networks {
+			if id := in.ID; id != config.DefaultNetworkID {
+				if _, ok := c.FindNetwork(id); !ok {
+					return config.ValidationError{{Field: "networks", Message: "there is no network " + id}}
+				}
+			}
+			q := c.NetworkQoS(in.ID)
+			if in.Priority != nil {
+				q.Priority = strings.TrimSpace(*in.Priority)
+			}
+			if in.LimitDownMbit != nil {
+				q.LimitDownKbit = kbit(*in.LimitDownMbit)
+			}
+			if in.LimitUpMbit != nil {
+				q.LimitUpKbit = kbit(*in.LimitUpMbit)
+			}
+			c.SetNetworkQoS(in.ID, q)
+		}
+		err := ownedErrorsOrNil(c.Validate(), "sqm.download_kbit", "sqm.upload_kbit", "sqm.percent", "sqm.link", "sqm.enabled", "lan_qos_priority", "lan_qos_limit_down_kbit", "lan_qos_limit_up_kbit", "networks")
+		return qosErrorsOnly(*c, err)
 	})
 	var ve config.ValidationError
 	if errors.As(err, &ve) {
@@ -202,4 +279,54 @@ func (a *API) HandleSQMSpeedTest(w http.ResponseWriter, r *http.Request) {
 		a.speed.state, a.speed.result = "done", &res
 	}()
 	writeJSON(w, http.StatusAccepted, a.speedView())
+}
+
+// sqmQoSDiffers reports whether any network's priority or limits in the draft differ from those in effect.
+func sqmQoSDiffers(active, draft config.NetworkConfig) bool {
+	if active.NetworkQoS(config.DefaultNetworkID) != draft.NetworkQoS(config.DefaultNetworkID) {
+		return true
+	}
+	for _, n := range draft.Networks {
+		if active.NetworkQoS(n.ID) != draft.NetworkQoS(n.ID) {
+			return true
+		}
+	}
+	return false
+}
+
+// qosErrorsOnly keeps, of the problems with the networks, only the ones about their priorities and limits (the rest are those pages' own),
+// and names the field as the page does: net.<id>.priority, net.<id>.limit_down_mbit, net.<id>.limit_up_mbit.
+func qosErrorsOnly(c config.NetworkConfig, err error) error {
+	var ve config.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	var out config.ValidationError
+	for _, e := range ve {
+		f := e.Field
+		if !strings.Contains(f, "qos_") {
+			if strings.HasPrefix(f, "sqm.") {
+				out = append(out, e)
+			}
+			continue
+		}
+		id, rest := config.DefaultNetworkID, strings.TrimPrefix(f, "lan_")
+		if strings.HasPrefix(f, "networks[") {
+			end := strings.Index(f, "].")
+			if end < 0 {
+				continue
+			}
+			i, convErr := strconv.Atoi(f[len("networks["):end])
+			if convErr != nil || i < 0 || i >= len(c.Networks) {
+				continue
+			}
+			id, rest = c.Networks[i].ID, f[end+2:]
+		}
+		rest = strings.NewReplacer("qos_priority", "priority", "qos_limit_down_kbit", "limit_down_mbit", "qos_limit_up_kbit", "limit_up_mbit").Replace(rest)
+		out = append(out, config.FieldError{Field: "net." + id + "." + rest, Message: e.Message})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

@@ -2,6 +2,7 @@ package translator
 
 import (
 	"fmt"
+	"strings"
 
 	"peakroute/internal/config"
 )
@@ -26,10 +27,61 @@ func renderSQM(cfg config.NetworkConfig) (string, bool) {
 	if s.PerHost {
 		perHost = 1
 	}
-	return fmt.Sprintf("# Written by PeakRoute from Internet, Smart queue management. Changes made here are lost.\n"+
+	out := fmt.Sprintf("# Written by PeakRoute from Internet, Smart queue management. Changes made here are lost.\n"+
 		"# (the speeds are what the router shapes to: the line's speeds times the percentage)\n"+
 		"SQM_DEV=%s\nSQM_DOWN_KBIT=%d\nSQM_UP_KBIT=%d\nSQM_LINK=%s\nSQM_PERHOST=%d\n",
-		cfg.WanDevice(), s.ShapedDownKbit(), s.ShapedUpKbit(), s.Link, perHost), true
+		cfg.WanDevice(), s.ShapedDownKbit(), s.ShapedUpKbit(), s.Link, perHost)
+	if cfg.QoSActive() {
+		// the line is divided between the networks: one entry for each, "mark class priority up-rate up-ceil down-rate down-ceil" (kbit/s).
+		// The mark is what the firewall puts on a network's connections (qosMarkTable); the class is the queue's, in hex.
+		var b strings.Builder
+		b.WriteString("# a share of the line for each network: mark, class, priority, upload rate and ceiling, download rate and ceiling (kbit/s)\nSQM_CLASSES=\"\n")
+		for _, cl := range cfg.QoSClasses() {
+			fmt.Fprintf(&b, "0x%x %x %d %d %d %d %d\n", qosMark(cl.Index), qosMinor(cl.Index), cl.Prio, cl.UpRate, cl.UpCeil, cl.DownRate, cl.DownCeil)
+		}
+		b.WriteString("\"\n")
+		out += b.String()
+	}
+	return out, true
+}
+
+// The mark of a network's connections is its index in the bits 16 to 23 of the connection mark (qosMask), so that it cannot clash with a
+// mark something else sets; the queue's class for it is 1:<minor>, where "everything else" (index 0) is minor 2.
+const qosMask = 0x00ff0000
+
+func qosMark(index int) int { return index << 16 }
+
+func qosMinor(index int) int {
+	if index == 0 {
+		return 2
+	}
+	return 0x10 + index
+}
+
+// qosMarkTable marks the connections of each network (the ones it starts, and the ones started towards it, such as a forwarded port), and
+// puts the connection's mark on each packet that is forwarded, which is what the queue sorts by when the packet goes out. The packets
+// that come in are sorted by the same connection mark (the queue reads it from the connection tracking). Empty while the line is not divided.
+func qosMarkTable(cfg config.NetworkConfig, lan string) string {
+	if !cfg.QoSActive() {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\ntable inet peakroute_qos {\n    chain classify {\n        type filter hook forward priority mangle; policy accept;\n")
+	for _, cl := range cfg.QoSClasses() {
+		if cl.ID == "other" {
+			continue
+		}
+		iface := lan
+		if cl.ID != config.DefaultNetworkID {
+			n, _ := cfg.FindNetwork(cl.ID)
+			iface = networkIface(n)
+		}
+		for _, dir := range []string{"iifname", "oifname"} {
+			fmt.Fprintf(&b, "        %s \"%s\" ct mark and 0x%08x == 0 ct mark set ct mark and 0x%08x or 0x%08x\n", dir, iface, qosMask, ^qosMask&0xffffffff, qosMark(cl.Index))
+		}
+	}
+	fmt.Fprintf(&b, "        meta mark set ct mark and 0x%08x\n    }\n}\n", qosMask)
+	return b.String()
 }
 
 // ensureSafeSQM is the render-time twin of the validation: what goes into the file is read by a shell.

@@ -482,7 +482,7 @@ table ip nat {
         oifname "%[2]s" masquerade
     }
 }
-%[9]s`, lan, cfg.WanDevice(), inputExtra, forwardExtra, mssClamp(cfg), fwParts.input, fwParts.forward, fwParts.preroute+nftablesFilterChain(cfg, lan), renderAccounting(cfg))
+%[9]s`, lan, cfg.WanDevice(), inputExtra, forwardExtra, mssClamp(cfg), fwParts.input, fwParts.forward, fwParts.preroute+nftablesFilterChain(cfg, lan), renderAccounting(cfg)+qosMarkTable(cfg, lan))
 }
 
 // UsageTable is the nftables table the per-device usage is counted in (the daemon reads its sets, network/usage.go).

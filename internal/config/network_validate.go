@@ -173,6 +173,7 @@ func (c NetworkConfig) Validate() error {
 	validateServers(c.WanDNS, "wan_dns", add)
 	c.validateWan(add)
 	c.validateSQM(add)
+	c.validateQoS(add)
 
 	// --- LAN ---
 	if len(c.LanInterfaces) == 0 {

@@ -41,6 +41,10 @@ type Network struct {
 	// Filter sends this network's DNS questions through AdGuard Home (ads and trackers), which asks this router's own DNS for the
 	// answers. Router only; off is not written. A network that filters cannot also be told to use other DNS servers.
 	Filter bool `json:"filter,omitempty"`
+	// QoSPriority and the limits divide the shaped internet line between the networks (qos.go); normal and no limit are not written.
+	QoSPriority      string `json:"qos_priority,omitempty"`
+	QoSLimitDownKbit int    `json:"qos_limit_down_kbit,omitempty"`
+	QoSLimitUpKbit   int    `json:"qos_limit_up_kbit,omitempty"`
 	// DNSServers are what the network's devices are told to use for DNS instead of this router (empty: the router)
 	DNSServers []string `json:"dns_servers,omitempty"`
 }
@@ -113,7 +117,7 @@ var (
 // Equal reports whether two networks are configured identically.
 func (n Network) Equal(o Network) bool {
 	if n.ID != o.ID || n.Name != o.Name || n.VLAN != o.VLAN || n.IP != o.IP || n.Netmask != o.Netmask ||
-		n.Internet != o.Internet || n.Isolated != o.Isolated || n.MDNS != o.MDNS || n.NTP != o.NTP || n.Filter != o.Filter || strings.Join(n.DNSServers, ",") != strings.Join(o.DNSServers, ",") {
+		n.Internet != o.Internet || n.Isolated != o.Isolated || n.MDNS != o.MDNS || n.NTP != o.NTP || n.Filter != o.Filter || n.QoSPriority != o.QoSPriority || n.QoSLimitDownKbit != o.QoSLimitDownKbit || n.QoSLimitUpKbit != o.QoSLimitUpKbit || strings.Join(n.DNSServers, ",") != strings.Join(o.DNSServers, ",") {
 		return false
 	}
 	switch {

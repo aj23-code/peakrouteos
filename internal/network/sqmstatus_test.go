@@ -26,3 +26,13 @@ func TestADeviceWithoutACakeQueueIsNotShaped(t *testing.T) {
 		}
 	}
 }
+
+func TestALineDividedBetweenNetworksIsReadAsTheSumOfItsQueues(t *testing.T) {
+	const tree = `[{"kind":"htb","handle":"1:","root":true,"options":{"r2q":10},"bytes":5000,"packets":10,"drops":0,"backlog":0},
+{"kind":"cake","handle":"2:","parent":"1:2","options":{"bandwidth":0},"bytes":100,"drops":2,"backlog":300,"tins":[{"avg_delay_us":800,"peak_delay_us":2000}]},
+{"kind":"cake","handle":"11:","parent":"1:11","options":{"bandwidth":0},"bytes":4900,"drops":5,"backlog":1200,"tins":[{"avg_delay_us":2500,"peak_delay_us":7000}]}]`
+	d, ok := ParseSQMQdisc([]byte(tree))
+	if !ok || !d.Active || d.BytesSent != 5000 || d.Drops != 7 || d.BacklogBytes != 1500 || d.AvgDelayUS != 2500 || d.PeakDelayUS != 7000 || d.BandwidthKbit != 0 {
+		t.Errorf("%v %+v", ok, d)
+	}
+}

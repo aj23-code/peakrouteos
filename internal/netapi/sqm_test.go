@@ -142,3 +142,61 @@ func TestTheSpeedTestRunsOnceAtATimeAndChangesNothingInTheConfiguration(t *testi
 		t.Errorf("%+v", v)
 	}
 }
+
+func TestEachNetworkGetsAPriorityAndLimitsOnTheShapedLine(t *testing.T) {
+	e := standard(t)
+	if rec := e.create(newGuest); rec.Code != http.StatusCreated {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	v := decodeInto[sqmResponse](t, e.get(e.api.HandleSQM))
+	if len(v.Networks) != 2 || v.Networks[0].ID != "lan" || v.Networks[0].Name != "LAN" || v.Networks[1].ID != "net2" || v.Networks[0].Priority != "normal" || v.Networks[0].AssuredDown != 0 {
+		t.Fatalf("%+v", v.Networks)
+	}
+	// without shaping it can be set, and is kept, and says it does nothing yet
+	rec := e.do(e.api.HandleSQM, http.MethodPut, `{"networks":[{"id":"net2","priority":"low"}]}`, "application/json")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if v = decodeInto[sqmResponse](t, e.get(e.api.HandleSQM)); v.Networks[1].Priority != "low" || !strings.Contains(v.Networks[1].Inactive, "smart queue management is off") || v.Networks[1].AssuredDown != 0 {
+		t.Fatalf("%+v", v.Networks[1])
+	}
+	rec = e.do(e.api.HandleSQM, http.MethodPut, `{"enabled":true,"download_mbit":100,"upload_mbit":20,"percent":100,
+		"networks":[{"id":"lan","priority":"high"},{"id":"net2","priority":"low","limit_down_mbit":10,"limit_up_mbit":2.5}]}`, "application/json")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	d := e.draft()
+	if q := d.NetworkQoS("lan"); q.Priority != "high" || q.LimitDownKbit != 0 {
+		t.Errorf("%+v", q)
+	}
+	if q := d.NetworkQoS("net2"); q.Priority != "low" || q.LimitDownKbit != 10000 || q.LimitUpKbit != 2500 {
+		t.Errorf("%+v", q)
+	}
+	v = decodeInto[sqmResponse](t, e.get(e.api.HandleSQM))
+	// other 2, LAN 4, guest 1 of 100 Mbit/s down: 57.1 for the LAN; the guest is held to its limit of 10
+	if !v.Pending || v.Networks[0].AssuredDown < 57 || v.Networks[0].AssuredDown > 57.2 || v.Networks[1].CeilDown != 10 || v.Networks[1].AssuredDown != 10 || v.Networks[1].CeilUp != 2.5 {
+		t.Errorf("%+v", v.Networks)
+	}
+	if v.Networks[1].Inactive != "" {
+		t.Errorf("a working setting is said to do nothing: %q", v.Networks[1].Inactive)
+	}
+	// a limit in a direction that is not shaped is kept and says so; a bad priority and an unknown network are refused
+	rec = e.do(e.api.HandleSQM, http.MethodPut, `{"upload_mbit":0,"networks":[{"id":"net2","limit_up_mbit":3}]}`, "application/json")
+	if rec.Code != http.StatusOK {
+		t.Errorf("%d %s", rec.Code, rec.Body)
+	}
+	if v = decodeInto[sqmResponse](t, e.get(e.api.HandleSQM)); !strings.Contains(v.Networks[1].Inactive, "upload limit does nothing") {
+		t.Errorf("%q", v.Networks[1].Inactive)
+	}
+	if rec := e.do(e.api.HandleSQM, http.MethodPut, `{"networks":[{"id":"net2","priority":"urgent"}]}`, "application/json"); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"field":"net.net2.priority"`) {
+		t.Errorf("%d %s", rec.Code, rec.Body)
+	}
+	if rec := e.do(e.api.HandleSQM, http.MethodPut, `{"networks":[{"id":"nope","priority":"low"}]}`, "application/json"); rec.Code != http.StatusBadRequest {
+		t.Errorf("%d", rec.Code)
+	}
+	// turning the shaping off keeps what the networks were set to
+	rec = e.do(e.api.HandleSQM, http.MethodPut, `{"enabled":false}`, "application/json")
+	if rec.Code != http.StatusOK || e.draft().NetworkQoS("lan").Priority != "high" {
+		t.Errorf("%d %s", rec.Code, rec.Body)
+	}
+}

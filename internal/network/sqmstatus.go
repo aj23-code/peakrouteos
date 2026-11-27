@@ -46,6 +46,30 @@ func ParseSQMQdisc(out []byte) (SQMDirection, bool) {
 	if json.Unmarshal(out, &qs) != nil {
 		return SQMDirection{}, false
 	}
+	// a line divided between the networks is an htb tree with a cake queue in each class: the answer is the sum of those
+	tree := false
+	var sum SQMDirection
+	for _, q := range qs {
+		switch {
+		case q.Kind == "htb" && q.Root:
+			tree = true
+			sum.Active, sum.BytesSent = true, q.Bytes
+		case q.Kind == "cake" && !q.Root:
+			sum.Drops += q.Drops
+			sum.BacklogBytes += q.Backlog
+			for _, t := range q.Tins {
+				if t.AvgDelay > sum.AvgDelayUS {
+					sum.AvgDelayUS = t.AvgDelay
+				}
+				if t.PeakDelay > sum.PeakDelayUS {
+					sum.PeakDelayUS = t.PeakDelay
+				}
+			}
+		}
+	}
+	if tree {
+		return sum, true // the whole line's speed is not in the queue's own report: the caller knows it
+	}
 	for _, q := range qs {
 		if q.Kind != "cake" || !q.Root {
 			continue

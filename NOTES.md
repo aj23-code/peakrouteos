@@ -1167,6 +1167,15 @@ line, CPU on small hardware, the hooks under real ifupdown/pppd.
 1 s warm-up left out, a 400 MB cap per direction, upload rate from TCP_INFO `bytes_acked` summed over the connections (the sender's own count is inflated by the
 send buffer: found by a test). `GET/POST /api/v1/sqm/speedtest` (one job at a time; fills nothing in by itself, the page puts the numbers into the form);
 main.go takes shaping off for the test (`sqm stop`) and puts it back (`sqm reconcile`) when it ends. Probed once with 100 kB each way; not run against a real line.
+**Per-network priorities and limits (same day, docs/sqm.md "Per network"):** `config/qos.go` (flat fields `qos_priority`, `qos_limit_down_kbit`,
+`qos_limit_up_kbit` on a network and `lan_qos_*` on the default one; normal and 0 are not written). While shaping is on and any network is not
+at the defaults, the one cake queue becomes an htb tree with a cake (unlimited) leaf per network: weights high 4 / normal 2 / low 1 and "other"
+2 give the assured rates, ceilings are the limits, htb `prio` the order. Classification is by a **connection mark** in bits 16-23 set by a firewall
+table `peakroute_qos` that lives in the same nftables file (a separate file would be flushed by `flush ruleset`); egress by `meta mark set ct mark`,
+ingress by the `ctinfo cpmark` action before the ifb redirect (verified in a kernel: it does look the connection up). Found by building it:
+nft cannot OR with a non-constant, `mark` is a keyword (chain name), `tc qdisc replace` keeps un-named options (so every keyword is given). Settings are
+kept while shaping is off or a direction is unshaped (an inactive note, not a validation error). Real kernel tests with three namespaces: a limit of 8
+down/6 up held (7.7/5.6) and a 4:1 weight gave 16.4 to 2.7 over a 20 Mbit line. Not run on a real line or hardware.
 
 ## 7g. Wireless, and PeakRoute on access points (started 2026-10-08)
 
