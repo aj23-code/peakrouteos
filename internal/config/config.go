@@ -106,24 +106,28 @@ type NetworkConfig struct {
 	WanGateway   string   `json:"wan_gateway,omitempty"`
 	WanDNS       []string `json:"wan_dns,omitempty"` // static: the servers to use; DHCP and PPPoE: servers to use instead of the provider's
 	// How the connection is carried and presented to the provider
-	WanVlan       int           `json:"wan_vlan,omitempty"`      // tagged VLAN the provider wants (0: none)
-	WanMTU        int           `json:"wan_mtu,omitempty"`       // 0: the usual 1500 (1492 for PPPoE)
-	WanMAC        string        `json:"wan_mac,omitempty"`       // hardware address to present instead of the port's own
-	Hostname      string        `json:"hostname,omitempty"`      // the router's host name (System, Settings): written to /etc/hostname
-	SendHostname  bool          `json:"send_hostname,omitempty"` // tell the provider's DHCP server the name (only a DHCP connection sends it)
-	Timezone      string        `json:"timezone,omitempty"`      // an IANA name such as Europe/Berlin; empty: the machine keeps its own
-	NTPDisabled   bool          `json:"ntp_disabled,omitempty"`  // do not keep the time with time servers
-	NTPServers    []string      `json:"ntp_servers,omitempty"`   // empty: the default (pool.ntp.org)
-	Syslog        *SyslogConfig `json:"syslog,omitempty"`        // send the logs to syslog servers
-	DDNS          *DDNSConfig   `json:"ddns,omitempty"`          // names kept pointed at the internet connection's address
-	SQM           *SQMConfig    `json:"sqm,omitempty"`           // shaping of the internet connection against bufferbloat (sqm.go)
-	VPN           *VPNConfig    `json:"vpn,omitempty"`           // tunnels between sites and remote access
-	WanPPPoE      *PPPoEConfig  `json:"wan_pppoe,omitempty"`
-	LanInterfaces []string      `json:"lan_interfaces,omitempty"`
-	LanIP         string        `json:"lan_ip,omitempty"`
-	LanSubnet     string        `json:"lan_subnet,omitempty"`
-	DHCP          *DHCPConfig   `json:"dhcp,omitempty"`
-	Routes        []Route       `json:"routes,omitempty"`
+	WanVlan      int           `json:"wan_vlan,omitempty"`      // tagged VLAN the provider wants (0: none)
+	WanMTU       int           `json:"wan_mtu,omitempty"`       // 0: the usual 1500 (1492 for PPPoE)
+	WanMAC       string        `json:"wan_mac,omitempty"`       // hardware address to present instead of the port's own
+	Hostname     string        `json:"hostname,omitempty"`      // the router's host name (System, Settings): written to /etc/hostname
+	SendHostname bool          `json:"send_hostname,omitempty"` // tell the provider's DHCP server the name (only a DHCP connection sends it)
+	Timezone     string        `json:"timezone,omitempty"`      // an IANA name such as Europe/Berlin; empty: the machine keeps its own
+	NTPDisabled  bool          `json:"ntp_disabled,omitempty"`  // do not keep the time with time servers
+	NTPServers   []string      `json:"ntp_servers,omitempty"`   // empty: the default (pool.ntp.org)
+	Syslog       *SyslogConfig `json:"syslog,omitempty"`        // send the logs to syslog servers
+	DDNS         *DDNSConfig   `json:"ddns,omitempty"`          // names kept pointed at the internet connection's address
+	SQM          *SQMConfig    `json:"sqm,omitempty"`           // shaping of the internet connection against bufferbloat (sqm.go)
+	VPN          *VPNConfig    `json:"vpn,omitempty"`           // tunnels between sites and remote access
+	WanPPPoE     *PPPoEConfig  `json:"wan_pppoe,omitempty"`
+	// A second internet connection (wan2.go) and which of the two the traffic prefers.
+	Wan2          *WanConfig  `json:"wan2,omitempty"`
+	WanPreferred  string      `json:"wan_preferred,omitempty"` // "" or "wan": the first connection; "wan2": the second
+	uplink        int         // 2 in the view of the second connection (WanView); 0 otherwise
+	LanInterfaces []string    `json:"lan_interfaces,omitempty"`
+	LanIP         string      `json:"lan_ip,omitempty"`
+	LanSubnet     string      `json:"lan_subnet,omitempty"`
+	DHCP          *DHCPConfig `json:"dhcp,omitempty"`
+	Routes        []Route     `json:"routes,omitempty"`
 	// Addresses kept for particular devices: the DHCP server always gives a device (by its hardware address) the same address
 	Reservations []Reservation `json:"reservations,omitempty"`
 	// Further local networks, and which LAN ports carry them. LanIsolated is the default network's
@@ -254,6 +258,10 @@ func (c NetworkConfig) clone() NetworkConfig {
 	if c.WanPPPoE != nil {
 		p := *c.WanPPPoE
 		c.WanPPPoE = &p
+	}
+	if c.Wan2 != nil {
+		w := c.Wan2.clone()
+		c.Wan2 = &w
 	}
 	c.LanInterfaces = append([]string(nil), c.LanInterfaces...)
 	c.Routes = append([]Route(nil), c.Routes...)

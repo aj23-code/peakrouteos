@@ -22,7 +22,8 @@ const (
 	PathNftables    = "/etc/nftables.conf"
 	PathDnsmasqDHCP = "/etc/dnsmasq.d/peakroute-dhcp.conf"
 	PathDnsmasqDNS  = "/etc/dnsmasq.d/peakroute-upstream.conf"
-	PathPPPPeer     = "/etc/ppp/peers/peakroute-wan" // the PPPoE login, when the connection is PPPoE
+	PathPPPPeer     = "/etc/ppp/peers/peakroute-wan"  // the PPPoE login, when the connection is PPPoE
+	PathPPPPeer2    = "/etc/ppp/peers/peakroute-wan2" // ... and the second connection's
 
 	// Static routes. ifupdown runs every script in if-up.d whenever an interface comes up, so
 	// the routes come back after a reboot or a networking restart without touching /etc/network/interfaces.
@@ -128,8 +129,10 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	}
 
 	tokens := append([]string{cfg.WanInterface, cfg.LanIP, cfg.LanSubnet}, cfg.LanInterfaces...)
-	if err := ensureSafeWan(cfg); err != nil {
-		return Desired{}, err
+	for _, v := range cfg.WanViews() {
+		if err := ensureSafeWan(v); err != nil {
+			return Desired{}, err
+		}
 	}
 	if err := ensureSafeReservations(cfg.Reservations); err != nil {
 		return Desired{}, err
@@ -149,13 +152,15 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	if err := ensureSafeOVPN(cfg); err != nil {
 		return Desired{}, err
 	}
-	tokens = append(tokens, cfg.WanLink())
-	if strings.EqualFold(cfg.WanMode, "static") {
-		tokens = append(tokens, cfg.WanIP, cfg.WanSubnet)
-		if cfg.WanGateway != "" {
-			tokens = append(tokens, cfg.WanGateway)
+	for _, v := range cfg.WanViews() {
+		tokens = append(tokens, v.WanLink(), v.WanInterface)
+		if strings.EqualFold(v.WanMode, "static") {
+			tokens = append(tokens, v.WanIP, v.WanSubnet)
+			if v.WanGateway != "" {
+				tokens = append(tokens, v.WanGateway)
+			}
+			tokens = append(tokens, v.WanDNS...)
 		}
-		tokens = append(tokens, cfg.WanDNS...)
 	}
 	if d := cfg.DHCP; d != nil && d.Enabled {
 		tokens = append(tokens, d.RangeStart, d.RangeEnd, d.LeaseTime)
@@ -187,9 +192,11 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	}
 
 	// The PPPoE login: only present while the connection is PPPoE (it holds the password)
-	pppArtifact := Artifact{Path: PathPPPPeer, Remove: true, Service: SvcNetworking}
-	if cfg.WanKind() == config.WanPPPoE {
-		pppArtifact = Artifact{Path: PathPPPPeer, Content: []byte(renderPPPPeer(cfg)), Mode: 0600, Service: SvcNetworking}
+	pppArtifacts := []Artifact{{Path: PathPPPPeer, Remove: true, Service: SvcNetworking}, {Path: PathPPPPeer2, Remove: true, Service: SvcNetworking}}
+	for i, v := range cfg.WanViews() {
+		if v.WanKind() == config.WanPPPoE {
+			pppArtifacts[i] = Artifact{Path: pppPeerPath(v), Content: []byte(renderPPPPeer(v)), Mode: 0600, Service: SvcNetworking}
+		}
 	}
 
 	// the kernel's regulatory country
@@ -201,7 +208,8 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 	d.Artifacts = append(d.Artifacts,
 		Artifact{Path: PathSysctl, Content: []byte("net.ipv4.ip_forward=1\n"), Mode: 0644, Service: SvcSysctl},
 		Artifact{Path: PathInterfaces, Content: []byte(renderInterfaces(cfg, lan)), Mode: 0644, Service: SvcNetworking},
-		pppArtifact,
+		pppArtifacts[0],
+		pppArtifacts[1],
 		routesArtifact,
 		regdom,
 		// Debian ships nftables.conf as an executable script (it has a shebang)
@@ -393,7 +401,7 @@ func renderInterfaces(cfg config.NetworkConfig, lan string) string {
 
 	b.WriteString("auto lo\niface lo inet loopback\n\n")
 
-	writeWanStanza(&b, cfg)
+	writeWanStanzas(&b, cfg)
 	writeStationStanzas(&b, cfg)
 	fmt.Fprintf(&b, "auto %s\n", lan)
 	fmt.Fprintf(&b, "iface %s inet static\n", lan)
@@ -469,7 +477,7 @@ table inet filter {
         type filter hook forward priority filter; policy drop;
         ct state established,related accept
         ct state invalid drop
-%[5]s%[7]s        iifname "%[1]s" oifname "%[2]s" accept
+%[5]s%[7]s        iifname "%[1]s" oifname %[2]s accept
 %[4]s    }
     chain output {
         type filter hook output priority filter; policy accept;
@@ -479,10 +487,10 @@ table inet filter {
 table ip nat {
 %[8]s    chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
-        oifname "%[2]s" masquerade
+        oifname %[2]s masquerade
     }
 }
-%[9]s`, lan, cfg.WanDevice(), inputExtra, forwardExtra, mssClamp(cfg), fwParts.input, fwParts.forward, fwParts.preroute+nftablesFilterChain(cfg, lan), renderAccounting(cfg)+qosMarkTable(cfg, lan))
+%[9]s`, lan, wanMatch(cfg), inputExtra, forwardExtra, mssClamp(cfg), fwParts.input, fwParts.forward, fwParts.preroute+nftablesFilterChain(cfg, lan), renderAccounting(cfg)+qosMarkTable(cfg, lan))
 }
 
 // UsageTable is the nftables table the per-device usage is counted in (the daemon reads its sets, network/usage.go).
@@ -502,7 +510,7 @@ func AccountingRuleset(cfg config.NetworkConfig) string {
 // bounds the sets; the daemon adds up the counters (and copes with them starting again from zero, which every reload of this file
 // does, as the whole ruleset is flushed first).
 func renderAccounting(cfg config.NetworkConfig) string {
-	wan := cfg.WanDevice()
+	wan := wanMatch(cfg)
 	set := func(name, typ string) string {
 		return fmt.Sprintf("    set %s { type %s; flags dynamic,timeout; timeout 10m; size 8192; counter; }\n", name, typ)
 	}
@@ -510,10 +518,10 @@ func renderAccounting(cfg config.NetworkConfig) string {
 table inet %[1]s {
 %[2]s%[3]s%[4]s%[5]s    chain forward {
         type filter hook forward priority 10; policy accept;
-        iifname != "%[6]s" oifname "%[6]s" add @up4 { ip saddr }
-        iifname "%[6]s" oifname != "%[6]s" add @down4 { ip daddr }
-        iifname != "%[6]s" oifname "%[6]s" add @up6 { ip6 saddr }
-        iifname "%[6]s" oifname != "%[6]s" add @down6 { ip6 daddr }
+        iifname != %[6]s oifname %[6]s add @up4 { ip saddr }
+        iifname %[6]s oifname != %[6]s add @down4 { ip daddr }
+        iifname != %[6]s oifname %[6]s add @up6 { ip6 saddr }
+        iifname %[6]s oifname != %[6]s add @down6 { ip6 daddr }
     }
 }
 `, UsageTable, set("up4", "ipv4_addr"), set("down4", "ipv4_addr"), set("up6", "ipv6_addr"), set("down6", "ipv6_addr"), wan)

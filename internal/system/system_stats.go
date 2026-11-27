@@ -527,7 +527,7 @@ func fillInterfaceStats(stats *SystemStats, snapshot map[string]ifaceSnapshot, n
 
 	for iface, snap := range snapshot {
 		role := "unassigned"
-		if wanIface != "" && iface == wanIface {
+		if (wanIface != "" && iface == wanIface) || (netCfg != nil && netCfg.HasWan2() && iface == netCfg.Wan2.Interface) {
 			role = "wan"
 		} else {
 			for _, lan := range lanIfaces {

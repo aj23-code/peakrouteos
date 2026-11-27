@@ -107,32 +107,46 @@ const maxBody = 64 << 10
 
 const (
 	RoleWAN        = "wan"
+	RoleWAN2       = "wan2" // the second internet connection (docs/wan-failover.md)
 	RoleLAN        = "lan"
 	RoleUnassigned = "unassigned"
 )
 
 // Field names in errors are the API's own (generic, per-network), not the JSON file's.
 var errorField = map[string]string{
-	"lan_ip":           "ip",
-	"lan_subnet":       "netmask",
-	"dhcp_enabled":     "dhcp.enabled",
-	"dhcp_range_start": "dhcp.range_start",
-	"dhcp_range_end":   "dhcp.range_end",
-	"dhcp_lease_time":  "dhcp.lease_time",
-	"wan_interface":    "ports",
-	"lan_interfaces":   "ports",
-	"wan_mode":         "mode",
-	"wan_ip":           "ip",
-	"wan_subnet":       "netmask",
-	"wan_gateway":      "gateway",
-	"wan_dns":          "dns",
-	"wan_vlan":         "vlan",
-	"wan_mtu":          "mtu",
-	"wan_mac":          "mac",
-	"wan_pppoe":        "pppoe",
-	"pppoe_username":   "pppoe.username",
-	"pppoe_password":   "pppoe.password",
-	"pppoe_service":    "pppoe.service",
+	"lan_ip":              "ip",
+	"lan_subnet":          "netmask",
+	"dhcp_enabled":        "dhcp.enabled",
+	"dhcp_range_start":    "dhcp.range_start",
+	"dhcp_range_end":      "dhcp.range_end",
+	"dhcp_lease_time":     "dhcp.lease_time",
+	"wan_interface":       "ports",
+	"lan_interfaces":      "ports",
+	"wan_mode":            "mode",
+	"wan_ip":              "ip",
+	"wan_subnet":          "netmask",
+	"wan_gateway":         "gateway",
+	"wan_dns":             "dns",
+	"wan_vlan":            "vlan",
+	"wan_mtu":             "mtu",
+	"wan_mac":             "mac",
+	"wan_pppoe":           "pppoe",
+	"pppoe_username":      "pppoe.username",
+	"pppoe_password":      "pppoe.password",
+	"pppoe_service":       "pppoe.service",
+	"wan2.interface":      "ports",
+	"wan2.mode":           "mode",
+	"wan2.ip":             "ip",
+	"wan2.subnet":         "netmask",
+	"wan2.gateway":        "gateway",
+	"wan2.dns":            "dns",
+	"wan2.vlan":           "vlan",
+	"wan2.mtu":            "mtu",
+	"wan2.mac":            "mac",
+	"wan2.pppoe":          "pppoe",
+	"wan2.pppoe_username": "pppoe.username",
+	"wan2.pppoe_password": "pppoe.password",
+	"wan2.pppoe_service":  "pppoe.service",
 }
 
 type errorBody struct {
@@ -224,6 +238,9 @@ func decode(w http.ResponseWriter, r *http.Request, dst any) bool {
 func roleOf(c config.NetworkConfig, name string) string {
 	if name != "" && name == c.WanInterface {
 		return RoleWAN
+	}
+	if name != "" && c.HasWan2() && name == c.Wan2.Interface {
+		return RoleWAN2
 	}
 	for _, lan := range c.LanInterfaces {
 		if lan == name {

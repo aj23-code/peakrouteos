@@ -1,8 +1,8 @@
 // web/static/scripts/ports.js
-// Ports page: pick the role of every network port (Internet/WAN, LAN or unassigned).
+// Ports page: pick the role of every network port (Internet/WAN, a second Internet/WAN 2, LAN or unassigned).
 
 window.PortsModule = (function () {
-    const ROLE_LABELS = { wan: 'Internet (WAN)', lan: 'LAN', unassigned: 'Unassigned' };
+    const ROLE_LABELS = { wan: 'Internet (WAN)', wan2: 'Second internet (WAN 2)', lan: 'LAN', unassigned: 'Unassigned' };
 
     let pollInterval = null;
     let ports = [];          // last answer from the server
@@ -62,6 +62,7 @@ window.PortsModule = (function () {
         const roles = ports.map(p => chosen[p.name]);
         const wan = roles.filter(r => r === 'wan').length;
         const lan = roles.filter(r => r === 'lan').length;
+        if (roles.filter(r => r === 'wan2').length > 1) return 'Only one port can be Second internet (WAN 2).';
         if (wan !== 1) return wan === 0 ? 'Pick one port as Internet (WAN).' : 'Only one port can be Internet (WAN).';
         if (lan < 1) return 'At least one port must be LAN.';
         return '';
@@ -224,8 +225,8 @@ window.PortsModule = (function () {
             const role = select.value;
 
             // One WAN only: picking WAN here releases the port that had it
-            if (role === 'wan') {
-                ports.forEach(p => { if (p.name !== name && chosen[p.name] === 'wan') chosen[p.name] = 'unassigned'; });
+            if (role === 'wan' || role === 'wan2') {
+                ports.forEach(p => { if (p.name !== name && chosen[p.name] === role) chosen[p.name] = 'unassigned'; });
             }
             chosen[name] = role;
             showMessage('');

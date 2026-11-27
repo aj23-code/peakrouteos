@@ -137,7 +137,7 @@ func renderAccessPoint(cfg config.NetworkConfig) (Desired, error) {
 		Artifact{Path: PathNftables, Content: []byte(renderNftablesAP()), Mode: 0755, Service: SvcNftables},
 	)
 	// what only a router has is taken away
-	for _, p := range []string{PathPPPPeer} {
+	for _, p := range []string{PathPPPPeer, PathPPPPeer2} {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: p, Remove: true, Service: SvcNetworking})
 	}
 	d.Artifacts = append(d.Artifacts, Artifact{Path: PathRoutes, Remove: true, Service: SvcRoutes})

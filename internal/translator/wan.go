@@ -19,8 +19,25 @@ import (
 //
 // The firewall, the masquerade rule and the health checks all use WanDevice: ppp0 for PPPoE, else the link.
 
-// pppProvider is the name of the PPP provider file, which ifupdown's ppp method hands to pppd.
-const pppProvider = "peakroute-wan"
+// PathUDHCPCWan is the DHCP client script of a router with two internet connections (image/overlay): Debian's sets every default route
+// with the same metric (the second connection's would be refused) and lets every connection write the resolver file. With one
+// connection Debian's own script runs, as it always has.
+const PathUDHCPCWan = "/usr/lib/peakroute/udhcpc-wan"
+
+// pppPeerPath is the PPP provider file of a connection (its view: wan2.go).
+func pppPeerPath(cfg config.NetworkConfig) string {
+	if cfg.IsSecondWan() {
+		return PathPPPPeer2
+	}
+	return PathPPPPeer
+}
+
+// writeWanStanzas writes the stanza of every internet connection.
+func writeWanStanzas(b *strings.Builder, cfg config.NetworkConfig) {
+	for _, v := range cfg.WanViews() {
+		writeWanStanza(b, v)
+	}
+}
 
 // ensureSafeWan is the render-time twin of the WAN validation: everything written to the interfaces
 // file and the PPP options file must be plain.
@@ -98,12 +115,16 @@ func writeWanStanza(b *strings.Builder, cfg config.NetworkConfig) {
 		// the link only has to be up for the session; pppd does the rest
 		stanza("manual") // ifupdown brings a manual interface up by itself
 		b.WriteString("\n")
-		fmt.Fprintf(b, "auto %s\niface %s inet ppp\n    provider %s\n", pppProvider, pppProvider, pppProvider)
+		provider := cfg.WanPPPProvider()
+		fmt.Fprintf(b, "auto %s\niface %s inet ppp\n    provider %s\n", provider, provider, provider)
 	case static:
 		var extra []string
 		extra = append(extra, "address "+cfg.WanIP, "netmask "+cfg.WanSubnet)
 		if cfg.WanGateway != "" {
 			extra = append(extra, "gateway "+cfg.WanGateway)
+			if m := cfg.WanMetric(); m > 0 {
+				extra = append(extra, fmt.Sprintf("metric %d", m))
+			}
 		}
 		if len(cfg.WanDNS) > 0 {
 			extra = append(extra, "dns-nameservers "+strings.Join(cfg.WanDNS, " "))
@@ -126,7 +147,17 @@ func dhcpHooks(cfg config.NetworkConfig) []string {
 	if cfg.Hostname != "" && cfg.SendHostname {
 		name = cfg.Hostname
 	}
-	return dhcpClientHooks(name, "")
+	if !cfg.HasWan2() {
+		return dhcpClientHooks(name, "")
+	}
+	// two connections: the script that gives each default route its own metric, and keeps the second one's resolvers out of the file
+	// the router's DNS reads. The options are the stanza's own (ifupdown hands them to the client's script as IF_METRIC and so on).
+	hooks := dhcpClientHooks(name, PathUDHCPCWan)
+	hooks = append(hooks, fmt.Sprintf("metric %d", cfg.WanMetric()))
+	if cfg.IsSecondWan() {
+		hooks = append(hooks, "peakroute-resolv no")
+	}
+	return hooks
 }
 
 // PathUDHCPCScript is the access point's DHCP client script (image/overlay): it sets the leased address beside the recovery address
@@ -164,11 +195,14 @@ func renderPPPPeer(cfg config.NetworkConfig) string {
 	line("password \"%s\"", p.Password)
 	line("hide-password")
 	line("noauth")
-	line("unit 0")
+	line("unit %d", map[bool]int{false: 0, true: 1}[cfg.IsSecondWan()])
 	line("mtu %d", mtu)
 	line("mru %d", mtu)
 	line("noipdefault")
 	line("defaultroute")
+	if m := cfg.WanMetric(); m > 0 {
+		line("defaultroute-metric %d", m)
+	}
 	line("usepeerdns")
 	// keep the session up: dial again whenever it drops, waiting a little between tries
 	line("persist")
@@ -190,12 +224,16 @@ func renderPPPPeer(cfg config.NetworkConfig) string {
 // a full-size packet does not fit and the "too big" message does not always make it back. Both directions
 // are clamped: our devices' SYNs going out and the servers' SYN-ACKs coming in.
 func mssClamp(cfg config.NetworkConfig) string {
-	mtu := cfg.EffectiveWanMTU()
-	if mtu >= config.DefaultWanMTU {
-		return ""
+	var out string
+	for _, v := range cfg.WanViews() {
+		mtu := v.EffectiveWanMTU()
+		if mtu >= config.DefaultWanMTU {
+			continue
+		}
+		mss := mtu - 40
+		dev := v.WanDevice()
+		out += fmt.Sprintf("        oifname \"%[1]s\" tcp flags syn tcp option maxseg size > %[2]d tcp option maxseg size set %[2]d\n"+
+			"        iifname \"%[1]s\" tcp flags syn tcp option maxseg size > %[2]d tcp option maxseg size set %[2]d\n", dev, mss)
 	}
-	mss := mtu - 40
-	dev := cfg.WanDevice()
-	return fmt.Sprintf("        oifname \"%[1]s\" tcp flags syn tcp option maxseg size > %[2]d tcp option maxseg size set %[2]d\n"+
-		"        iifname \"%[1]s\" tcp flags syn tcp option maxseg size > %[2]d tcp option maxseg size set %[2]d\n", dev, mss)
+	return out
 }

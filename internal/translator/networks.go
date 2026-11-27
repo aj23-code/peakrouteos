@@ -143,7 +143,7 @@ func networkNotes(cfg config.NetworkConfig) []string {
 func renderInterfacesNetworks(cfg config.NetworkConfig, lan string) string {
 	var b strings.Builder
 	b.WriteString("auto lo\niface lo inet loopback\n\n")
-	writeWanStanza(&b, cfg)
+	writeWanStanzas(&b, cfg)
 	writeStationStanzas(&b, cfg)
 
 	// a VLAN interface for every port that carries a network tagged
@@ -244,7 +244,7 @@ func nftablesNetworkRules(cfg config.NetworkConfig, lan string) (input, forward 
 			fmt.Fprintf(&in, "        iifname \"%s\" tcp dport %d accept\n", iface, DNSFilterPort)
 		}
 		if n.Internet {
-			fmt.Fprintf(&fw, "        iifname \"%s\" oifname \"%s\" accept\n", iface, cfg.WanDevice())
+			fmt.Fprintf(&fw, "        iifname \"%s\" oifname %s accept\n", iface, wanMatch(cfg))
 		}
 	}
 	in.WriteString(vpnIn)

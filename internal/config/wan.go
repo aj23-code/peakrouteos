@@ -59,7 +59,7 @@ const WanPPPInterface = "ppp0"
 // checks all follow this one.
 func (c NetworkConfig) WanDevice() string {
 	if c.WanKind() == WanPPPoE {
-		return WanPPPInterface
+		return c.WanPPPDevice()
 	}
 	return c.WanLink()
 }

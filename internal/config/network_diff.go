@@ -61,6 +61,8 @@ var networkSettings = []networkSetting{
 	{"wan_subnet", "WAN netmask", func(c NetworkConfig) string { return text(c.WanSubnet) }},
 	{"wan_gateway", "WAN gateway", func(c NetworkConfig) string { return text(c.WanGateway) }},
 	{"wan_dns", "WAN DNS servers", func(c NetworkConfig) string { return list(c.WanDNS) }},
+	{"wan2", "Second internet connection", func(c NetworkConfig) string { return c.Wan2Text() }},
+	{"wan_preferred", "Preferred internet connection", func(c NetworkConfig) string { return c.WanPreferredText() }},
 	{"lan_interfaces", "LAN ports", func(c NetworkConfig) string { return list(c.LanInterfaces) }},
 	{"lan_ip", "LAN IP address", func(c NetworkConfig) string { return text(c.LanIP) }},
 	{"lan_subnet", "LAN netmask", func(c NetworkConfig) string { return text(c.LanSubnet) }},
@@ -191,6 +193,7 @@ func DiffNetwork(active, candidate NetworkConfig) []Change {
 		}
 	}
 	changes = append(changes, diffWanSecret(active, candidate)...)
+	changes = append(changes, diffWan2Details(active, candidate)...)
 	changes = append(changes, diffAP(active, candidate)...)
 	changes = append(changes, diffWifi(active, candidate)...)
 	changes = append(changes, diffStations(active, candidate)...)
@@ -799,4 +802,76 @@ func diffDDNS(active, candidate NetworkConfig) []Change {
 		}
 	}
 	return changes
+}
+
+// diffWan2Details lists what else differs in the second internet connection, beyond the line that names it: its addressing and carrier
+// settings (the password only as set or changed).
+func diffWan2Details(active, candidate NetworkConfig) []Change {
+	a, _ := active.WanView(WanSecond)
+	b, _ := candidate.WanView(WanSecond)
+	if !active.HasWan2() && !candidate.HasWan2() {
+		return nil
+	}
+	var changes []Change
+	details := []struct{ field, label string }{
+		{"wan2.mode", "Second connection addressing"}, {"wan2.ip", "Second connection IP address"}, {"wan2.subnet", "Second connection netmask"},
+		{"wan2.gateway", "Second connection gateway"}, {"wan2.dns", "Second connection DNS servers"}, {"wan2.vlan", "Second connection VLAN"},
+		{"wan2.mtu", "Second connection MTU"}, {"wan2.mac", "Second connection MAC address"},
+		{"wan2.pppoe_username", "Second connection PPPoE user name"}, {"wan2.pppoe_service", "Second connection PPPoE service name"},
+	}
+	for _, d := range details {
+		var before, after string
+		before, after = wan2Value(a, active.HasWan2(), d.field), wan2Value(b, candidate.HasWan2(), d.field)
+		if before != after {
+			changes = append(changes, Change{Field: d.field, Label: d.label, Old: before, New: after})
+		}
+	}
+	changes = append(changes, diffWanSecret(a, b)...)
+	for i := range changes {
+		if changes[i].Field == "pppoe_password" {
+			changes[i].Field, changes[i].Label = "wan2.pppoe_password", "Second connection PPPoE password"
+		}
+	}
+	return changes
+}
+
+func wan2Value(v NetworkConfig, present bool, field string) string {
+	if !present {
+		return valueNone
+	}
+	switch field {
+	case "wan2.mode":
+		return v.WanKind()
+	case "wan2.ip":
+		return text(v.WanIP)
+	case "wan2.subnet":
+		return text(v.WanSubnet)
+	case "wan2.gateway":
+		return text(v.WanGateway)
+	case "wan2.dns":
+		return list(v.WanDNS)
+	case "wan2.vlan":
+		if v.WanVlan == 0 {
+			return "none"
+		}
+		return strconv.Itoa(v.WanVlan)
+	case "wan2.mtu":
+		return strconv.Itoa(v.EffectiveWanMTU())
+	case "wan2.mac":
+		if v.WanMAC == "" {
+			return "the port's own"
+		}
+		return v.WanMAC
+	case "wan2.pppoe_username":
+		if v.WanPPPoE == nil {
+			return valueNone
+		}
+		return text(v.WanPPPoE.Username)
+	case "wan2.pppoe_service":
+		if v.WanPPPoE == nil {
+			return valueNone
+		}
+		return text(v.WanPPPoE.Service)
+	}
+	return valueNone
 }

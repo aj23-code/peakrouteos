@@ -26,6 +26,24 @@ import (
 // the daemon runs as the appliance, 8443 in development).
 const antiLockoutPorts = "{ 22, 443, 8443 }"
 
+// wanMatch is what follows "iifname" or "oifname" to match the internet connection(s): one name in quotes, or a set of them when there
+// are two connections.
+func wanMatch(cfg config.NetworkConfig) string {
+	devs := cfg.WanDevices()
+	if len(devs) == 1 {
+		return `"` + devs[0] + `"`
+	}
+	return "{ " + quoteList(devs) + " }"
+}
+
+// fwMatch is fwInterface written as what follows "iifname" or "oifname": the internet is one or two interfaces.
+func fwMatch(cfg config.NetworkConfig, id string) string {
+	if id == config.FromWAN || id == config.ToInternet {
+		return wanMatch(cfg)
+	}
+	return `"` + fwInterface(cfg, id) + `"`
+}
+
 // fwInterface is the interface a Local Network's traffic uses.
 func fwInterface(cfg config.NetworkConfig, id string) string {
 	switch id {
@@ -205,7 +223,7 @@ func renderFirewall(cfg config.NetworkConfig) firewallParts {
 		}
 	}
 	if len(forwards) > 0 {
-		wan := cfg.WanDevice()
+		wan := wanMatch(cfg)
 		pre.WriteString("    chain prerouting {\n        type nat hook prerouting priority dstnat; policy accept;\n")
 		fw.WriteString("        # port forwards: the traffic they translate is let through\n")
 		for _, p := range forwards {
@@ -214,7 +232,7 @@ func renderFirewall(cfg config.NetworkConfig) firewallParts {
 				internal = p.ExternalPorts
 			}
 			fmt.Fprintf(&pre, "        # %s: %s\n", p.ID, commentSafe(cfg.ForwardText(p)))
-			match := fmt.Sprintf("iifname \"%s\"", wan)
+			match := "iifname " + wan
 			if len(p.Sources) > 0 {
 				match += " ip saddr " + nftAddrs(p.Sources)
 			}
@@ -225,7 +243,7 @@ func renderFirewall(cfg config.NetworkConfig) firewallParts {
 				to += ":" + internal
 			}
 			fmt.Fprintf(&pre, "        %s %s %s dport %s counter dnat to %s comment \"fw:%s\"\n", match, proto.match, proto.th, p.ExternalPorts, to, p.ID)
-			fmt.Fprintf(&fw, "        iifname \"%s\" ip daddr %s %s %s dport %s ct status dnat counter accept comment \"fw:%s\"\n", wan, p.ToIP, proto.match, proto.th, internal, p.ID)
+			fmt.Fprintf(&fw, "        iifname %s ip daddr %s %s %s dport %s ct status dnat counter accept comment \"fw:%s\"\n", wan, p.ToIP, proto.match, proto.th, internal, p.ID)
 		}
 		pre.WriteString("    }\n")
 	}
@@ -251,11 +269,11 @@ func renderFirewall(cfg config.NetworkConfig) firewallParts {
 		fw.WriteString("        # firewall rules, in order\n")
 	}
 	for _, r := range active {
-		src := fwInterface(cfg, r.From)
+		src := fwMatch(cfg, r.From)
 		line := func(oif string) string {
-			parts := []string{fmt.Sprintf("iifname \"%s\"", src)}
+			parts := []string{"iifname " + src}
 			if oif != "" {
-				parts = append(parts, fmt.Sprintf("oifname \"%s\"", oif))
+				parts = append(parts, "oifname "+oif)
 			}
 			if m := ruleMatch(r); m != "" {
 				parts = append(parts, m)
@@ -274,7 +292,7 @@ func renderFirewall(cfg config.NetworkConfig) firewallParts {
 			fw.WriteString(note)
 			oif := ""
 			if r.To != config.ToAny {
-				oif = fwInterface(cfg, r.To)
+				oif = fwMatch(cfg, r.To)
 			}
 			fw.WriteString(line(oif))
 		}

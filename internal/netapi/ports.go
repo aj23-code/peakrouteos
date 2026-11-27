@@ -58,6 +58,9 @@ func portNames(hardware []config.SystemInterface, cfgs ...config.NetworkConfig) 
 	configured := map[string]bool{}
 	for _, c := range cfgs {
 		configured[c.WanInterface] = true
+		if c.Wan2 != nil {
+			configured[c.Wan2.Interface] = true
+		}
 		for _, l := range c.LanInterfaces {
 			configured[l] = true
 		}
@@ -70,6 +73,9 @@ func portNames(hardware []config.SystemInterface, cfgs ...config.NetworkConfig) 
 	}
 	for _, c := range cfgs {
 		add(c.WanInterface)
+		if c.Wan2 != nil {
+			add(c.Wan2.Interface)
+		}
 		for _, lan := range c.LanInterfaces {
 			add(lan)
 		}
@@ -189,8 +195,8 @@ func (a *API) putPorts(w http.ResponseWriter, r *http.Request) {
 				problems = append(problems, config.FieldError{Field: "assignments." + name, Message: "a Wi-Fi adapter cannot be a WAN or LAN port: it is set up on the Wireless page"})
 			case !known[name]:
 				problems = append(problems, config.FieldError{Field: "assignments." + name, Message: "there is no port with this name"})
-			case role != RoleWAN && role != RoleLAN && role != RoleUnassigned:
-				problems = append(problems, config.FieldError{Field: "assignments." + name, Message: `the role must be "wan", "lan" or "unassigned"`})
+			case role != RoleWAN && role != RoleWAN2 && role != RoleLAN && role != RoleUnassigned:
+				problems = append(problems, config.FieldError{Field: "assignments." + name, Message: `the role must be "wan", "wan2", "lan" or "unassigned"`})
 			default:
 				roles[name] = role
 			}
@@ -199,11 +205,13 @@ func (a *API) putPorts(w http.ResponseWriter, r *http.Request) {
 			return config.ValidationError(problems)
 		}
 
-		var wans, lans []string
+		var wans, wans2, lans []string
 		for _, n := range names { // stable order: hardware order, so the saved list does not shuffle
 			switch roles[n] {
 			case RoleWAN:
 				wans = append(wans, n)
+			case RoleWAN2:
+				wans2 = append(wans2, n)
 			case RoleLAN:
 				lans = append(lans, n)
 			}
@@ -214,6 +222,9 @@ func (a *API) putPorts(w http.ResponseWriter, r *http.Request) {
 		case len(wans) > 1:
 			problems = append(problems, config.FieldError{Field: "ports", Message: "only one port can be the WAN"})
 		}
+		if len(wans2) > 1 {
+			problems = append(problems, config.FieldError{Field: "ports", Message: "only one port can be WAN 2"})
+		}
 		if len(lans) == 0 {
 			problems = append(problems, config.FieldError{Field: "ports", Message: "at least one port must be a LAN port"})
 		}
@@ -223,6 +234,16 @@ func (a *API) putPorts(w http.ResponseWriter, r *http.Request) {
 
 		c.WanInterface = wans[0]
 		c.LanInterfaces = lans
+		// the second internet connection: a port with the role keeps its settings when it already had them; with none, there is no second
+		// connection (and no preference for it)
+		switch {
+		case len(wans2) == 0:
+			c.Wan2, c.WanPreferred = nil, ""
+		case c.Wan2 == nil:
+			c.Wan2 = &config.WanConfig{Interface: wans2[0]}
+		default:
+			c.Wan2.Interface = wans2[0]
+		}
 
 		// a port that is no longer a LAN port carries no networks
 		for port := range c.PortNetworks {
@@ -255,7 +276,7 @@ func (a *API) putPorts(w http.ResponseWriter, r *http.Request) {
 			return config.ValidationError(problems)
 		}
 
-		if own := ownedErrors(c.Validate(), "wan_interface", "lan_interfaces", "port_networks"); len(own) > 0 {
+		if own := ownedErrors(c.Validate(), "wan_interface", "wan2.interface", "lan_interfaces", "port_networks"); len(own) > 0 {
 			problems = append(problems, own...)
 			return config.ValidationError(problems)
 		}

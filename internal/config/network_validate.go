@@ -132,46 +132,7 @@ func (c NetworkConfig) Validate() error {
 	}
 
 	// --- WAN ---
-	if !IsValidInterfaceName(c.WanInterface) {
-		add("wan_interface", "must be an interface name (letters, digits, '.', '_' or '-', up to 15 characters)")
-	}
-
-	var wanPrefix netip.Prefix
-	haveWanPrefix := false
-	switch strings.ToLower(c.WanMode) {
-	case "", "dhcp":
-		// addressing comes from the upstream router
-	case "pppoe":
-		// the provider assigns the address over the PPP session
-	case "static":
-		ip, ipOK := parseIPv4(c.WanIP)
-		if !ipOK {
-			add("wan_ip", "must be an IPv4 address such as 203.0.113.10")
-		}
-		ones, maskOK := checkNetmask(c.WanSubnet, "wan_subnet", add)
-		if ipOK && maskOK {
-			wanPrefix, haveWanPrefix = netip.PrefixFrom(ip, ones).Masked(), true
-			if !isHostAddr(wanPrefix, ip) {
-				add("wan_ip", "cannot be the network or broadcast address of its subnet")
-			}
-		}
-		if c.WanGateway != "" {
-			gw, gwOK := parseIPv4(c.WanGateway)
-			switch {
-			case !gwOK:
-				add("wan_gateway", "must be an IPv4 address")
-			case haveWanPrefix && !isHostAddr(wanPrefix, gw):
-				add("wan_gateway", "must be a host address inside the WAN subnet")
-			case c.WanGateway == c.WanIP:
-				add("wan_gateway", "cannot be the same as the WAN IP")
-			}
-		}
-	default:
-		add("wan_mode", "must be \"dhcp\", \"static\" or \"pppoe\"")
-	}
-	// DNS servers: required with a static address; with DHCP or PPPoE they replace the provider's
-	validateServers(c.WanDNS, "wan_dns", add)
-	c.validateWan(add)
+	wanPrefix, haveWanPrefix := c.validateWanLink(add)
 	c.validateSQM(add)
 	c.validateQoS(add)
 
@@ -210,6 +171,9 @@ func (c NetworkConfig) Validate() error {
 		}
 	}
 
+	// --- The second internet connection ---
+	c.validateWan2(add, lanPrefix, lanOK, wanPrefix, haveWanPrefix)
+
 	// --- DHCP (nil = not managed by the JSON yet, which is valid) ---
 	validateDHCP(c.DHCP, lanPrefix, lanIP, lanOK, "the LAN subnet",
 		func(s string) string { return "dhcp_" + s }, add)
@@ -245,6 +209,50 @@ func (c NetworkConfig) Validate() error {
 		return nil
 	}
 	return errs
+}
+
+// validateWanLink checks one internet connection's own settings (the first, or the view of the second: wan2.go) and returns its
+// subnet when it has a static address.
+func (c NetworkConfig) validateWanLink(add func(field, format string, args ...any)) (wanPrefix netip.Prefix, haveWanPrefix bool) {
+	if !IsValidInterfaceName(c.WanInterface) {
+		add("wan_interface", "must be an interface name (letters, digits, '.', '_' or '-', up to 15 characters)")
+	}
+
+	switch strings.ToLower(c.WanMode) {
+	case "", "dhcp":
+		// addressing comes from the upstream router
+	case "pppoe":
+		// the provider assigns the address over the PPP session
+	case "static":
+		ip, ipOK := parseIPv4(c.WanIP)
+		if !ipOK {
+			add("wan_ip", "must be an IPv4 address such as 203.0.113.10")
+		}
+		ones, maskOK := checkNetmask(c.WanSubnet, "wan_subnet", add)
+		if ipOK && maskOK {
+			wanPrefix, haveWanPrefix = netip.PrefixFrom(ip, ones).Masked(), true
+			if !isHostAddr(wanPrefix, ip) {
+				add("wan_ip", "cannot be the network or broadcast address of its subnet")
+			}
+		}
+		if c.WanGateway != "" {
+			gw, gwOK := parseIPv4(c.WanGateway)
+			switch {
+			case !gwOK:
+				add("wan_gateway", "must be an IPv4 address")
+			case haveWanPrefix && !isHostAddr(wanPrefix, gw):
+				add("wan_gateway", "must be a host address inside the WAN subnet")
+			case c.WanGateway == c.WanIP:
+				add("wan_gateway", "cannot be the same as the WAN IP")
+			}
+		}
+	default:
+		add("wan_mode", "must be \"dhcp\", \"static\" or \"pppoe\"")
+	}
+	// DNS servers: required with a static address; with DHCP or PPPoE they replace the provider's
+	validateServers(c.WanDNS, "wan_dns", add)
+	c.validateWan(add)
+	return wanPrefix, haveWanPrefix
 }
 
 const (

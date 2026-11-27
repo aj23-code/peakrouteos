@@ -1,4 +1,4 @@
-# A second internet connection: failover and load balancing (plan, 2026-11-27: nothing of this is built yet)
+# A second internet connection: failover and load balancing (plan, 2026-11-27; phase 1 built 2026-11-27)
 
 Goal: a router that can have **two internet connections** (WAN and WAN 2), watches each one, and either **fails over** from the
 first to the second when the first stops working, or **balances** the networks' traffic over both, switched on and managed like
@@ -103,6 +103,32 @@ Settings (new, on the Internet page, shown when there is a second uplink):
 | Wireless (the AP/cellular case) | a USB tethering dongle or a second router shows up as a port; nothing special |
 
 ## 7. Phases
+
+**Phase 1 is built** (2026-11-27). What it does and where it stops:
+
+- A port can be given the role **Second internet (WAN 2)** on the Ports page (`wan2` in the API, `RoleWAN2`). The second connection's
+  settings are the object `wan2` in `network.json` (`config.WanConfig`; a router with one connection writes no new keys), the choice
+  of the preferred one is `wan_preferred` (`"wan2"`, or empty for the first). `NetworkConfig.WanView(id)` gives the configuration as
+  one connection sees it, so the interface stanza, the PPP file, the validation (reported as `wan2.*`) and the review of changes are the
+  first connection's own code run on the view.
+- **Routes by metric only:** with two connections the preferred one's default route has metric 100 and the other's 200 (a static
+  `gateway` gets `metric N`; PPPoE gets `defaultroute-metric N` and the second session is `ppp1` from `peakroute-wan2`; DHCP uses the
+  new `/usr/lib/peakroute/udhcpc-wan`, which Debian's script cannot do: it gives every default route metric 0 and lets each connection
+  write `/etc/resolv.conf`). With one connection nothing about the files changes.
+- **Firewall and NAT:** the internet is the set of both devices (`wanMatch`: `oifname { "eth0", "eth2" } masquerade`, forwards, port
+  forwards, rules *from/to the internet*, VPN ports, the usage counters, the MSS clamp per connection).
+- **The Internet page** has a selector for the connection and *Prefer this connection*; the Ports page the new role; a backup restored
+  on a router with a second port keeps that port, and drops the second connection's settings on one without.
+- **Not yet, and so true for now:** nothing watches the second connection (the health card and chart are the first's), a dead
+  preferred line is only replaced when its own route goes away (an unplugged cable, a lost lease) and not when the line beyond it fails;
+  SQM shapes the first connection only; DDNS, the usage card and the Overview describe the first; the router's DNS (dnsmasq) uses the
+  resolvers the first connection got (the second's are kept out of the resolver file, so a failover to a provider whose resolvers
+  refuse the other's customers needs *DNS servers* set on the DNS page: use public ones until phase 5).
+- Tested: render (both connections, metric order, PPPoE units, firewall, NAT, counters, clamp, refusal of unsafe values), the real
+  `nft` accepts the rulesets, the real kernel prefers the lower metric and fails over when its route goes
+  (`TestTwoDefaultRoutesInTheRealKernel...`, `image/udhcpc_test.go`), validation, review, the API, backup. The page's script was run in
+  a browser against its real markup with two mocked connections (selector, switching, preference, the save). **Not run on a router with
+  two lines.**
 
 1. **Two uplinks, configured but only by metric.** The Ports role *WAN 2*, `Uplinks()`, interface stanzas, NAT and firewall for both,
    the Internet page with both, and routes by metric (the preferred has the lower metric). No health yet: this is already a manual

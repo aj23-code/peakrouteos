@@ -30,22 +30,23 @@ type PPPoE struct {
 // Uplink is a connection to the internet. Today there is one (id "wan"); a second uplink would be
 // another of these.
 type Uplink struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Port     string   `json:"port"`      // the physical port it uses; chosen on the Ports page
-	Mode     string   `json:"mode"`      // "dhcp", "static" or "pppoe"
-	IP       string   `json:"ip"`        // static only
-	Netmask  string   `json:"netmask"`   // static only
-	Gateway  string   `json:"gateway"`   // static only
-	DNS      []string `json:"dns"`       // static: the servers; DHCP and PPPoE: servers used instead of the provider's
-	Vlan     int      `json:"vlan"`      // 0: none
-	MTU      int      `json:"mtu"`       // 0: the usual one for the type
-	UsualMTU int      `json:"usual_mtu"` // what 0 means for this type
-	MAC      string   `json:"mac"`       // "": the port's own address
-	PPPoE    *PPPoE   `json:"pppoe"`     // PPPoE only
-	Device   string   `json:"device"`    // the interface that will carry the connection
-	Pending  bool     `json:"pending"`   // the draft differs from what is in effect
-	Live     *Live    `json:"live,omitempty"`
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Port      string   `json:"port"`      // the physical port it uses; chosen on the Ports page
+	Mode      string   `json:"mode"`      // "dhcp", "static" or "pppoe"
+	IP        string   `json:"ip"`        // static only
+	Netmask   string   `json:"netmask"`   // static only
+	Gateway   string   `json:"gateway"`   // static only
+	DNS       []string `json:"dns"`       // static: the servers; DHCP and PPPoE: servers used instead of the provider's
+	Vlan      int      `json:"vlan"`      // 0: none
+	MTU       int      `json:"mtu"`       // 0: the usual one for the type
+	UsualMTU  int      `json:"usual_mtu"` // what 0 means for this type
+	MAC       string   `json:"mac"`       // "": the port's own address
+	PPPoE     *PPPoE   `json:"pppoe"`     // PPPoE only
+	Device    string   `json:"device"`    // the interface that will carry the connection
+	Pending   bool     `json:"pending"`   // the draft differs from what is in effect
+	Preferred bool     `json:"preferred"` // the traffic prefers this connection (with two, the other is the one it falls back to)
+	Live      *Live    `json:"live,omitempty"`
 }
 
 type uplinksResponse struct {
@@ -53,46 +54,72 @@ type uplinksResponse struct {
 	Editable bool     `json:"editable"`
 }
 
-const wanID = "wan"
+const wanID = config.WanFirst
 
-// The fields of the configuration an uplink owns (the file's own names).
+// The fields of the configuration an uplink owns (the file's own names): the first connection's, and the second's.
 var uplinkFields = []string{"wan_mode", "wan_ip", "wan_subnet", "wan_gateway", "wan_dns",
 	"wan_vlan", "wan_mtu", "wan_mac", "wan_pppoe", "pppoe_username", "pppoe_password", "pppoe_service"}
 
+var uplink2Fields = []string{"wan2", "wan2.mode", "wan2.ip", "wan2.subnet", "wan2.gateway", "wan2.dns", "wan2.vlan", "wan2.mtu", "wan2.mac",
+	"wan2.pppoe_username", "wan2.pppoe_password", "wan2.pppoe_service", "wan2.pppoe", "wan2.interface"}
+
+func ownFields(id string) []string {
+	if id == config.WanSecond {
+		return uplink2Fields
+	}
+	return uplinkFields
+}
+
 func wanMode(c config.NetworkConfig) string { return c.WanKind() }
 
-func wanUplink(active, draft config.NetworkConfig) Uplink {
-	u := Uplink{
-		ID:       wanID,
-		Name:     "Internet",
-		Port:     draft.WanInterface,
-		Mode:     wanMode(draft),
-		IP:       draft.WanIP,
-		Netmask:  draft.WanSubnet,
-		Gateway:  draft.WanGateway,
-		DNS:      append([]string{}, draft.WanDNS...),
-		Vlan:     draft.WanVlan,
-		MTU:      draft.WanMTU,
-		UsualMTU: draft.UsualWanMTU(),
-		MAC:      draft.WanMAC,
-		Device:   draft.WanDevice(),
-		Pending:  changedIn(active, draft, uplinkFields...),
+// wanUplink describes one connection (id) as the draft has it; active is what is in effect.
+func wanUplink(active, draft config.NetworkConfig, id string) (Uplink, bool) {
+	v, ok := draft.WanView(id)
+	if !ok {
+		return Uplink{}, false
 	}
-	if p := draft.WanPPPoE; p != nil {
+	u := Uplink{
+		ID:        id,
+		Name:      "Internet",
+		Port:      v.WanInterface,
+		Mode:      wanMode(v),
+		IP:        v.WanIP,
+		Netmask:   v.WanSubnet,
+		Gateway:   v.WanGateway,
+		DNS:       append([]string{}, v.WanDNS...),
+		Vlan:      v.WanVlan,
+		MTU:       v.WanMTU,
+		UsualMTU:  v.UsualWanMTU(),
+		MAC:       v.WanMAC,
+		Device:    v.WanDevice(),
+		Pending:   changedIn(active, draft, append(append([]string{}, ownFields(id)...), "wan_preferred")...),
+		Preferred: draft.WanIsPreferred(id),
+	}
+	if id == config.WanSecond {
+		u.Name = "Internet 2"
+	}
+	if p := v.WanPPPoE; p != nil {
 		u.PPPoE = &PPPoE{Username: p.Username, Service: p.Service, PasswordSet: p.Password != ""}
 	}
-	return u
+	return u, true
 }
 
 func (a *API) uplinksView() uplinksResponse {
 	active := a.Manager.NetworkConfig()
 	draft, _ := a.Manager.StagedNetworkConfig()
-	u := wanUplink(active, draft)
-	// Describe the connection that is in effect, which is the active configuration's
-	if a.Live != nil && active.WanInterface != "" {
-		u.Live = a.Live(active)
+	var list []Uplink
+	for _, id := range []string{config.WanFirst, config.WanSecond} {
+		u, ok := wanUplink(active, draft, id)
+		if !ok {
+			continue
+		}
+		// Describe the connection that is in effect, which is the active configuration's
+		if av, ok := active.WanView(id); ok && a.Live != nil && av.WanInterface != "" {
+			u.Live = a.Live(av)
+		}
+		list = append(list, u)
 	}
-	return uplinksResponse{Uplinks: []Uplink{u}, Editable: a.editable()}
+	return uplinksResponse{Uplinks: list, Editable: a.editable()}
 }
 
 // HandleUplinks: GET /api/v1/uplinks lists the internet connections.
@@ -107,15 +134,22 @@ func (a *API) HandleUplink(w http.ResponseWriter, r *http.Request) {
 	if !allowMethods(w, r, http.MethodGet, http.MethodPut) {
 		return
 	}
-	if r.PathValue("id") != wanID {
+	id := r.PathValue("id")
+	if id != config.WanFirst && id != config.WanSecond {
 		writeJSON(w, http.StatusNotFound, errorBody{Error: "there is no uplink with this id"})
 		return
 	}
 	if r.Method == http.MethodGet {
-		writeJSON(w, http.StatusOK, a.uplinksView().Uplinks[0])
+		for _, u := range a.uplinksView().Uplinks {
+			if u.ID == id {
+				writeJSON(w, http.StatusOK, u)
+				return
+			}
+		}
+		writeJSON(w, http.StatusNotFound, errorBody{Error: "there is no second internet connection: give a port the role WAN 2 on the Ports page"})
 		return
 	}
-	a.putWAN(w, r)
+	a.putWAN(w, r, id)
 }
 
 type putPPPoERequest struct {
@@ -136,6 +170,8 @@ type putUplinkRequest struct {
 	MTU     *int             `json:"mtu"`
 	MAC     *string          `json:"mac"`
 	PPPoE   *putPPPoERequest `json:"pppoe"`
+	// Preferred makes this connection the one the traffic prefers (with two connections: the other is then the one it falls back to).
+	Preferred *bool `json:"preferred"`
 }
 
 func trimmedDNS(in []string) []string {
@@ -148,7 +184,7 @@ func trimmedDNS(in []string) []string {
 	return out
 }
 
-func (a *API) putWAN(w http.ResponseWriter, r *http.Request) {
+func (a *API) putWAN(w http.ResponseWriter, r *http.Request, id string) {
 	if !a.requireEditable(w) {
 		return
 	}
@@ -158,47 +194,51 @@ func (a *API) putWAN(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err := a.Manager.StageNetwork(func(c *config.NetworkConfig) error {
+		if id == config.WanSecond && !c.HasWan2() {
+			return config.ValidationError{{Field: "ports", Message: "there is no second internet connection: give a port the role WAN 2 on the Ports page"}}
+		}
+		s := c.WanSettings(id)
 		mode := strings.ToLower(strings.TrimSpace(req.Mode))
-		before := c.WanKind()
+		before := config.NetworkConfig{WanMode: s.Mode}.WanKind()
 		switch mode {
 		case config.WanDHCP, config.WanStatic, config.WanPPPoE:
 		default:
 			return config.ValidationError{{Field: "mode", Message: "choose DHCP, a static address or PPPoE"}}
 		}
-		c.WanMode = mode
+		s.Mode = mode
 
 		// the carrier settings, when sent
 		if req.Vlan != nil {
-			c.WanVlan = *req.Vlan
+			s.Vlan = *req.Vlan
 		}
 		if req.MTU != nil {
-			c.WanMTU = *req.MTU
+			s.MTU = *req.MTU
 		}
 		if req.MAC != nil {
-			c.WanMAC = strings.ToLower(strings.TrimSpace(strings.ReplaceAll(*req.MAC, "-", ":")))
+			s.MAC = strings.ToLower(strings.TrimSpace(strings.ReplaceAll(*req.MAC, "-", ":")))
 		}
 
 		// addressing
 		switch mode {
 		case config.WanStatic:
-			c.WanIP = strings.TrimSpace(req.IP)
-			c.WanSubnet = strings.TrimSpace(req.Netmask)
-			c.WanGateway = strings.TrimSpace(req.Gateway)
-			c.WanDNS = trimmedDNS(req.DNS)
-			c.WanPPPoE = nil
+			s.IP = strings.TrimSpace(req.IP)
+			s.Subnet = strings.TrimSpace(req.Netmask)
+			s.Gateway = strings.TrimSpace(req.Gateway)
+			s.DNS = trimmedDNS(req.DNS)
+			s.PPPoE = nil
 		default:
 			// the address, gateway and mask come from the provider: nothing static is kept
-			c.WanIP, c.WanSubnet, c.WanGateway = "", "", ""
+			s.IP, s.Subnet, s.Gateway = "", "", ""
 			switch {
 			case req.DNS != nil:
-				c.WanDNS = trimmedDNS(req.DNS)
+				s.DNS = trimmedDNS(req.DNS)
 			case before == config.WanStatic:
-				c.WanDNS = nil // the static servers were for the static address
+				s.DNS = nil // the static servers were for the static address
 			}
 			if mode == config.WanPPPoE {
 				p := config.PPPoEConfig{}
-				if c.WanPPPoE != nil {
-					p = *c.WanPPPoE
+				if s.PPPoE != nil {
+					p = *s.PPPoE
 				}
 				if q := req.PPPoE; q != nil {
 					if q.Username != nil {
@@ -211,20 +251,29 @@ func (a *API) putWAN(w http.ResponseWriter, r *http.Request) {
 						p.Service = strings.TrimSpace(*q.Service)
 					}
 				}
-				c.WanPPPoE = &p
+				s.PPPoE = &p
 			} else {
-				c.WanPPPoE = nil
+				s.PPPoE = nil
+			}
+		}
+		c.SetWanSettings(id, s)
+
+		// which connection the traffic prefers (only with two)
+		if req.Preferred != nil && *req.Preferred && c.HasWan2() {
+			c.WanPreferred = ""
+			if id == config.WanSecond {
+				c.WanPreferred = config.WanSecond
 			}
 		}
 
 		// Only this page's own fields are checked here. A fixed address also needs a gateway and
 		// a DNS server to be useful, which the shared validation allows to be empty.
-		problems := ownedErrors(c.Validate(), uplinkFields...)
+		problems := ownedErrors(c.Validate(), append(append([]string{}, ownFields(id)...), "wan_preferred")...)
 		if mode == config.WanStatic {
-			if c.WanGateway == "" {
+			if s.Gateway == "" {
 				problems = append(problems, config.FieldError{Field: "gateway", Message: "required with a static address"})
 			}
-			if len(c.WanDNS) == 0 {
+			if len(s.DNS) == 0 {
 				problems = append(problems, config.FieldError{Field: "dns", Message: "enter at least one DNS server"})
 			}
 		}
@@ -243,5 +292,11 @@ func (a *API) putWAN(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, errorBody{Error: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, a.uplinksView().Uplinks[0])
+	for _, u := range a.uplinksView().Uplinks {
+		if u.ID == id {
+			writeJSON(w, http.StatusOK, u)
+			return
+		}
+	}
+	writeJSON(w, http.StatusNotFound, errorBody{Error: "there is no such internet connection"})
 }

@@ -325,10 +325,10 @@ func nftVPNRules(cfg config.NetworkConfig, lan string) (input, forward string, m
 	udp, tcp := vpnListenPorts(cfg)
 	in.WriteString("        # VPN: the tunnels' ports\n")
 	if len(udp) > 0 {
-		fmt.Fprintf(&in, "        iifname \"%s\" udp dport %s accept\n", cfg.WanDevice(), portSet(udp))
+		fmt.Fprintf(&in, "        iifname %s udp dport %s accept\n", wanMatch(cfg), portSet(udp))
 	}
 	if len(tcp) > 0 {
-		fmt.Fprintf(&in, "        iifname \"%s\" tcp dport %s accept\n", cfg.WanDevice(), portSet(tcp))
+		fmt.Fprintf(&in, "        iifname %s tcp dport %s accept\n", wanMatch(cfg), portSet(tcp))
 	}
 	var ifaces []string
 	for _, z := range zones {
@@ -342,7 +342,7 @@ func nftVPNRules(cfg config.NetworkConfig, lan string) (input, forward string, m
 	fmt.Fprintf(&fw, "        iifname { %[1]s } tcp flags syn tcp option maxseg size > %[2]d tcp option maxseg size set %[2]d\n", quoteList(ifaces), wgMSS)
 	for _, z := range zones {
 		if z.Internet {
-			fmt.Fprintf(&fw, "        iifname \"%s\" oifname \"%s\" accept\n", z.Iface, cfg.WanDevice())
+			fmt.Fprintf(&fw, "        iifname \"%s\" oifname %s accept\n", z.Iface, wanMatch(cfg))
 		}
 		members = append(members, policyMember{z.Iface, !z.Isolated})
 	}

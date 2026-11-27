@@ -1,0 +1,68 @@
+#!/bin/sh
+# udhcpc's script for the internet connections of a router that has two of them (docs/wan-failover.md). Debian's own script gives every
+# default route the same metric, so the second connection's would be refused, and lets every connection write the resolver file. This
+# one gives the default route the metric of the interface's stanza (IF_METRIC, which ifupdown hands over from its "metric" line) and,
+# when the stanza says "peakroute-resolv no" (IF_PEAKROUTE_RESOLV), leaves the resolver file to the other connection. With one
+# connection the router runs Debian's script. udhcpc passes: $1 (deconfig, bound, renew, leasefail, nak) and $interface, $ip, $mask,
+# $subnet, $broadcast, $router, $dns, $domain, $search, $mtu.
+
+# (the tests point these elsewhere)
+RUN="${PEAKROUTE_RUN:-/run/peakroute}"
+RESOLV_CONF="${PEAKROUTE_RESOLV_CONF:-/etc/resolv.conf}"
+RESOLVCONF="${PEAKROUTE_RESOLVCONF:-/sbin/resolvconf}" # the program some systems have for it
+STATE="$RUN/udhcpc.${interface}"
+METRIC="${IF_METRIC:-0}"
+
+log() { logger -t "udhcpc[$PPID]" -p "daemon.$1" "$interface: $2" 2>/dev/null || true; }
+
+# drop forgets the default route this script set last time
+drop() {
+    [ -f "$STATE" ] || return 0
+    old_router=$(sed -n 's/^router=//p' "$STATE")
+    old_metric=$(sed -n 's/^metric=//p' "$STATE")
+    [ -n "$old_router" ] && ip -4 route del default via "$old_router" dev "$interface" metric "${old_metric:-0}" 2>/dev/null
+    rm -f "$STATE"
+}
+
+case "$1" in
+    deconfig)
+        ip link set "$interface" up
+        drop
+        ip -4 addr flush dev "$interface"
+        [ -x "$RESOLVCONF" ] && "$RESOLVCONF" -d "$interface.udhcpc"
+        log notice "deconfigured"
+        ;;
+    bound|renew)
+        ip -4 addr replace "$ip/${mask:-24}" ${broadcast:+broadcast "$broadcast"} dev "$interface"
+        [ -n "$mtu" ] && ip link set dev "$interface" mtu "$mtu"
+        router="${router%% *}"
+        [ "$subnet" = 255.255.255.255 ] && onlink=onlink || onlink=
+        old_router=$(sed -n 's/^router=//p' "$STATE" 2>/dev/null)
+        old_metric=$(sed -n 's/^metric=//p' "$STATE" 2>/dev/null)
+        if [ "$old_router" != "$router" ] || [ "${old_metric:-0}" != "$METRIC" ]; then
+            drop
+        fi
+        if [ -n "$router" ]; then
+            ip -4 route replace default via "$router" dev "$interface" metric "$METRIC" $onlink
+        fi
+        mkdir -p "$RUN"
+        printf 'router=%s\nmetric=%s\n' "$router" "$METRIC" > "$STATE"
+        if [ "$IF_PEAKROUTE_RESOLV" != no ]; then
+            R="$(
+                [ -z "$domain" ] || echo "domain $domain"
+                [ -z "$search" ] || echo "search $search"
+                for s in $dns; do echo "nameserver $s"; done
+            )"
+            if [ -x "$RESOLVCONF" ]; then
+                echo "$R" | "$RESOLVCONF" -a "$interface.udhcpc"
+            else
+                echo "$R" > "$RESOLV_CONF.peakroute.$$" && mv "$RESOLV_CONF.peakroute.$$" "$RESOLV_CONF"
+            fi
+        fi
+        log info "$1: $ip/${mask:-24} router=$router metric=$METRIC dns=\"$dns\""
+        ;;
+    leasefail|nak)
+        log err "no lease: $1 ${message:-}"
+        ;;
+esac
+exit 0

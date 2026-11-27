@@ -279,6 +279,9 @@ func (s *Service) missingPorts(cfg config.NetworkConfig) []string {
 	if cfg.WanInterface != "" {
 		used[cfg.WanInterface] = true
 	}
+	if cfg.Wan2 != nil && cfg.Wan2.Interface != "" {
+		used[cfg.Wan2.Interface] = true
+	}
 	for _, l := range cfg.LanInterfaces {
 		used[l] = true
 	}
@@ -314,6 +317,7 @@ func (s *Service) chooseOwnPorts(restored config.NetworkConfig, c PortChoice) co
 	cur := s.Manager.NetworkConfig()
 	restored.WanInterface = c.Wan
 	restored.LanInterfaces = append([]string(nil), c.Lan...)
+	keepOwnWan2(&restored, cur)
 	restored.Interfaces = append([]config.SystemInterface(nil), cur.Interfaces...)
 	exists := map[string]bool{"": true, config.DefaultNetworkID: true}
 	for _, n := range restored.Networks {
@@ -355,6 +359,7 @@ func (s *Service) keepOwnPorts(restored config.NetworkConfig) config.NetworkConf
 	cur := s.Manager.NetworkConfig()
 	restored.WanInterface = cur.WanInterface
 	restored.LanInterfaces = append([]string(nil), cur.LanInterfaces...)
+	keepOwnWan2(&restored, cur)
 	restored.Interfaces = append([]config.SystemInterface(nil), cur.Interfaces...)
 	// the ports keep what they carry, as far as the restored networks exist
 	exists := map[string]bool{"": true, config.DefaultNetworkID: true}
@@ -1028,4 +1033,16 @@ func (s *Service) DeleteCopy(id string) error {
 		return errors.New("there is no such copy")
 	}
 	return nil
+}
+
+// keepOwnWan2 puts this router's port for the second internet connection in place of the backup's: the backup's settings for it are kept
+// when this router has such a port, and dropped when it has none (the ports are this router's, the settings are the backup's).
+func keepOwnWan2(restored *config.NetworkConfig, cur config.NetworkConfig) {
+	switch {
+	case restored.Wan2 == nil:
+	case cur.HasWan2():
+		restored.Wan2.Interface = cur.Wan2.Interface
+	default:
+		restored.Wan2, restored.WanPreferred = nil, ""
+	}
 }

@@ -349,9 +349,12 @@
 
         <section class="card" id="inet-card">
           <div class="net-card-head">
-            <h2>Connection</h2>
+            <h2 id="inet-card-title">Connection</h2>
             <span id="inet-draft" class="tag tag-draft hidden">Draft</span>
           </div>
+          <div class="time-picker hidden" id="inet-which" role="group" aria-label="Which internet connection"></div>
+          <p class="form-hint" id="inet-wan2-hint">A second internet connection is added on the Ports page: give a port the role &ldquo;Second internet (WAN 2)&rdquo; (<a href="#" data-goto="network-physical">Ports</a>).</p>
+          <label class="check hidden" id="inet-preferred-row"><input type="checkbox" id="inet-preferred"> Prefer this connection<span class="form-hint">With two connections, the traffic uses the preferred one and the other is the way back when it is not available (a second route with a higher cost).</span></label>
 
           <dl class="inet-live" id="inet-live">
             <div><dt>Port</dt><dd><span id="inet-port" class="chip"></span> <a href="#" data-goto="network-physical" class="form-hint">change</a></dd></div>

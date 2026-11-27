@@ -36,7 +36,9 @@ window.InternetModule = (function () {
     let history = null;       // last answer of the health endpoint
     let hoverT = null;        // time (ms) under the mouse
     let timer = null;
-    let uplink = null;        // last answer of the uplink endpoint
+    let uplink = null;        // the connection being edited (the last answer of the uplink endpoint for it)
+    let uplinks = [];         // every connection there is: the first, and the second when a port has the role WAN 2
+    let selectedId = 'wan';   // which of them the form shows
     let editable = true;
     let saving = false;
     let wired = false;
@@ -515,12 +517,14 @@ window.InternetModule = (function () {
         $('inet-pppoe-service').value = (u.pppoe && u.pppoe.service) || '';
         // the advanced settings open by themselves when any is in use
         if (u.vlan || u.mtu || u.mac) $('inet-advanced').open = true;
+        $('inet-preferred').checked = !!u.preferred;
     }
 
     // What differs from the saved draft. Only the settings of the chosen type count.
     function isDirty() {
         if (!uplink) return false;
         const v = formValues();
+        if ($('inet-preferred').checked !== !!uplink.preferred) return true;
         if (v.mode !== uplink.mode) return true;
         const same = (a, b) => String(a) === String(b);
         if (!same(v.vlan, uplink.vlan || '') || !same(v.mtu, uplink.mtu || '') || v.mac !== (uplink.mac || '')) return true;
@@ -536,6 +540,7 @@ window.InternetModule = (function () {
     function body() {
         const v = formValues();
         const out = { mode: v.mode, vlan: intOf(v.vlan), mtu: intOf(v.mtu), mac: v.mac };
+        if ($('inet-preferred').checked) out.preferred = true;
         if (v.mode === 'static') {
             Object.assign(out, { ip: v.ip, netmask: v.netmask, gateway: v.gateway, dns: v.dns });
         } else {
@@ -560,6 +565,13 @@ window.InternetModule = (function () {
     function renderForm() {
         if (!uplink) return;
         $('inet-port').textContent = uplink.port || 'none yet';
+        $('inet-card-title').textContent = uplinks.length > 1 ? uplink.name : 'Connection';
+        $('inet-wan2-hint').classList.toggle('hidden', uplinks.length > 1);
+        $('inet-preferred-row').classList.toggle('hidden', uplinks.length < 2);
+        const which = $('inet-which');
+        which.classList.toggle('hidden', uplinks.length < 2);
+        which.innerHTML = uplinks.length < 2 ? '' : uplinks.map(u =>
+            `<button type="button" class="time-btn${u.id === uplink.id ? ' active' : ''}" data-id="${escapeHtml(u.id)}">${escapeHtml(u.name)}${u.preferred ? ' (preferred)' : ''}${u.pending ? ' \u2022' : ''}</button>`).join('');
         $('inet-draft').classList.toggle('hidden', !uplink.pending);
         renderLive();
 
@@ -586,7 +598,7 @@ window.InternetModule = (function () {
 
         const lock = !editable || saving;
         ['inet-mode-dhcp', 'inet-mode-static', 'inet-mode-pppoe', 'inet-ip', 'inet-netmask', 'inet-gateway', 'inet-dns',
-            'inet-vlan', 'inet-mtu', 'inet-mac', 'inet-pppoe-user', 'inet-pppoe-pass', 'inet-pppoe-service', 'inet-pppoe-reveal']
+            'inet-vlan', 'inet-mtu', 'inet-mac', 'inet-pppoe-user', 'inet-pppoe-pass', 'inet-pppoe-service', 'inet-pppoe-reveal', 'inet-preferred']
             .forEach(id => { $(id).disabled = lock; });
 
         const bad = ['vlan', 'mtu'].filter(k => Number.isNaN(intOf(formValues()[k])));
@@ -603,8 +615,10 @@ window.InternetModule = (function () {
         if (!res || !res.ok) { showMessage('Could not load the connection settings.', 'error'); return; }
         const data = await res.json();
         editable = data.editable !== false;
-        uplink = (data.uplinks || []).find(u => u.id === 'wan') || (data.uplinks || [])[0] || null;
+        uplinks = data.uplinks || [];
+        uplink = uplinks.find(u => u.id === selectedId) || uplinks.find(u => u.id === 'wan') || uplinks[0] || null;
         if (!uplink) return;
+        selectedId = uplink.id;
         if (!keepEdits) fillForm(uplink);
         renderForm();
     }
@@ -659,6 +673,15 @@ window.InternetModule = (function () {
         canvas.addEventListener('mousemove', canvasMove);
         canvas.addEventListener('mouseleave', () => { hoverT = null; drawChart(); });
 
+        $('inet-which').addEventListener('click', (e) => {
+            const btn = e.target.closest('button[data-id]');
+            if (!btn || btn.dataset.id === selectedId || saving) return;
+            selectedId = btn.dataset.id;
+            clearFieldErrors();
+            showMessage('');
+            const next = uplinks.find(u => u.id === selectedId);
+            if (next) { uplink = next; fillForm(uplink); renderForm(); }
+        });
         $('inet-card').addEventListener('input', renderForm);
         $('inet-card').addEventListener('change', renderForm);
         $('inet-save').addEventListener('click', save);
