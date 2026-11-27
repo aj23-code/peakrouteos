@@ -2,7 +2,7 @@
 
 Living notes for the eventual documentation. Updated with every meaningful change, so it
 records what the system does, why it is built that way, and what was learned on the way.
-`TODO.md` is the work list; this file is the knowledge. Last updated: 2026-10-30.
+`TODO.md` is the work list; this file is the knowledge. Last updated: 2026-11-27.
 
 > Status: alpha. A router appliance OS (Debian base) with a Go daemon and web UI. The daemon is
 > a monitoring dashboard plus a safe configuration pipeline that is being built (see section 7).
@@ -1662,6 +1662,8 @@ every future page works on every screen automatically.
 - For POST/PUT/DELETE from the browser use `apiFetch` (it adds the CSRF header), never bare `fetch`.
 
 - **A network whose VLAN changed left its old bridge behind (2026-11-10).** `systemctl restart networking` runs `ifdown -a` against the *new* `/etc/network/interfaces`, so a bridge the file no longer names (br150 after the VLAN became 90) was never taken down and kept its address and routes: the Routes page (the live table) showed br150 and br90 on the same address. After every networking restart (apply and restore) `staleBridgesCommand` (`translator/apply.go`) deletes each numbered bridge `br<digits>` that has no `iface` line in the file; the link's address and routes go with it. Failure is ignored. Tested with a fake `ip` against a fake `/sys/class/net`; not run on the router.
+
+- **Security pass (2026-11-27).** (1) **Signed releases:** `internal/update/signing.go` (Ed25519 over the SHA-256 and the file's name, base64, in `<file>.update.sig`), `cmd/peakroute-sign` (keygen, sign, verify), built-in public keys in `releaseKeys`, checked in `receive` after the whole file is read and before `tune2fs` labels the slot; a release without `.sig` is not offered; no key means no GitHub install; uploads are not signature-checked (the administrator supplies them). Both release workflows sign and then verify against the built-in keys. The private key is the secret `RELEASE_SIGNING_KEY` and a copy in `~/.config/peakroute/release-signing.key` on the maintainer's machine. docs/updates.md section 7b. (2) **govulncheck** found 14 reachable standard-library vulnerabilities in go1.27.1; `go.mod` is now go 1.27.4 (clean). It runs in both release workflows and weekly (`vulncheck.yml`). One unreachable one in golang.org/x/crypto has no released fix yet. (3) CodeQL: bounded the frequency conversion in `wireless/health.go`, read-only permissions for `ci.yml`; the "disabled certificate check" in the watchdog's loopback probe was dismissed (a question to itself). (4) Pinned by test that other networks reach only DNS/DHCP/ping and what they switch on. (5) `RunWhile` no longer restarts work at shutdown (it failed the v1.5.0-beta release checks). docs/security.md is the overview.
 
 ## 12. Open questions for the maintainer
 

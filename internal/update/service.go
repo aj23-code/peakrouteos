@@ -3,6 +3,7 @@ package update
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -95,6 +96,8 @@ type Env struct {
 	RebootDelay time.Duration
 	APIBase     string // GitHub's API (APIBase when empty)
 	AllowHTTP   bool   // tests only
+	// TrustedKeys are the public keys a download from GitHub must be signed by (the built-in ones when nil; tests only).
+	TrustedKeys []ed25519.PublicKey
 	HTTP        *http.Client
 }
 
@@ -568,9 +571,11 @@ func capital(m string) string {
 
 // ---- receiving and writing -------------------------------------------------------------------------------------------------
 
-// receive reads a bundle from r and writes it into the other slot. wantSum, when not empty, is the checksum the whole file must have.
+// receive reads a bundle from r and writes it into the other slot. wantSum, when not empty, is the checksum the whole file must have;
+// verify, when not nil, is asked about that checksum once the whole file has been read (a signature, signing.go). Both are decided before
+// the slot is made startable, so a file that fails either is never run.
 // The caller has taken the turn (begin) and ends it.
-func (s *Service) receive(ctx context.Context, r io.Reader, wantSum string) (m Manifest, err error) {
+func (s *Service) receive(ctx context.Context, r io.Reader, wantSum string, verify func(sum string) error) (m Manifest, err error) {
 	boot := s.BootState(ctx)
 	if boot.Problem != "" {
 		return m, errors.New(boot.Problem)
@@ -623,6 +628,11 @@ func (s *Service) receive(ctx context.Context, r io.Reader, wantSum string) (m M
 	}
 	if wantSum != "" && !strings.EqualFold(hex.EncodeToString(whole.Sum(nil)), wantSum) {
 		return m, errors.New("the update file does not match the checksum of the release: the download is damaged")
+	}
+	if verify != nil {
+		if err := verify(hex.EncodeToString(whole.Sum(nil))); err != nil {
+			return m, err
+		}
 	}
 
 	s.phase("checking")
@@ -688,7 +698,7 @@ func (s *Service) Upload(ctx context.Context, body io.Reader, size int64) (Manif
 	if err := s.begin("upload", "", size); err != nil {
 		return Manifest{}, err
 	}
-	m, err := s.receive(ctx, body, "")
+	m, err := s.receive(ctx, body, "", nil)
 	s.end(m.Version, err)
 	return m, err
 }
@@ -730,6 +740,16 @@ func (s *Service) download(ctx context.Context, rel *Release) (Manifest, error) 
 	if err != nil {
 		return Manifest{}, err
 	}
+	sig, err := s.fetchSignature(ctx, rel)
+	if err != nil {
+		return Manifest{}, err
+	}
+	// nothing is written before the signature is known to be readable and keys exist; whether it is right is decided when the whole
+	// file has been read (receive), still before the slot can be started
+	verify := func(got string) error { return VerifySignature(s.keys(), rel.AssetName, got, sig) }
+	if len(s.keys()) == 0 {
+		return Manifest{}, errors.New("this version has no release key to check a download against")
+	}
 	// the download may stall: give up when nothing has arrived for a minute
 	dctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -751,7 +771,7 @@ func (s *Service) download(ctx context.Context, rel *Release) (Manifest, error) 
 		}
 		return n, err
 	})
-	m, err := s.receive(dctx, body, sum)
+	m, err := s.receive(dctx, body, sum, verify)
 	if err != nil && dctx.Err() != nil && ctx.Err() == nil {
 		err = errors.New("the download stopped: nothing arrived for a minute")
 	}

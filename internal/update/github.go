@@ -2,6 +2,7 @@ package update
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,6 +40,7 @@ type Release struct {
 	Size        int64     `json:"size"`
 	ChecksumURL string    `json:"checksum_url,omitempty"` // the .sha256 file next to the asset
 	Checksum    string    `json:"checksum,omitempty"`     // or the digest GitHub states for the asset
+	SigURL      string    `json:"sig_url,omitempty"`      // the .sig file next to the asset: the maker's signature of it (signing.go)
 	Newer       bool      `json:"newer"`                  // newer than the version that is running
 }
 
@@ -157,12 +159,18 @@ func (s *Service) FindRelease(ctx context.Context, repo string, prerelease bool,
 			if a.Name == asset.Name+".sha256" && s.urlOK(a.URL) {
 				r.ChecksumURL = a.URL
 			}
+			if a.Name == asset.Name+".sig" && s.urlOK(a.URL) {
+				r.SigURL = a.URL
+			}
 		}
 		if h, ok := strings.CutPrefix(asset.Digest, "sha256:"); ok && hex64.MatchString(strings.ToLower(h)) {
 			r.Checksum = strings.ToLower(h)
 		}
 		if r.ChecksumURL == "" && r.Checksum == "" {
 			continue // an update with nothing to check it against is not offered
+		}
+		if r.SigURL == "" {
+			continue // nor is one the maker has not signed (a release from before signing, or one that was put there by someone else)
 		}
 		if len(r.Notes) > 4000 {
 			r.Notes = r.Notes[:4000] + "…"
@@ -171,7 +179,7 @@ func (s *Service) FindRelease(ctx context.Context, repo string, prerelease bool,
 		found = append(found, cand{v, r})
 	}
 	if len(found) == 0 {
-		return nil, errors.New("no release of " + repo + " has an update file for " + id.Describe() + " with a checksum")
+		return nil, errors.New("no release of " + repo + " has a signed update file for " + id.Describe())
 	}
 	sort.SliceStable(found, func(i, j int) bool { return found[i].v.Compare(found[j].v) > 0 })
 	r := found[0].r
@@ -208,4 +216,32 @@ func (s *Service) fetchChecksum(ctx context.Context, r *Release) (string, error)
 		return "", errors.New("the checksum file of the release disagrees with the one GitHub states for the update file")
 	}
 	return sumFromFile, nil
+}
+
+// fetchSignature returns the text of the signature file of a release.
+func (s *Service) fetchSignature(ctx context.Context, r *Release) (string, error) {
+	if r.SigURL == "" {
+		return "", errors.New("this release is not signed")
+	}
+	resp, err := s.get(ctx, r.SigURL, "application/octet-stream")
+	if err != nil {
+		return "", fmt.Errorf("the signature could not be downloaded: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("the signature could not be downloaded (%s)", resp.Status)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+// keys are the public keys a release's signature is checked against: the ones built in, or those a test sets.
+func (s *Service) keys() []ed25519.PublicKey {
+	if s.TrustedKeys != nil {
+		return s.TrustedKeys
+	}
+	return ReleaseKeys()
 }

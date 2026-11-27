@@ -1,0 +1,32 @@
+# Security
+
+What protects a PeakRoute router, and the checks that watch over it. The details of each part are in the page that owns it; this is the overview.
+
+## What can reach the router
+
+- **From the internet:** nothing. The firewall's input chain drops by default and accepts only loopback, replies to what the router
+  started, and the networks below (docs/firewall.md). Pings from the internet are off until "Answer pings from the internet" is ticked.
+- **From the default network:** everything (it is the administrator's network).
+- **From any other network (guest, IoT, VLANs):** only DNS and DHCP, ping, and what that network's own settings switch on (mDNS, NTP,
+  DNS filtering). Never the web interface or the console. `TestAnotherNetworkCannotReachTheRoutersWebInterfaceOrAnythingButWhatItIsGiven`
+  pins this.
+
+## The web interface
+
+HTTPS (TLS 1.2 or newer) with the router's own certificate; session cookies are `Secure`, `HttpOnly` and `SameSite=Strict`; every
+change from the browser carries a CSRF token; sign-in is limited to 5 tries per 2 minutes per address and per account. AdGuard Home's own
+interface listens only on loopback and is reached through the router's sign-in, which also refuses requests from another origin.
+
+## Updates
+
+Releases are **signed** and routers only install what the maker's key signed (docs/updates.md, section 7b).
+
+## Known vulnerabilities
+
+- **Go:** `govulncheck` runs before every release build and every week (`.github/workflows/vulncheck.yml`). It looks for known
+  vulnerabilities in the Go standard library and in the packages used that the code can actually reach. A failing run means: raise the Go
+  version in `go.mod` (the builds use it) or the package that is named. First run, 2026-11-27: 14 reachable standard-library
+  vulnerabilities in go1.27.1 (mostly the HTTP server), fixed by go1.27.4.
+- **GitHub:** code scanning (CodeQL), Dependabot and secret scanning with push protection are on.
+- **Debian:** every image build applies the security updates of the day; a router has them once it updates to a release built after.
+- Run by hand: `go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...`

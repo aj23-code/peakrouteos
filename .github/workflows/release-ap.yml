@@ -19,6 +19,8 @@ jobs:
           go-version-file: go.mod
       - name: Checks
         run: ./check.sh
+      - name: Vulnerability check (Go's known vulnerabilities, in the standard library and in what we import, that the code can reach)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
       - name: Make room (the build needs about 4 GB)
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
@@ -49,6 +51,13 @@ jobs:
           pigz -6 -c "${name}.rootfs" > "../../dist/${name}.rootfs.gz"
           ( cd ../../dist && sha256sum "${name}.rootfs.gz" > "${name}.rootfs.gz.sha256" )
           ls -lh ../../dist
+      - name: Sign (the access points only install what this key signed: docs/updates.md, "Signed releases")
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          name="peakroute-ap-arm64-ubnt-u6plus-${GITHUB_REF_NAME#ap-}"
+          go run ./cmd/peakroute-sign sign "dist/${name}.update" "dist/${name}.fit" "dist/${name}.rootfs.gz"
+          go run ./cmd/peakroute-sign verify "dist/${name}.update" "dist/${name}.fit" "dist/${name}.rootfs.gz"
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

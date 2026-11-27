@@ -3,6 +3,7 @@ package update
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -508,10 +509,10 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 }
 
 const releasesJSON = `[
- {"tag_name":"v0.9.0","draft":false,"prerelease":false,"body":"old","assets":[{"name":"peakroute-os-v0.9.0.update","size":10,"browser_download_url":"@@/dl/v0.9.0.update"},{"name":"peakroute-os-v0.9.0.update.sha256","size":90,"browser_download_url":"@@/dl/v0.9.0.update.sha256"}]},
+ {"tag_name":"v0.9.0","draft":false,"prerelease":false,"body":"old","assets":[{"name":"peakroute-os-v0.9.0.update","size":10,"browser_download_url":"@@/dl/v0.9.0.update"},{"name":"peakroute-os-v0.9.0.update.sha256","size":90,"browser_download_url":"@@/dl/v0.9.0.update.sha256"},{"name":"peakroute-os-v0.9.0.update.sig","browser_download_url":"@@/dl/v0.9.0.update.sig"}]},
  {"tag_name":"v0.11.0","draft":true,"prerelease":false,"assets":[{"name":"peakroute-os-v0.11.0.update","browser_download_url":"@@/dl/v0.11.0.update"},{"name":"peakroute-os-v0.11.0.update.sha256","browser_download_url":"@@/dl/v0.11.0.update.sha256"}]},
- {"tag_name":"v0.10.0","name":"Ten","draft":false,"prerelease":false,"body":"Updates are here.","published_at":"2026-10-19T10:00:00Z","assets":[{"name":"peakroute-os-v0.10.0.update","size":1234,"browser_download_url":"@@/dl/v0.10.0.update"},{"name":"peakroute-os-v0.10.0.update.sha256","size":90,"browser_download_url":"@@/dl/v0.10.0.update.sha256"},{"name":"peakroute-os.img.gz","browser_download_url":"@@/dl/other"}]},
- {"tag_name":"v0.10.1-beta","draft":false,"prerelease":true,"assets":[{"name":"peakroute-os-v0.10.1-beta.update","browser_download_url":"@@/dl/v0.10.1-beta.update","digest":"sha256:` + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" + `"}]},
+ {"tag_name":"v0.10.0","name":"Ten","draft":false,"prerelease":false,"body":"Updates are here.","published_at":"2026-10-19T10:00:00Z","assets":[{"name":"peakroute-os-v0.10.0.update","size":1234,"browser_download_url":"@@/dl/v0.10.0.update"},{"name":"peakroute-os-v0.10.0.update.sha256","size":90,"browser_download_url":"@@/dl/v0.10.0.update.sha256"},{"name":"peakroute-os-v0.10.0.update.sig","browser_download_url":"@@/dl/v0.10.0.update.sig"},{"name":"peakroute-os.img.gz","browser_download_url":"@@/dl/other"}]},
+ {"tag_name":"v0.10.1-beta","draft":false,"prerelease":true,"assets":[{"name":"peakroute-os-v0.10.1-beta.update","browser_download_url":"@@/dl/v0.10.1-beta.update","digest":"sha256:` + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" + `"},{"name":"peakroute-os-v0.10.1-beta.update.sig","browser_download_url":"@@/dl/v0.10.1-beta.update.sig"}]},
  {"tag_name":"v0.12.0","draft":false,"prerelease":false,"assets":[{"name":"peakroute-os-v0.12.0.update","browser_download_url":"@@/dl/v0.12.0.update"}]},
  {"tag_name":"nightly","draft":false,"prerelease":false,"assets":[]}
 ]`
@@ -519,6 +520,7 @@ const releasesJSON = `[
 func (g *fakeGitHub) point(l *lab) {
 	l.s.APIBase = g.srv.URL
 	l.s.HTTP = g.srv.Client()
+	l.s.TrustedKeys = []ed25519.PublicKey{testPub}
 }
 
 func TestTheNewestReleaseWithAnUpdateFileAndAChecksumIsFound(t *testing.T) {
@@ -608,6 +610,7 @@ func TestCheckNowRemembersTheAnswerAndTheSettingsDecideTheSource(t *testing.T) {
 func publish(g *fakeGitHub, version string, bundle []byte) {
 	g.files["/dl/"+version+".update"] = bundle
 	g.files["/dl/"+version+".update.sha256"] = []byte(sum(bundle) + "  peakroute-os-" + version + ".update\n")
+	g.files["/dl/"+version+".update.sig"] = []byte(Sign(testPriv, "peakroute-os-"+version+".update", sum(bundle)))
 }
 
 func waitJob(t *testing.T, l *lab) Job {
@@ -691,7 +694,7 @@ func TestAMissingDownloadFails(t *testing.T) {
 
 // asset is a release's update file and its checksum file, in the JSON of GitHub's API
 func asset(name, path string) string {
-	return `{"name":"` + name + `","size":1,"browser_download_url":"@@/dl/` + path + `.update"},{"name":"` + name + `.sha256","browser_download_url":"@@/dl/` + path + `.sha256"}`
+	return `{"name":"` + name + `","size":1,"browser_download_url":"@@/dl/` + path + `.update"},{"name":"` + name + `.sha256","browser_download_url":"@@/dl/` + path + `.sha256"},{"name":"` + name + `.sig","browser_download_url":"@@/dl/` + path + `.sig"}`
 }
 
 var mixedReleasesJSON = `[

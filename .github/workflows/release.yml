@@ -16,6 +16,8 @@ jobs:
           go-version-file: go.mod
       - name: Checks
         run: ./check.sh
+      - name: Vulnerability check (Go's known vulnerabilities, in the standard library and in what we import, that the code can reach)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
       - name: Make room (the build needs about 9 GB)
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
@@ -38,6 +40,14 @@ jobs:
           pigz -6 -c peakroute-os.img > "dist/${name}.img.gz"
           ( cd dist && sha256sum "${name}.img.gz" > "${name}.img.gz.sha256" )
           ls -lh dist
+      - name: Sign (the routers only install what this key signed: docs/updates.md, "Signed releases")
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          name="peakroute-os-amd64-generic-${GITHUB_REF_NAME}"
+          go run ./cmd/peakroute-sign sign "dist/${name}.update" "dist/${name}.img.gz"
+          # the signature must be one the software built from this tag accepts, so a wrong key is found now and not on a router
+          go run ./cmd/peakroute-sign verify "dist/${name}.update" "dist/${name}.img.gz"
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

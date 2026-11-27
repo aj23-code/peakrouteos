@@ -2,7 +2,7 @@
 
 How an installed PeakRoute OS device is brought to a new version without being written again. Decided with the user on 2026-10-20:
 **A/B root partitions** (the device is a live router, so an update must be safe to undo), releases **fetched from GitHub or uploaded as a
-file**, and **checksum only** for trust at first (a signature can be added to the bundle later without changing the layout).
+file**, and **checksum only** for trust at first; since 2026-11-27 a release must also be **signed** (section 7b).
 
 ## 1. The idea
 
@@ -190,6 +190,29 @@ the access point has (the U6+ for now, `buildImageU6Plus.sh`, arm64 under emulat
 PeakRoute AP and with notes of its own (`.github/release-notes-ap.md`). The version is the tag without `ap-`. To release: bump nothing by hand, just `git tag v0.11.0 && git push
 origin v0.11.0`. `UPDATE_REPO=owner/name ./full_build.sh` sets the source compiled into the daemon (the workflow passes the
 repository it runs in).
+
+## 7b. Signed releases
+
+A checksum shows that a download is whole, not who made it: anyone able to change a release's files (a stolen GitHub account, a
+swapped asset) could change the checksum file too. So every update file also has a **signature** next to it, `<file>.update.sig`: an
+Ed25519 signature (base64) of the file's SHA-256 checksum **and its name**, made by the release workflow with a private key that is a
+repository secret (`RELEASE_SIGNING_KEY`). The name is signed so that one signed file cannot be passed off as another version, product
+or board.
+
+- **On the router/AP (`internal/update/signing.go`):** the public keys that may sign are built into the software (`releaseKeys`). A
+  release with no `.sig` is not offered. The signature is fetched before the update is, and checked once the whole file has been read,
+  **before the slot is given its label**, so a file that fails is never startable (the same place as the checksum check). No built-in
+  key means nothing is installed from GitHub. An update **uploaded by an administrator** is not checked against a signature: the
+  administrator supplies it on purpose and is already able to do anything (checksums inside the bundle still apply).
+- **In the release workflows:** after packaging, `go run ./cmd/peakroute-sign sign` signs the `.update` (and the image files), then
+  `verify` checks the result against the keys built into the software from that tag, so a wrong or missing key fails the release
+  before anything is published. The first release that carries the check (v1.7.0-beta) is installed by routers that do not check yet;
+  from then on every update must be signed.
+- **The key:** made with `go run ./cmd/peakroute-sign keygen`. The private half is only in the GitHub secret and in one backup kept by
+  the maintainer (never in the repository). **If it is lost, no router can be updated from GitHub again** (they would need a new image
+  written), so keep the backup. To replace it, release a version that lists **both** public keys, sign it with the old one, and take
+  the old one off in a later release. If it leaks, replace it the same way at once and treat releases signed since as suspect.
+- Checking by hand: `peakroute-sign verify -pub <key> file.update` (reads `file.update.sig`).
 
 ## 7a. Trying it without hardware
 
