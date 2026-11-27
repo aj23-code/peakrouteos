@@ -370,15 +370,29 @@ func main() {
 	mux.HandleFunc("/api/v1/sqm/speedtest", requireAuth(routerOnly(netAPI.HandleSQMSpeedTest)))
 	// The speed test measures the line, not the shaping: while shaping runs it is taken off for the test (about twenty seconds) and put
 	// back after, whatever the outcome (the helper reads the committed configuration, so "back" is what is committed)
-	netAPI.SpeedTest = func(ctx context.Context, progress func(string)) (speedtest.Result, error) {
-		if cfgMgr.NetworkConfig().SQMActive() && !c.Dev {
+	netAPI.SpeedTest = func(ctx context.Context, line string, progress func(string)) (speedtest.Result, error) {
+		cfg := cfgMgr.NetworkConfig()
+		if cfg.SQMAnyActive() && !c.Dev {
 			runner.Run(ctx, translator.PathSQMGo, "stop")
 			defer func() { runner.Run(context.WithoutCancel(ctx), translator.PathSQMGo, "reconcile") }()
 		}
-		return (&speedtest.Tester{}).Run(ctx, progress)
+		// with two connections the test goes out of the one that is measured, whichever carries the traffic
+		t := &speedtest.Tester{}
+		if v, ok := cfg.WanView(line); ok && cfg.HasWan2() {
+			t.Device = v.WanDevice()
+		}
+		return t.Run(ctx, progress)
 	}
-	netAPI.SQMStatus = func(ctx context.Context) network.SQMStatus {
-		return network.ReadSQMStatus(ctx, cfgMgr.NetworkConfig().WanDevice())
+	netAPI.SQMStatus = func(ctx context.Context, line string) network.SQMStatus {
+		cfg := cfgMgr.NetworkConfig()
+		v, ok := cfg.WanView(line)
+		if !ok {
+			return network.SQMStatus{}
+		}
+		if line == config.WanSecond {
+			return network.ReadSQMStatusOf(ctx, v.WanDevice(), network.SQMIfb2)
+		}
+		return network.ReadSQMStatus(ctx, v.WanDevice())
 	}
 	mux.HandleFunc("/api/v1/ddns", requireAuth(routerOnly(netAPI.HandleDDNS)))
 	mux.HandleFunc("/api/v1/ddns/{id}", requireAuth(routerOnly(netAPI.HandleDDNSEntry)))

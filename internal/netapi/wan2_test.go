@@ -1,13 +1,16 @@
 package netapi
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"peakroute/internal/config"
 	"peakroute/internal/failover"
+	"peakroute/internal/speedtest"
 )
 
 // uplinkOf is the handler for /api/v1/uplinks/{id}.
@@ -248,4 +251,91 @@ func TestTheFailoverSettingsAreADraftChangeAndTheStatusIsReportedWhileThereAreTw
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"field":"recovery_seconds"`) {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
+}
+
+func TestEachConnectionHasItsOwnShapingSpeedsAndSpeedTest(t *testing.T) {
+	e := standard(t)
+	put := func(body string) *httptest.ResponseRecorder {
+		return e.do(e.api.HandleSQM, http.MethodPut, body, "application/json")
+	}
+	view := func() sqmResponse { return decodeInto[sqmResponse](t, e.get(e.api.HandleSQM)) }
+	// with one connection there is no second line to speak of, and a request about it changes nothing
+	if rec := put(`{"enabled":true,"download_mbit":500,"upload_mbit":40,"second":{"download_mbit":50}}`); rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if v := view(); v.Second != nil || e.draft().SQM.Second != nil {
+		t.Fatalf("a second line without a second connection: %+v", v.Second)
+	}
+	e.putJSON(e.api.HandlePorts, `{"assignments":{"eth2":"wan2"}}`)
+	rec := put(`{"second":{"download_mbit":50,"upload_mbit":10,"link":"vdsl"}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	v := decodeInto[sqmResponse](t, rec)
+	if v.Second == nil || v.Second.DownloadMbit != 50 || v.Second.UploadMbit != 10 || v.Second.Link != "vdsl" || v.Second.ShapedDownMbit != 47.5 || v.Second.ShapedUpMbit != 9.5 || v.Second.WanDevice != "eth2" {
+		t.Fatalf("%+v", v.Second)
+	}
+	if v.DownloadMbit != 500 || v.ShapedDownMbit != 475 {
+		t.Fatalf("the first line changed: %+v", v)
+	}
+	if !v.Pending {
+		t.Error("a change of the second line is not pending")
+	}
+	// what is left out stays; emptying it all stores nothing
+	put(`{"second":{"upload_mbit":20}}`)
+	if l := e.draft().SQM.Second; l == nil || l.DownloadKbit != 50000 || l.UploadKbit != 20000 || l.Link != "vdsl" {
+		t.Fatalf("%+v", l)
+	}
+	put(`{"second":{"download_mbit":0,"upload_mbit":0,"link":""}}`)
+	if e.draft().SQM.Second != nil {
+		t.Fatalf("%+v", e.draft().SQM.Second)
+	}
+	rec = put(`{"second":{"download_mbit":99999}}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"field":"second.download_mbit"`) {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	rec = put(`{"second":{"link":"carrier-pigeon"}}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"field":"second.link"`) {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+
+	// the speed test measures the connection it is asked for, and refuses one that is not there
+	var asked []string
+	e.api.SpeedTest = func(ctx context.Context, line string, progress func(string)) (speedtest.Result, error) {
+		asked = append(asked, line)
+		return speedtest.Result{DownloadMbit: 10, UploadMbit: 2}, nil
+	}
+	if rec := e.do(e.api.HandleSQMSpeedTest, http.MethodPost, ``, ""); rec.Code != http.StatusAccepted {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	waitSpeed(t, e)
+	// (the second connection is in the draft only, not in effect)
+	if rec := e.doQuery(e.api.HandleSQMSpeedTest, http.MethodPost, "line=wan2"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("a test of a connection that is not in effect: %d %s", rec.Code, rec.Body)
+	}
+	if rec := e.doQuery(e.api.HandleSQMSpeedTest, http.MethodPost, "line=wan7"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("%d", rec.Code)
+	}
+	if len(asked) != 1 || asked[0] != "wan" {
+		t.Fatalf("%v", asked)
+	}
+}
+
+func waitSpeed(t *testing.T, e *env) {
+	t.Helper()
+	for i := 0; i < 200; i++ {
+		if v := decodeInto[speedResponse](t, e.get(e.api.HandleSQMSpeedTest)); v.State == "done" || v.State == "error" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("the speed test did not finish")
+}
+
+func (e *env) doQuery(h http.HandlerFunc, method, query string) *httptest.ResponseRecorder {
+	e.t.Helper()
+	req := httptest.NewRequest(method, "/x?"+query, strings.NewReader(""))
+	rec := httptest.NewRecorder()
+	h(rec, req)
+	return rec
 }

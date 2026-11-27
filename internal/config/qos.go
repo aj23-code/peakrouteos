@@ -84,6 +84,9 @@ func (c NetworkConfig) QoSSet() bool {
 // QoSActive reports whether the line is divided between the networks: shaping is on and some network has a priority or a limit.
 func (c NetworkConfig) QoSActive() bool { return c.SQMActive() && c.QoSSet() }
 
+// QoSAnyActive reports whether any internet connection is divided between the networks.
+func (c NetworkConfig) QoSAnyActive() bool { return c.SQMAnyActive() && c.QoSSet() }
+
 // QoSClass is one share of the line: a network (or "other": what belongs to none, such as the router's own traffic).
 type QoSClass struct {
 	ID       string // the network's id, or "other"

@@ -12,7 +12,8 @@ window.OverviewCards = (function () {
     let healthTimer = null;
     let networkTimer = null;
     let history = null;
-    let network = null;        // { lan, uplink }
+    let network = null;        // { lan, uplink, failover }
+    let shownId = 'wan';       // the internet connection the card describes: the one that carries the traffic
     let leases = [];
     let resizeHandler = null;
 
@@ -21,7 +22,9 @@ window.OverviewCards = (function () {
     // ---------------------------------------------------------------- from telemetry.js
 
     function onStats(data) {
-        const wan = Object.entries(data.interfaces || {}).find(([, m]) => m.role === 'wan');
+        const port = network && network.uplink && network.uplink.port;
+        const wan = Object.entries(data.interfaces || {}).find(([n, m]) => m.role === 'wan' && (!port || n === port))
+            || Object.entries(data.interfaces || {}).find(([, m]) => m.role === 'wan');
         $('ov-wan-down').textContent = wan ? formatRate(wan[1].rx_bytes_sec) : '–';
         $('ov-wan-up').textContent = wan ? formatRate(wan[1].tx_bytes_sec) : '–';
     }
@@ -123,9 +126,12 @@ window.OverviewCards = (function () {
     }
 
     async function loadHealth() {
-        const res = await apiFetch('/api/v1/uplinks/wan/health?range=1h');
+        const id = shownId;
+        const res = await apiFetch('/api/v1/uplinks/' + encodeURIComponent(id) + '/health?range=1h');
         if (!res || !res.ok) return;
-        history = await res.json();
+        const data = await res.json();
+        if (id !== shownId) return; // the traffic moved to the other connection while this was loading
+        history = data;
         renderHealth();
     }
 
@@ -153,6 +159,8 @@ window.OverviewCards = (function () {
         if (!uplink) return;
         const live = uplink.live;
         $('ov-wan-port').textContent = uplink.port || 'none';
+        const badge = document.querySelector('#ov-internet .traffic-badge.wan');
+        if (badge) badge.textContent = network.twoLines ? uplink.name : 'WAN';
         $('ov-wan-link').textContent = !uplink.port ? 'choose a port on the Ports page' : live ? (live.up ? 'connected' : 'no link') : '';
         $('ov-wan-addr').textContent = (live && live.address) || (uplink.port ? 'Waiting for an address' : '\u2013');
         $('ov-wan-gw').textContent = (live && live.gateway) || '\u2013';
@@ -234,11 +242,19 @@ window.OverviewCards = (function () {
             const f = await apiFetch('/api/v1/failover');
             if (f && f.ok) failover = await f.json();
         }
+        // with two connections the card describes the one that carries the traffic
+        const active = failover && failover.status && failover.status.active;
+        const list = uplinks.uplinks || [];
+        const shown = list.find(x => x.id === active) || list[0] || null;
+        const changed = shown && shown.id !== shownId;
+        shownId = shown ? shown.id : 'wan';
         network = {
-            uplink: (uplinks.uplinks || [])[0] || null,
+            uplink: shown,
             networks: networks.networks || [],
             failover,
+            twoLines: list.length > 1,
         };
+        if (changed) { history = null; loadHealth(); }
         renderNetwork();
     }
 

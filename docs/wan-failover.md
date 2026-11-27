@@ -1,4 +1,4 @@
-# A second internet connection: failover and load balancing (plan, 2026-11-27; phases 1, 2 and 3 built 2026-11-27)
+# A second internet connection: failover and load balancing (plan, 2026-11-27; phases 1, 2, 3 and 5 built 2026-11-27, phase 4 next)
 
 Goal: a router that can have **two internet connections** (WAN and WAN 2), watches each one, and either **fails over** from the
 first to the second when the first stops working, or **balances** the networks' traffic over both, switched on and managed like
@@ -107,6 +107,29 @@ Settings (new, on the Internet page, shown when there is a second uplink):
 | Wireless (the AP/cellular case) | a USB tethering dongle or a second router shows up as a port; nothing special |
 
 ## 7. Phases
+
+**Phase 5 is built** (2026-11-27), before phase 4 because it makes failover work properly:
+
+- **DNS:** the router's DHCP script for two connections (`udhcpc-wan`) writes `/etc/resolv.conf` from the resolvers of every connection
+  that has a lease, the one with the lowest metric first, with the first connection's domain. A provider's resolvers often answer
+  only its own customers, so after a failover the other connection's are needed; dnsmasq follows the file as it always did. A
+  connection that loses its lease takes its resolvers out. (A second **PPPoE** connection has no resolvers of its own here: pppd
+  writes its own file; set the *DNS servers* on the DNS page, or use public ones.) Servers set by hand still win.
+- **DDNS** updates from the address of the connection that carries the traffic, so a name follows a failover.
+- **The Overview** describes the connection that carries the traffic (its health, address, rates and a badge with its name).
+- **Usage counters** already counted both (the counting table matches either device) and the traffic card follows the selected
+  connection.
+- **SQM per connection** (docs/sqm.md, "Two internet connections"): the second connection has its own speeds and kind of line
+  (`sqm.second`), the switch, the percentage and the fairness are shared. `WanView` gives the second connection's view its own `SQM`,
+  so the file (`SQM_*` for the first, `SQM2_*` for the second), the classes for the networks and the notes are the first's code run
+  on the view; the helper shapes each device with an ifb device of its own (`ifb-wan`, `ifb-wan2`); the speed test takes `?line=wan2`
+  and goes out of that connection's interface (`SO_BINDTODEVICE`), whichever carries the traffic.
+- **Not here, with phase 4:** answering a connection that arrives on the second line (port forwards, VPN servers, pings) through
+  that same line. With failover alone, traffic that arrives on a line that is not carrying the traffic is answered through the line
+  that is, with the wrong source address; the tables and rules of phase 4 fix that.
+- Tested: the merged resolver file and its removal, the two-line SQM file, validation and review, **the helper on two real
+  interfaces with different speeds** (each shaped to its own, started again when it comes up, removed one by one), the API and the
+  speed test of a line; the page's script in a browser with two mocked lines.
 
 **Phase 3 is built** (2026-11-27): the failover.
 

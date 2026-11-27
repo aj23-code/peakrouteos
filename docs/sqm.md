@@ -90,3 +90,18 @@ the heavier queue: a small router may not keep up at gigabit speeds), and the in
 
 Automatic adjustment of the speeds over time (cake-autorate), choosing the speed test server, limits per device, limits per time of day, traffic of the VPNs and of the router itself as classes of their own (they are "everything else"), a choice of DSCP handling (diffserv4,
 besteffort), ACK filtering, and shaping a second internet connection (when there is one).
+
+## Two internet connections
+
+With a second internet connection (docs/wan-failover.md) each line is shaped to **its own speeds**: the card has a second block, *Internet 2*,
+with its download and upload speed and its kind of line. The switch, the share of the line and the fairness between devices are the same
+for both. `sqm.second` in `network.json` holds the second line's `download_kbit`, `upload_kbit` and `link`; a router with one connection
+writes none of it.
+
+- The file `/etc/default/peakroute-sqm` has `SQM_*` for the first connection and `SQM2_*` for the second (`SQM2_DEV`, `SQM2_UP_KBIT`,
+  `SQM2_DOWN_KBIT`, `SQM2_LINK`, `SQM2_PERHOST`, `SQM2_CLASSES`). A line with no speed has no lines in the file.
+- The shares of the networks (*Per network*) are divided out of each line's own speed, so the same priorities and limits mean a different
+  number of Mbit/s on each line. The firewall's marks are the same for both.
+- Each line has an ifb device for what comes in (`ifb-wan`, `ifb-wan2`) and a state file (`sqm.dev`, `sqm2.dev`); `sqm start-if DEV` starts
+  the line whose device it is, so a connection that comes up again is shaped again.
+- *Measure Internet 2* runs the speed test through the second connection's interface, whichever line carries the traffic.

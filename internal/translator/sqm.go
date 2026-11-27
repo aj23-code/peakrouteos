@@ -17,30 +17,40 @@ const (
 	SvcSQM    = "sqm"
 )
 
-// renderSQM writes the file the helper reads; ok is false while no shaping is wanted.
+// renderSQM writes the file the helper reads; ok is false while no shaping is wanted. The first connection's lines are SQM_*, the
+// second's SQM2_* (a router with two connections shapes each with its own speeds).
 func renderSQM(cfg config.NetworkConfig) (string, bool) {
-	if !cfg.SQMActive() {
+	if !cfg.SQMAnyActive() {
 		return "", false
 	}
-	s := cfg.SQMSettings()
-	perHost := 0
-	if s.PerHost {
-		perHost = 1
-	}
-	out := fmt.Sprintf("# Written by PeakRoute from Internet, Smart queue management. Changes made here are lost.\n"+
-		"# (the speeds are what the router shapes to: the line's speeds times the percentage)\n"+
-		"SQM_DEV=%s\nSQM_DOWN_KBIT=%d\nSQM_UP_KBIT=%d\nSQM_LINK=%s\nSQM_PERHOST=%d\n",
-		cfg.WanDevice(), s.ShapedDownKbit(), s.ShapedUpKbit(), s.Link, perHost)
-	if cfg.QoSActive() {
-		// the line is divided between the networks: one entry for each, "mark class priority up-rate up-ceil down-rate down-ceil" (kbit/s).
-		// The mark is what the firewall puts on a network's connections (qosMarkTable); the class is the queue's, in hex.
-		var b strings.Builder
-		b.WriteString("# a share of the line for each network: mark, class, priority, upload rate and ceiling, download rate and ceiling (kbit/s)\nSQM_CLASSES=\"\n")
-		for _, cl := range cfg.QoSClasses() {
-			fmt.Fprintf(&b, "0x%x %x %d %d %d %d %d\n", qosMark(cl.Index), qosMinor(cl.Index), cl.Prio, cl.UpRate, cl.UpCeil, cl.DownRate, cl.DownCeil)
+	out := "# Written by PeakRoute from Internet, Smart queue management. Changes made here are lost.\n" +
+		"# (the speeds are what the router shapes to: the line's speeds times the percentage)\n"
+	for i, v := range cfg.WanViews() {
+		if !v.SQMActive() {
+			continue
 		}
-		b.WriteString("\"\n")
-		out += b.String()
+		prefix := "SQM"
+		if i == 1 {
+			prefix = "SQM2"
+		}
+		s := v.SQMSettings()
+		perHost := 0
+		if s.PerHost {
+			perHost = 1
+		}
+		out += fmt.Sprintf("%[1]s_DEV=%[2]s\n%[1]s_DOWN_KBIT=%[3]d\n%[1]s_UP_KBIT=%[4]d\n%[1]s_LINK=%[5]s\n%[1]s_PERHOST=%[6]d\n",
+			prefix, v.WanDevice(), s.ShapedDownKbit(), s.ShapedUpKbit(), s.Link, perHost)
+		if v.QoSActive() {
+			// the line is divided between the networks: one entry for each, "mark class priority up-rate up-ceil down-rate down-ceil" (kbit/s).
+			// The mark is what the firewall puts on a network's connections (qosMarkTable); the class is the queue's, in hex.
+			var b strings.Builder
+			b.WriteString("# a share of the line for each network: mark, class, priority, upload rate and ceiling, download rate and ceiling (kbit/s)\n" + prefix + "_CLASSES=\"\n")
+			for _, cl := range v.QoSClasses() {
+				fmt.Fprintf(&b, "0x%x %x %d %d %d %d %d\n", qosMark(cl.Index), qosMinor(cl.Index), cl.Prio, cl.UpRate, cl.UpCeil, cl.DownRate, cl.DownCeil)
+			}
+			b.WriteString("\"\n")
+			out += b.String()
+		}
 	}
 	return out, true
 }
@@ -62,7 +72,7 @@ func qosMinor(index int) int {
 // puts the connection's mark on each packet that is forwarded, which is what the queue sorts by when the packet goes out. The packets
 // that come in are sorted by the same connection mark (the queue reads it from the connection tracking). Empty while the line is not divided.
 func qosMarkTable(cfg config.NetworkConfig, lan string) string {
-	if !cfg.QoSActive() {
+	if !cfg.QoSAnyActive() {
 		return ""
 	}
 	var b strings.Builder
@@ -86,18 +96,22 @@ func qosMarkTable(cfg config.NetworkConfig, lan string) string {
 
 // ensureSafeSQM is the render-time twin of the validation: what goes into the file is read by a shell.
 func ensureSafeSQM(cfg config.NetworkConfig) error {
-	s := cfg.SQMSettings()
-	if s.DownloadKbit < 0 || s.DownloadKbit > config.MaxSQMKbit || s.UploadKbit < 0 || s.UploadKbit > config.MaxSQMKbit {
-		return fmt.Errorf("refusing to render the shaping speeds %d/%d", s.DownloadKbit, s.UploadKbit)
-	}
-	if s.Percent != 0 && (s.Percent < config.MinSQMPercent || s.Percent > config.MaxSQMPercent) {
-		return fmt.Errorf("refusing to render the shaping percentage %d", s.Percent)
-	}
-	if !config.ValidSQMLink(s.Link) {
-		return fmt.Errorf("refusing to render the connection kind %q", s.Link)
-	}
-	if cfg.SQMActive() {
-		return ensureSafe(cfg.WanDevice())
+	for _, v := range cfg.WanViews() {
+		s := v.SQMSettings()
+		if s.DownloadKbit < 0 || s.DownloadKbit > config.MaxSQMKbit || s.UploadKbit < 0 || s.UploadKbit > config.MaxSQMKbit {
+			return fmt.Errorf("refusing to render the shaping speeds %d/%d", s.DownloadKbit, s.UploadKbit)
+		}
+		if s.Percent != 0 && (s.Percent < config.MinSQMPercent || s.Percent > config.MaxSQMPercent) {
+			return fmt.Errorf("refusing to render the shaping percentage %d", s.Percent)
+		}
+		if !config.ValidSQMLink(s.Link) {
+			return fmt.Errorf("refusing to render the connection kind %q", s.Link)
+		}
+		if v.SQMActive() {
+			if err := ensureSafe(v.WanDevice()); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -109,12 +123,15 @@ var sqmCommand = command{"sh", []string{"-c", `if [ -x ` + PathSQMGo + ` ]; then
 
 // sqmNote is shown in the review when the settings cannot do what they say.
 func sqmNotes(cfg config.NetworkConfig) []string {
-	if !cfg.SQMActive() {
-		return nil
-	}
 	var notes []string
-	if cfg.WanKind() == config.WanPPPoE && cfg.SQMSettings().Link == config.SQMEthernet {
-		notes = append(notes, "This connection is PPPoE: if it is DSL, pick VDSL or ADSL as the kind of line so that its overhead is counted.")
+	for _, v := range cfg.WanViews() {
+		if v.SQMActive() && v.WanKind() == config.WanPPPoE && v.SQMSettings().Link == config.SQMEthernet {
+			which := "This connection is"
+			if v.IsSecondWan() {
+				which = "The second connection is"
+			}
+			notes = append(notes, which+" PPPoE: if it is DSL, pick VDSL or ADSL as the kind of line so that its overhead is counted.")
+		}
 	}
 	return notes
 }

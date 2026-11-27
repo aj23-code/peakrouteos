@@ -70,7 +70,7 @@ func TestShapingWithNoSpeedAtAllIsRefusedOnTheDownloadField(t *testing.T) {
 func TestTheShapingStatusIsOnlyAskedForWhileItRuns(t *testing.T) {
 	e := standard(t)
 	asked := 0
-	e.api.SQMStatus = func(context.Context) network.SQMStatus {
+	e.api.SQMStatus = func(context.Context, string) network.SQMStatus {
 		asked++
 		return network.SQMStatus{Upload: network.SQMDirection{Active: true, BandwidthKbit: 40000}}
 	}
@@ -91,7 +91,7 @@ func TestTheSpeedTestRunsOnceAtATimeAndChangesNothingInTheConfiguration(t *testi
 		t.Fatalf("no tester: %d", rec.Code)
 	}
 	release := make(chan struct{})
-	e.api.SpeedTest = func(ctx context.Context, progress func(string)) (speedtest.Result, error) {
+	e.api.SpeedTest = func(ctx context.Context, line string, progress func(string)) (speedtest.Result, error) {
 		progress("download")
 		<-release
 		return speedtest.Result{DownloadMbit: 468.2, UploadMbit: 37.1, Server: "x"}, nil
@@ -128,7 +128,7 @@ func TestTheSpeedTestRunsOnceAtATimeAndChangesNothingInTheConfiguration(t *testi
 		t.Errorf("a speed test changed the configuration: %+v", e.draft().SQM)
 	}
 	// a failure is reported, and the next test may start
-	e.api.SpeedTest = func(context.Context, func(string)) (speedtest.Result, error) {
+	e.api.SpeedTest = func(context.Context, string, func(string)) (speedtest.Result, error) {
 		return speedtest.Result{}, errors.New("no route")
 	}
 	e.do(e.api.HandleSQMSpeedTest, http.MethodPost, ``, "")

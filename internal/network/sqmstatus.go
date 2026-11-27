@@ -27,6 +27,9 @@ type SQMStatus struct {
 // SQMIfb is the device what comes in is redirected to (image/overlay/usr/lib/peakroute/sqm).
 const SQMIfb = "ifb-wan"
 
+// SQMIfb2 is the second internet connection's.
+const SQMIfb2 = "ifb-wan2"
+
 // ParseSQMQdisc reads `tc -j -s qdisc show dev X` and returns the root cake queue; ok is false when the device has none.
 func ParseSQMQdisc(out []byte) (SQMDirection, bool) {
 	var qs []struct {
@@ -91,6 +94,11 @@ func ParseSQMQdisc(out []byte) (SQMDirection, bool) {
 // ReadSQMStatus asks the kernel how the shaping of the connection's device (and of its ifb) is doing. A device with no cake queue (or a
 // machine with no tc) is simply not active.
 func ReadSQMStatus(ctx context.Context, dev string) SQMStatus {
+	return ReadSQMStatusOf(ctx, dev, SQMIfb)
+}
+
+// ReadSQMStatusOf is ReadSQMStatus for a connection whose ifb device is ifb.
+func ReadSQMStatusOf(ctx context.Context, dev, ifb string) SQMStatus {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	read := func(d string) SQMDirection {
@@ -104,5 +112,5 @@ func ReadSQMStatus(ctx context.Context, dev string) SQMStatus {
 		dir, _ := ParseSQMQdisc(out)
 		return dir
 	}
-	return SQMStatus{Upload: read(dev), Download: read(SQMIfb)}
+	return SQMStatus{Upload: read(dev), Download: read(ifb)}
 }

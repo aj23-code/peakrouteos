@@ -75,7 +75,8 @@ func (c NetworkConfig) WanView(id string) (NetworkConfig, bool) {
 		v := c.clone()
 		v.WanInterface, v.WanMode, v.WanIP, v.WanSubnet, v.WanGateway = w.Interface, w.Mode, w.IP, w.Subnet, w.Gateway
 		v.WanDNS, v.WanVlan, v.WanMTU, v.WanMAC, v.WanPPPoE, v.WanProbe = w.DNS, w.Vlan, w.MTU, w.MAC, w.PPPoE, w.Probe
-		v.uplink = 2 // and, like the first's view, the second connection and the preference stay (WanMetric)
+		v.SQM = c.SQM.secondLine() // the shaping of this connection: its own speeds and kind
+		v.uplink = 2               // and, like the first's view, the second connection and the preference stay (WanMetric)
 		return v, true
 	}
 	return NetworkConfig{}, false

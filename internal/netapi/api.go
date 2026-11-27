@@ -56,10 +56,12 @@ type API struct {
 	// TimeStatus reads how the router's clock stands (the time zone, whether it follows a time server). Nil means it is not reported.
 	TimeStatus func(ctx context.Context) (network.TimeStatus, bool)
 	// SpeedTest measures the internet connection (the smart queue management card fills in the line's speeds with it). Nil: not available.
-	SpeedTest func(ctx context.Context, progress func(phase string)) (speedtest.Result, error)
+	// line is the connection to measure ("wan" or "wan2").
+	SpeedTest func(ctx context.Context, line string, progress func(phase string)) (speedtest.Result, error)
 	speed     speedJob
 	// SQMStatus reads how the shaping of the internet connection is doing. Nil means it is not reported.
-	SQMStatus func(ctx context.Context) network.SQMStatus
+	// line is the connection ("wan" or "wan2").
+	SQMStatus func(ctx context.Context, line string) network.SQMStatus
 	// FilteringStatus reports whether AdGuard Home is installed and answering. Nil means it is not reported.
 	FilteringStatus func(ctx context.Context) filtering.Status
 	// FailoverStatus says which internet connection carries the traffic and why, and how many seconds remain before it goes back to the

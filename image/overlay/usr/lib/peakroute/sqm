@@ -13,10 +13,14 @@
 # only shares the class between the devices. Packets are sorted by the mark the firewall put on their connection: what goes out carries it
 # on the packet, what comes in is given it from the connection tracking (the ctinfo action) on its way to the ifb device.
 #
-# SQM_CONF and SQM_STATE can name other files (the tests do).
+# A router with two internet connections shapes each with its own speeds: the file has SQM_* for the first and SQM2_* for the second
+# (SQM2_DEV, SQM2_UP_KBIT, ...), and each connection has an ifb device of its own (ifb-wan, ifb-wan2).
+#
+# SQM_CONF, SQM_STATE and SQM_STATE2 can name other files (the tests do).
 set -u
 CONF="${SQM_CONF:-/etc/default/peakroute-sqm}"
 STATE="${SQM_STATE:-/run/peakroute/sqm.dev}"
+STATE2="${SQM_STATE2:-/run/peakroute/sqm2.dev}"
 IFB="ifb-wan"
 
 say() { echo "sqm: $*"; }
@@ -69,41 +73,41 @@ build_tree() {
     rm -f "$list"
 }
 
-# take away what is on a device and on the ifb (nothing there is not an error)
+# take away what is on a device and on its ifb (nothing there is not an error): $1 the device, $2 the ifb device ($IFB when not given)
 clear_shaping() {
     dev="$1"
     [ -n "$dev" ] || return 0
     tc qdisc del dev "$dev" root 2>/dev/null || true
     tc qdisc del dev "$dev" ingress 2>/dev/null || true
-    ip link del "$IFB" 2>/dev/null || true
+    ip link del "${2:-$IFB}" 2>/dev/null || true
+}
+
+# stop_line takes the shaping away from the device a state file names: $1 the state file, $2 its ifb device
+stop_line() {
+    dev=""
+    [ -f "$1" ] && dev="$(cat "$1")"
+    # a device named in the file that is being taken away is known from the state; one that was never started has nothing to stop
+    clear_shaping "$dev" "$2"
+    rm -f "$1"
 }
 
 stop() {
-    dev=""
-    [ -f "$STATE" ] && dev="$(cat "$STATE")"
-    # a device named in the file that is being taken away is known from the state; one that was never started has nothing to stop
-    clear_shaping "$dev"
-    rm -f "$STATE"
+    stop_line "$STATE" ifb-wan
+    stop_line "$STATE2" ifb-wan2
 }
 
-start() {
-    [ -f "$CONF" ] || { say "no configuration: nothing to start"; return 0; }
-    # shellcheck disable=SC1090
-    . "$CONF"
-    dev="${SQM_DEV:-}"
-    [ -n "$dev" ] || { say "the configuration names no device" >&2; return 1; }
+# shape_line shapes one internet connection: $1 device, $2 upload and $3 download (kbit/s), $4 kind of line, $5 per-device fairness (1 or 0),
+# $6 the shares of the networks (or empty), $7 the ifb device, $8 the state file
+shape_line() {
+    dev="$1"; up="$2"; down="$3"; SQM_LINK="$4"; SQM_PERHOST="$5"; SQM_CLASSES="$6"; IFB="$7"; state="$8"
     ip link show "$dev" >/dev/null 2>&1 || { say "$dev is not there (yet): it is shaped when it comes up"; return 0; }
-    up="${SQM_UP_KBIT:-0}"
-    down="${SQM_DOWN_KBIT:-0}"
     kw="$(link_keyword "${SQM_LINK:-ethernet}")"
     # (every keyword is given every time: replacing a queue keeps what is not named, so a setting taken away would stay)
     if [ "${SQM_PERHOST:-1}" = "1" ]; then out_fair="dual-srchost"; in_fair="dual-dsthost"; else out_fair="triple-isolate"; in_fair="triple-isolate"; fi
 
-    load_modules
     # a device that was shaped before and is not any more
-    if [ -f "$STATE" ] && [ "$(cat "$STATE")" != "$dev" ]; then clear_shaping "$(cat "$STATE")"; fi
-    mkdir -p "$(dirname "$STATE")"
-
+    if [ -f "$state" ] && [ "$(cat "$state")" != "$dev" ]; then clear_shaping "$(cat "$state")" "$IFB"; fi
+    mkdir -p "$(dirname "$state")"
     if [ "$up" -gt 0 ]; then
         if [ -n "${SQM_CLASSES:-}" ]; then
             build_tree "$dev" "$up" up "$out_fair" "" \
@@ -144,7 +148,33 @@ start() {
         tc qdisc del dev "$dev" ingress 2>/dev/null || true
         ip link del "$IFB" 2>/dev/null || true
     fi
-    echo "$dev" > "$STATE"
+    echo "$dev" > "$state"
+}
+
+
+start() {
+    [ -f "$CONF" ] || { say "no configuration: nothing to start"; return 0; }
+    # shellcheck disable=SC1090
+    . "$CONF"
+    load_modules
+    rc=0
+    first_dev="${SQM_DEV:-}"
+    second_dev="${SQM2_DEV:-}"
+    # (the second connection's variables are taken out of the first's names before the first is shaped: shape_line sets them)
+    s2_up="${SQM2_UP_KBIT:-0}"; s2_down="${SQM2_DOWN_KBIT:-0}"; s2_link="${SQM2_LINK:-ethernet}"; s2_perhost="${SQM2_PERHOST:-1}"; s2_classes="${SQM2_CLASSES:-}"
+    s1_up="${SQM_UP_KBIT:-0}"; s1_down="${SQM_DOWN_KBIT:-0}"; s1_link="${SQM_LINK:-ethernet}"; s1_perhost="${SQM_PERHOST:-1}"; s1_classes="${SQM_CLASSES:-}"
+    if [ -n "$first_dev" ]; then
+        shape_line "$first_dev" "$s1_up" "$s1_down" "$s1_link" "$s1_perhost" "$s1_classes" ifb-wan "$STATE" || rc=1
+    else
+        stop_line "$STATE" ifb-wan
+    fi
+    if [ -n "$second_dev" ]; then
+        shape_line "$second_dev" "$s2_up" "$s2_down" "$s2_link" "$s2_perhost" "$s2_classes" ifb-wan2 "$STATE2" || rc=1
+    else
+        stop_line "$STATE2" ifb-wan2
+    fi
+    [ -n "$first_dev$second_dev" ] || { say "the configuration names no device" >&2; return 1; }
+    return $rc
 }
 
 case "${1:-}" in
@@ -154,7 +184,7 @@ case "${1:-}" in
         [ -f "$CONF" ] || exit 0
         # shellcheck disable=SC1090
         . "$CONF"
-        [ "${2:-}" = "${SQM_DEV:-}" ] && start
+        if [ "${2:-}" = "${SQM_DEV:-}" ] || [ "${2:-}" = "${SQM2_DEV:-}" ]; then start; fi
         exit 0 ;;
     stop) stop ;;
     *) echo "usage: sqm reconcile | start | start-if DEVICE | stop" >&2; exit 2 ;;

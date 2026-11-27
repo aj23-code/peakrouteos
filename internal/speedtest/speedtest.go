@@ -46,6 +46,8 @@ type Tester struct {
 	Warmup   time.Duration
 	MaxBytes int64
 	Client   *http.Client // a client that speaks plain HTTP/1.1 over its own connections when nil
+	// Device, when set, is the interface the test's connections go out of: with two internet connections, the one to measure.
+	Device string
 }
 
 func (t *Tester) base() string {
@@ -88,13 +90,14 @@ func (t *Tester) maxBytes() int64 {
 
 // tracker remembers the TCP connections a test opens, so that what the other end has acknowledged can be read from them.
 type tracker struct {
+	dev   string // the interface the connections are bound to ("": none)
 	mu    sync.Mutex
 	conns []*net.TCPConn
 	last  []uint64 // the most each connection was seen to have acknowledged (a closed connection can no longer be asked)
 }
 
 func (tr *tracker) dial(ctx context.Context, network, addr string) (net.Conn, error) {
-	c, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, addr)
+	c, err := (&net.Dialer{Timeout: 10 * time.Second, Control: dialControl(tr.dev)}).DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +233,7 @@ func (t *Tester) run(ctx context.Context, c *counter, one func(ctx context.Conte
 
 // Download measures what comes in.
 func (t *Tester) Download(ctx context.Context) (mbit float64, bytes int64, err error) {
-	client := t.client(&tracker{})
+	client := t.client(&tracker{dev: t.Device})
 	c := &counter{started: time.Now(), warmup: t.warmup(), cap: t.maxBytes()}
 	rate, err := t.run(ctx, c, func(ctx context.Context) error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/__down?bytes=%d", t.base(), chunk), nil)
@@ -266,7 +269,7 @@ func (t *Tester) Download(ctx context.Context) (mbit float64, bytes int64, err e
 // Upload measures what goes out. The rate is what the other end acknowledged (TCP's own count), so a send buffer that swallows the first
 // seconds of a slow upload does not pass for speed; where the system cannot say, it is the bytes handed to the connection.
 func (t *Tester) Upload(ctx context.Context) (mbit float64, bytes int64, err error) {
-	tr := &tracker{}
+	tr := &tracker{dev: t.Device}
 	client := t.client(tr)
 	c := &counter{started: time.Now(), warmup: t.warmup(), cap: t.maxBytes()}
 

@@ -46,9 +46,48 @@ type SQMConfig struct {
 	// PerHost shares the line fairly between the devices behind the router (rather than between connections only): one device with
 	// many connections cannot take the line from the others.
 	PerHost bool `json:"per_host"`
+	// Second is the second internet connection's line, when there is one (its speeds are not the first's).
+	Second *SQMLine `json:"second,omitempty"`
 }
 
-func (s SQMConfig) clone() SQMConfig { return s }
+// SQMLine is the second internet connection's line: its speeds and kind (the switch, the percentage and the fairness are shared).
+type SQMLine struct {
+	DownloadKbit int    `json:"download_kbit"`
+	UploadKbit   int    `json:"upload_kbit"`
+	Link         string `json:"link,omitempty"`
+}
+
+func (s SQMConfig) clone() SQMConfig {
+	if s.Second != nil {
+		l := *s.Second
+		s.Second = &l
+	}
+	return s
+}
+
+// Same says whether two settings are the same.
+func (s SQMConfig) Same(o SQMConfig) bool {
+	a, b := s.Second, o.Second
+	s.Second, o.Second = nil, nil
+	if s != o {
+		return false
+	}
+	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
+}
+
+// secondLine is the settings as the second connection's view has them: its own speeds and kind, no second.
+func (s *SQMConfig) secondLine() *SQMConfig {
+	if s == nil {
+		return nil
+	}
+	v := s.clone()
+	line := SQMLine{}
+	if s.Second != nil {
+		line = *s.Second
+	}
+	v.DownloadKbit, v.UploadKbit, v.Link, v.Second = line.DownloadKbit, line.UploadKbit, line.Link, nil
+	return &v
+}
 
 // EffectivePercent is the share of the line's speed the router shapes to.
 func (s SQMConfig) EffectivePercent() int {
@@ -85,10 +124,20 @@ func (c NetworkConfig) SQMSettings() SQMConfig {
 	return s
 }
 
-// SQMActive reports whether the connection is shaped at all.
+// SQMActive reports whether the connection this view is of is shaped at all.
 func (c NetworkConfig) SQMActive() bool {
 	s := c.SQMSettings()
 	return s.Enabled && (s.DownloadKbit > 0 || s.UploadKbit > 0)
+}
+
+// SQMAnyActive reports whether any internet connection is shaped.
+func (c NetworkConfig) SQMAnyActive() bool {
+	for _, v := range c.WanViews() {
+		if v.SQMActive() {
+			return true
+		}
+	}
+	return false
 }
 
 // ValidSQMLink reports whether s is one of the connection kinds.
@@ -119,10 +168,22 @@ func (c NetworkConfig) validateSQM(add func(field, format string, args ...any)) 
 	if s.Link != "" && !ValidSQMLink(s.Link) {
 		add("sqm.link", "must be one of %s", strings.Join(SQMLinks, ", "))
 	}
+	if l := s.Second; l != nil {
+		if l.DownloadKbit < 0 || l.DownloadKbit > MaxSQMKbit {
+			add("sqm.second.download_kbit", "must be between 0 and %d (Mbit/s: 0 to %d)", MaxSQMKbit, MaxSQMKbit/1000)
+		}
+		if l.UploadKbit < 0 || l.UploadKbit > MaxSQMKbit {
+			add("sqm.second.upload_kbit", "must be between 0 and %d (Mbit/s: 0 to %d)", MaxSQMKbit, MaxSQMKbit/1000)
+		}
+		if l.Link != "" && !ValidSQMLink(l.Link) {
+			add("sqm.second.link", "must be one of %s", strings.Join(SQMLinks, ", "))
+		}
+	}
 	if !s.Enabled {
 		return
 	}
-	if s.DownloadKbit == 0 && s.UploadKbit == 0 {
+	second := s.Second != nil && c.HasWan2() && (s.Second.DownloadKbit > 0 || s.Second.UploadKbit > 0)
+	if s.DownloadKbit == 0 && s.UploadKbit == 0 && !second {
 		add("sqm.download_kbit", "give the download or the upload speed of your line, or turn this off")
 	}
 	if c.WanDevice() == "" {
@@ -150,5 +211,13 @@ func (s SQMConfig) SQMText() string {
 	if link == "" {
 		link = DefaultSQMLink
 	}
-	return fmt.Sprintf("line download %s, upload %s, %s, %s, %s", speed(s.DownloadKbit), speed(s.UploadKbit), shaping, link, fair)
+	text := fmt.Sprintf("line download %s, upload %s, %s, %s, %s", speed(s.DownloadKbit), speed(s.UploadKbit), shaping, link, fair)
+	if l := s.Second; l != nil && (l.DownloadKbit > 0 || l.UploadKbit > 0) {
+		kind := l.Link
+		if kind == "" {
+			kind = DefaultSQMLink
+		}
+		text += fmt.Sprintf("; second connection: download %s, upload %s, %s", speed(l.DownloadKbit), speed(l.UploadKbit), kind)
+	}
+	return text
 }
