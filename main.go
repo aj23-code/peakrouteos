@@ -163,7 +163,8 @@ func main() {
 		},
 		Runner: runner,
 	}
-	go daemon.RunWhile(pollerCtx, routerWorkEvery, func() bool { return isRouter() && cfgMgr.NetworkConfig().HasWan2() }, failoverCtl.Run)
+	// (it runs for every router: with no second connection it only takes away what the second left behind)
+	whileRouter(failoverCtl.Run)
 	netAPI.FailoverStatus = func(cfg config.NetworkConfig) (failover.Status, int) {
 		return failoverCtl.Status(), failoverCtl.RecoveringIn(cfg)
 	}

@@ -63,6 +63,7 @@ type Controller struct {
 	Runner Runner
 	Now    func() time.Time
 	Every  time.Duration // between looks (2 s when zero)
+	RunDir string        // where the table of firewall rules is written (/run/peakroute when empty)
 
 	mu        sync.Mutex
 	active    string
@@ -72,7 +73,11 @@ type Controller struct {
 	upSince   map[string]time.Time
 	states    map[string]string
 	events    []Event
+	lbApplied string // the firewall table that is loaded
+	managed   bool   // tables, rules and the firewall table of balance.go were made
 }
+
+func logf(format string, args ...any) { log.Printf("[failover] "+format, args...) }
 
 const maxEvents = 30
 
@@ -156,6 +161,12 @@ func decide(active, preferred string, state map[string]string, upSince map[strin
 func (c *Controller) Step(ctx context.Context) {
 	cfg := c.Config()
 	if !cfg.HasWan2() {
+		c.mu.Lock()
+		managed := c.managed
+		c.mu.Unlock()
+		if managed {
+			c.cleanup(ctx) // the second connection was taken away: so are the tables and marks that served it
+		}
 		return
 	}
 	now := c.now()
@@ -211,6 +222,7 @@ func (c *Controller) Step(ctx context.Context) {
 		}
 	}
 	c.apply(ctx, devices, active, states)
+	c.syncBalance(ctx, cfg, devices, states)
 	if left != "" && left != active {
 		// connections that were translated to the address of the connection that was left cannot go on: forget them, so that the devices
 		// start again (through the new one) instead of waiting for a timeout

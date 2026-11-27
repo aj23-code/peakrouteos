@@ -265,3 +265,28 @@ func nftablesNetworkRules(cfg config.NetworkConfig, lan string) (input, forward 
 	}
 	return in.String(), fw.String()
 }
+
+// InternetIfaces are the interfaces of the networks that are let through to the internet: the default network, the networks that have
+// internet access and the VPN zones that do. They are what a router with two internet connections shares between the connections.
+func InternetIfaces(cfg config.NetworkConfig) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(iface string) {
+		if iface != "" && !seen[iface] {
+			seen[iface] = true
+			out = append(out, iface)
+		}
+	}
+	add(LanTarget(cfg))
+	for _, n := range cfg.Networks {
+		if n.Internet {
+			add(networkIface(n))
+		}
+	}
+	for _, z := range cfg.VPNZones() {
+		if z.Internet {
+			add(z.Iface)
+		}
+	}
+	return out
+}

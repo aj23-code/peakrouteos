@@ -1,4 +1,4 @@
-# A second internet connection: failover and load balancing (plan, 2026-11-27; phases 1, 2, 3 and 5 built 2026-11-27, phase 4 next)
+# A second internet connection: failover and load balancing (2026-11-27: all five phases built; not yet run on a router with two lines)
 
 Goal: a router that can have **two internet connections** (WAN and WAN 2), watches each one, and either **fails over** from the
 first to the second when the first stops working, or **balances** the networks' traffic over both, switched on and managed like
@@ -107,6 +107,34 @@ Settings (new, on the Internet page, shown when there is a second uplink):
 | Wireless (the AP/cellular case) | a USB tethering dongle or a second router shows up as a port; nothing special |
 
 ## 7. Phases
+
+**Phase 4 is built** (2026-11-27): sharing the traffic, and answering what arrives on a line through that line.
+
+- **Mode and weights** (`wan_failover.balanced`, `weight_first`, `weight_second`; 1-100, nothing written for the defaults): *Failover*
+  (the default) or *Share the traffic*. In the Internet page's *Two connections* card, with the shares now (a connection that is down
+  has none).
+- **Tables and rules** (`failover/balance.go`, made by the controller, taken away when the second connection is): table 101 and 102 each
+  hold a default route through their connection (the gateway the connection's default route has); rules `fwmark 0x01000000/0xff000000
+  lookup 101` and `0x02000000 ... 102` (priorities 10101 and 10102); and **first** a rule `lookup main suppress_prefixlength 0`
+  (10050): a marked packet still finds the routes that are not defaults (the networks behind the router), otherwise it would be sent
+  out of the connection (found with the real kernel: a forwarded request to a device went back out).
+- **The marks** are in the top byte of the connection mark (the shares of the networks use the byte below) and are set by a firewall
+  table the controller writes and keeps (`inet peakroute_lb`, not part of the firewall file: it follows the health of the connections;
+  a commit flushes the rules and the controller puts it back within 2 s): a connection that **arrives** on a connection is marked with
+  it (so its replies leave the same way: forwarded ports, VPN servers and the router's own services, in failover too, when it arrives
+  on the connection that is waiting); when sharing, a **new connection from a network** is given to a connection that is up by weight
+  (`numgen random` over the weights, `vmap`), and stays on it; every packet carries its connection's mark through the router and out of
+  it (`type route` output chain for the router's own).
+- **Not shared:** the router's own traffic (updates, DNS, time) follows the main table, the preferred connection; one connection is
+  never split over both lines; a site that ties a session to the visitor's address sees a change when a *new* connection takes the other
+  line. A UDP service in the router that answers with the address the route to the sender picks (rather than the address it was reached
+  on) is answered from the wrong address: the router's own services that matter use TCP, or answer from the address they were reached on
+  (WireGuard does).
+- Tested with the real kernel (`failover/kernel_balance_test.go`: three namespaces, the real controller): 400 new connections split
+  by weight 1:3 (within chance), a connection set down gets none of the next 100, a packet reaching the router on the second
+  connection (TCP) and a packet reaching a device through a port forward on it are answered through it though the default route is the
+  first's (and, as a control, are not before the controller has made anything). The generated rules are accepted by the real `nft`.
+  **Not run on a router with two lines.**
 
 **Phase 5 is built** (2026-11-27), before phase 4 because it makes failover work properly:
 

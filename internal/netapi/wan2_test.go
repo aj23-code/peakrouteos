@@ -339,3 +339,47 @@ func (e *env) doQuery(h http.HandlerFunc, method, query string) *httptest.Respon
 	h(rec, req)
 	return rec
 }
+
+func TestSharingTheTrafficHasWeightsOfItsOwnAndTheSharesFollowTheHealthOfTheConnections(t *testing.T) {
+	c := baseline()
+	c.Wan2 = &config.WanConfig{Interface: "eth2", Mode: "dhcp"}
+	c.WanFailover = &config.FailoverConfig{Balanced: true, WeightFirst: 1, WeightSecond: 3}
+	e := newEnv(t, &c)
+	states := map[string]string{"wan": "online", "wan2": "online"}
+	e.api.FailoverStatus = func(cfg config.NetworkConfig) (failover.Status, int) {
+		return failover.Status{Active: "wan", Preferred: "wan", States: states}, 0
+	}
+	get := func() failoverResponse { return decodeInto[failoverResponse](t, e.get(e.api.HandleFailover)) }
+	r := get()
+	if !r.Balanced || r.WeightFirst != 1 || r.WeightSecond != 3 || r.Shares["wan"] != 25 || r.Shares["wan2"] != 75 {
+		t.Fatalf("%+v", r)
+	}
+	// a connection that is down has no share, and the other takes it all
+	states["wan2"] = "offline"
+	if r = get(); r.Shares["wan"] != 100 || r.Shares["wan2"] != 0 {
+		t.Fatalf("%+v", r.Shares)
+	}
+	states["wan2"] = "online"
+	// changing them
+	rec := e.putJSON(e.api.HandleFailover, `{"weight_first":2,"weight_second":2}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	staged, _ := e.mgr.StagedNetworkConfig()
+	if f := staged.WanFailover; f == nil || !f.Balanced || f.WeightFirst != 2 || f.WeightSecond != 2 {
+		t.Fatalf("%+v", f)
+	}
+	// the shares shown are what is in effect, not the draft
+	if r = get(); r.Shares["wan"] != 25 || !r.Pending {
+		t.Fatalf("%+v", r)
+	}
+	// the default weight is not stored, and failover is the default mode
+	e.putJSON(e.api.HandleFailover, `{"balanced":false,"weight_first":1,"weight_second":1}`)
+	if staged, _ = e.mgr.StagedNetworkConfig(); staged.WanFailover != nil {
+		t.Fatalf("%+v", staged.WanFailover)
+	}
+	rec = e.putJSON(e.api.HandleFailover, `{"weight_second":101}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"field":"weight_second"`) {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}

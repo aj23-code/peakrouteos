@@ -161,7 +161,7 @@ func newRig(t *testing.T) *rig {
 	r.cfg = config.NetworkConfig{WanInterface: "eth0", WanMode: "dhcp", LanInterfaces: []string{"eth1"},
 		Wan2: &config.WanConfig{Interface: "eth2", Mode: "dhcp"}}
 	r.c = &Controller{Config: func() config.NetworkConfig { return r.cfg }, State: func(id string) string { return r.state[id] }, Runner: r.m,
-		Now: func() time.Time { return r.now }}
+		Now: func() time.Time { return r.now }, RunDir: t.TempDir()}
 	return r
 }
 
@@ -183,7 +183,7 @@ func TestARouterWithOneConnectionIsLeftAlone(t *testing.T) {
 func TestAFailoverRaisesTheDeadRoutesMetricAndForgetsItsConnectionsAndFailbackWaitsForTheRecoveryTime(t *testing.T) {
 	r := newRig(t)
 	r.step(0)
-	if r.m.metrics() != "eth0=100 eth2=200" || len(r.m.calls) != 1 {
+	if r.m.metrics() != "eth0=100 eth2=200" || r.m.called("ip -4 route replace default")+r.m.called("ip -4 route del default") != 0 {
 		t.Fatalf("a healthy pair is left as it is: %s %v", r.m.metrics(), r.m.calls)
 	}
 	// the preferred connection stops

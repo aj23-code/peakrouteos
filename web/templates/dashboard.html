@@ -490,13 +490,30 @@
 
         <section class="card hidden" id="inet-failover-card">
           <div class="net-card-head">
-            <h2>Failover</h2>
+            <h2>Two connections</h2>
             <span id="inet-fo-draft" class="tag tag-draft hidden">Draft</span>
           </div>
           <p id="inet-fo-status" class="inet-fo-status" role="status"></p>
-          <p class="form-hint">The preferred connection carries the traffic. When its health check says it is down, the other one does; connections that were open break and start again through the other one.</p>
-          <label class="check"><input type="checkbox" id="inet-fo-failback"> Go back to the preferred connection when it is up again</label>
-          <div class="form-grid">
+          <div class="radio-group" role="radiogroup" aria-label="How the two connections are used">
+            <label class="radio"><input type="radio" name="inet-fo-mode" value="failover" id="inet-fo-mode-failover"> Failover<span class="form-hint">The preferred connection carries the traffic. When its health check says it is down, the other one does; connections that were open break and start again through the other one.</span></label>
+            <label class="radio"><input type="radio" name="inet-fo-mode" value="balanced" id="inet-fo-mode-balanced"> Share the traffic<span class="form-hint">Every new connection from your networks is given to one of the connections that are up, by weight, and stays on it. A connection that is down gets none. One download never uses both lines.</span></label>
+          </div>
+          <div id="inet-fo-balance-fields" class="form-grid">
+            <div class="form-field" data-field="weight_first">
+              <label for="inet-fo-w1">Weight of Internet</label>
+              <input type="text" id="inet-fo-w1" inputmode="numeric" autocomplete="off" spellcheck="false">
+              <p class="form-hint">1 to 100. A line of 300 Mbit/s and one of 100 Mbit/s: 3 and 1.</p>
+              <p class="field-error hidden" data-error="weight_first"></p>
+            </div>
+            <div class="form-field" data-field="weight_second">
+              <label for="inet-fo-w2">Weight of Internet 2</label>
+              <input type="text" id="inet-fo-w2" inputmode="numeric" autocomplete="off" spellcheck="false">
+              <p class="field-error hidden" data-error="weight_second"></p>
+            </div>
+            <p class="form-hint form-field--wide">The router&rsquo;s own traffic (updates, DNS, time) uses the preferred connection. Whatever reaches the router on one connection, such as a forwarded port or a VPN, is answered through that same connection.</p>
+          </div>
+          <label class="check" id="inet-fo-failback-row"><input type="checkbox" id="inet-fo-failback"> Go back to the preferred connection when it is up again</label>
+          <div class="form-grid" id="inet-fo-recovery-row">
             <div class="form-field" data-field="recovery_seconds">
               <label for="inet-fo-recovery">Wait before going back (seconds)</label>
               <input type="text" id="inet-fo-recovery" inputmode="numeric" autocomplete="off" spellcheck="false">

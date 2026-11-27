@@ -772,6 +772,9 @@ window.InternetModule = (function () {
         const st = failover.status;
         let text;
         if (!st) text = 'The router is starting to watch both connections.';
+        else if (failover.balanced && failover.shares) {
+            text = 'The traffic is shared: ' + ['wan', 'wan2'].map(id => `${foName(id)} ${failover.shares[id] || 0}%` + ((failover.status.states || {})[id] === 'offline' ? ' (down)' : '')).join(', ') + '.';
+        }
         else if (!st.failed_over) text = `${foName(st.active)} is carrying the traffic.`;
         else {
             text = `${foName(st.active)} is carrying the traffic` + (st.since ? ' since ' + foTime(st.since) : '') + (st.reason ? ` (${st.reason}).` : '.');
@@ -785,8 +788,11 @@ window.InternetModule = (function () {
             ? ev.slice(0, 10).map(e => `<li>${escapeHtml(foTime(e.time))} <span class="form-hint">${escapeHtml(foName(e.from))} \u2192 ${escapeHtml(foName(e.to))}: ${escapeHtml(e.reason || '')}</span></li>`).join('')
             : '<li class="form-hint">Nothing since the router started.</li>';
         const lock = !editable || foSaving;
-        $('inet-fo-failback').disabled = lock;
-        $('inet-fo-recovery').disabled = lock;
+        const balanced = $('inet-fo-mode-balanced').checked;
+        $('inet-fo-balance-fields').classList.toggle('hidden', !balanced);
+        $('inet-fo-failback-row').classList.toggle('hidden', balanced);
+        $('inet-fo-recovery-row').classList.toggle('hidden', balanced);
+        ['inet-fo-mode-failover', 'inet-fo-mode-balanced', 'inet-fo-failback', 'inet-fo-recovery', 'inet-fo-w1', 'inet-fo-w2'].forEach(id => { $(id).disabled = lock; });
         const dirty = foDirty();
         $('inet-fo-save').disabled = lock || !dirty;
         $('inet-fo-reset').disabled = foSaving || !dirty;
@@ -794,15 +800,21 @@ window.InternetModule = (function () {
     }
 
     let foSaving = false;
-    const foValues = () => ({ failback: $('inet-fo-failback').checked, recovery: intOf($('inet-fo-recovery').value) });
+    const foValues = () => ({ failback: $('inet-fo-failback').checked, recovery: intOf($('inet-fo-recovery').value), balanced: $('inet-fo-mode-balanced').checked,
+        w1: intOf($('inet-fo-w1').value), w2: intOf($('inet-fo-w2').value) });
     function foDirty() {
         if (!failover) return false;
         const v = foValues();
-        return v.failback !== failover.failback || v.recovery !== failover.recovery_seconds;
+        return v.failback !== failover.failback || v.recovery !== failover.recovery_seconds || v.balanced !== !!failover.balanced ||
+            v.w1 !== (failover.weight_first || 1) || v.w2 !== (failover.weight_second || 1);
     }
     function foFill() {
         $('inet-fo-failback').checked = failover.failback;
         $('inet-fo-recovery').value = String(failover.recovery_seconds);
+        $('inet-fo-mode-balanced').checked = !!failover.balanced;
+        $('inet-fo-mode-failover').checked = !failover.balanced;
+        $('inet-fo-w1').value = String(failover.weight_first || 1);
+        $('inet-fo-w2').value = String(failover.weight_second || 1);
     }
 
     async function loadFailover(keepEdits) {
@@ -816,13 +828,17 @@ window.InternetModule = (function () {
     async function saveFailover() {
         clearFieldErrors();
         const v = foValues();
-        if (Number.isNaN(v.recovery)) { showFieldErrors([{ field: 'recovery_seconds', message: 'must be a whole number' }]); return; }
+        const bad = [];
+        if (Number.isNaN(v.recovery)) bad.push({ field: 'recovery_seconds', message: 'must be a whole number' });
+        if (Number.isNaN(v.w1) || v.w1 === 0) bad.push({ field: 'weight_first', message: 'must be a whole number from 1 to 100' });
+        if (Number.isNaN(v.w2) || v.w2 === 0) bad.push({ field: 'weight_second', message: 'must be a whole number from 1 to 100' });
+        if (bad.length) { showFieldErrors(bad); return; }
         foSaving = true;
         renderFailover();
         const res = await apiFetch('/api/v1/failover', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ failback: v.failback, recovery_seconds: v.recovery }),
+            body: JSON.stringify({ failback: v.failback, recovery_seconds: v.recovery, balanced: v.balanced, weight_first: v.w1, weight_second: v.w2 }),
         });
         foSaving = false;
         if (!res) { showMessage('The router did not answer. Try again.', 'error'); renderFailover(); return; }

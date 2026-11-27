@@ -142,6 +142,8 @@ var errorField = map[string]string{
 	"pppoe_service":                 "pppoe.service",
 	"wan_probe.targets":             "probe.targets",
 	"wan_failover.recovery_seconds": "recovery_seconds",
+	"wan_failover.weight_first":     "weight_first",
+	"wan_failover.weight_second":    "weight_second",
 	"wan_probe.every_seconds":       "probe.every_seconds",
 	"wan_probe.down_after":          "probe.down_after",
 	"wan2.probe.targets":            "probe.targets",

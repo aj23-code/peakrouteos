@@ -254,3 +254,44 @@ func TestAConnectionsHealthCheckSettingsHaveDefaultsAndLimits(t *testing.T) {
 		t.Errorf("%+v", got)
 	}
 }
+
+func TestSharingTheTrafficHasDefaultsAndWeightsWithLimits(t *testing.T) {
+	c := twoWans()
+	set := c.FailoverSettings()
+	if set.Balanced || set.Weights["wan"] != 1 || set.Weights["wan2"] != 1 || c.Balanced() {
+		t.Fatalf("%+v", set)
+	}
+	c.WanFailover = &FailoverConfig{Balanced: true, WeightFirst: 1, WeightSecond: 3}
+	set = c.FailoverSettings()
+	if !set.Balanced || set.Weights["wan"] != 1 || set.Weights["wan2"] != 3 || !c.Balanced() {
+		t.Fatalf("%+v", set)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	// sharing needs two connections
+	one := validNet()
+	one.WanFailover = &FailoverConfig{Balanced: true}
+	if one.Balanced() {
+		t.Error("one connection is shared")
+	}
+	for field, f := range map[string]FailoverConfig{
+		"wan_failover.weight_first":  {WeightFirst: 101},
+		"wan_failover.weight_second": {WeightSecond: -2},
+	} {
+		d := twoWans()
+		d.WanFailover = &f
+		if !errorFields(d.Validate())[field] {
+			t.Errorf("%s accepted", field)
+		}
+	}
+	a, b := twoWans(), twoWans()
+	b.WanFailover = &FailoverConfig{Balanced: true, WeightSecond: 3}
+	got := map[string]Change{}
+	for _, ch := range DiffNetwork(a, b) {
+		got[ch.Field] = ch
+	}
+	if ch := got["wan_failover"]; !strings.Contains(ch.New, "shares the traffic") || !strings.Contains(ch.New, "weights 1 and 3") {
+		t.Errorf("%+v", got)
+	}
+}
