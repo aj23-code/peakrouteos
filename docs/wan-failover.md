@@ -132,6 +132,18 @@ Settings (new, on the Internet page, shown when there is a second uplink):
   servers work on both connections already; the other end finds them at the new address through the name, within that name's TTL. With
   the default five second checks, three failures and the 3 s wait a service is back within about 20-25 s of the line failing, and a
   DDNS name as soon as its provider's TTL lets clients see it.
+- **Switching by hand** (`Controller.Pin`, `POST /api/v1/failover/switch` with `wan`, `wan2` or `auto`; the *Use Internet now* buttons):
+  for a line that is slow but not down. The chosen connection becomes the preferred one at once, with no recovery time, and no draft or
+  commit is involved; if it goes down the traffic still moves to the other; *Back to automatic* hands the choice to the settings again
+  (and moves the traffic to the preferred connection at once). It is not kept over a restart. In sharing mode it moves the router's own
+  traffic; the shares are the weights.
+- **The last changes are kept in a file** (`failover_events.json` in the configuration folder, the last 30, written at each move; a file
+  that cannot be read is ignored). A restarted controller starts on the preferred connection, so the first state of the page after a
+  restart is "nothing moved" until the checks have judged the lines again (about 15 s).
+- **The router's own traffic** follows the main table: in failover mode that is the connection that carries the traffic, so it moves
+  with an outage (and in sharing mode too: the preferred connection, or the other while that one is down).
+- **A note on metered connections** is on the Two connections card: while a metered connection (mobile data, a data cap) carries the
+  traffic everything that uses the internet uses it; make the one you pay by the connection that is not preferred.
 - **Not shared:** the router's own traffic (updates, DNS, time) follows the main table, the preferred connection; one connection is
   never split over both lines; a site that ties a session to the visitor's address sees a change when a *new* connection takes the other
   line. A UDP service in the router that answers with the address the route to the sender picks (rather than the address it was reached

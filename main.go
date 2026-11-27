@@ -165,6 +165,8 @@ func main() {
 	}
 	// (it runs for every router: with no second connection it only takes away what the second left behind)
 	whileRouter(failoverCtl.Run)
+	failoverCtl.EventsPath = filepath.Join(configDir, "failover_events.json")
+	netAPI.FailoverPin = failoverCtl.Pin
 	netAPI.FailoverStatus = func(cfg config.NetworkConfig) (failover.Status, int) {
 		return failoverCtl.Status(), failoverCtl.RecoveringIn(cfg)
 	}
@@ -441,6 +443,7 @@ func main() {
 	mux.HandleFunc("/api/v1/dns/forwards/{id}", requireAuth(routerOnly(netAPI.HandleDNSForward)))
 	mux.HandleFunc("/api/v1/uplinks", requireAuth(routerOnly(netAPI.HandleUplinks)))
 	mux.HandleFunc("/api/v1/failover", requireAuth(routerOnly(netAPI.HandleFailover)))
+	mux.HandleFunc("/api/v1/failover/switch", requireAuth(routerOnly(netAPI.HandleFailoverSwitch)))
 	mux.HandleFunc("/api/v1/uplinks/{id}", requireAuth(routerOnly(netAPI.HandleUplink)))
 	mux.HandleFunc("/api/v1/uplinks/{id}/health", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		switch r.PathValue("id") {

@@ -731,6 +731,10 @@ window.InternetModule = (function () {
         $('inet-failover-card').addEventListener('input', renderFailover);
         $('inet-failover-card').addEventListener('change', renderFailover);
         $('inet-fo-save').addEventListener('click', saveFailover);
+        $('inet-fo-switch').addEventListener('click', (e) => {
+            const b = e.target.closest('button[data-switch]');
+            if (b && !b.disabled) switchTo(b.dataset.switch);
+        });
         $('inet-fo-reset').addEventListener('click', () => { clearFieldErrors(); if (failover) foFill(); renderFailover(); });
         $('inet-card').addEventListener('input', renderForm);
         $('inet-card').addEventListener('change', renderForm);
@@ -780,7 +784,16 @@ window.InternetModule = (function () {
             text = `${foName(st.active)} is carrying the traffic` + (st.since ? ' since ' + foTime(st.since) : '') + (st.reason ? ` (${st.reason}).` : '.');
             if (failover.recovering_in_seconds) text += ` ${foName(st.preferred)} is up again and takes over in ${failover.recovering_in_seconds} s.`;
         }
+        if (st && st.pinned) text += ' It stays so until you go back to automatic.';
         $('inet-fo-status').textContent = text;
+        const swLock = !editable || foSwitching;
+        [['wan', 'inet-fo-to-wan'], ['wan2', 'inet-fo-to-wan2']].forEach(([id, btn]) => {
+            const b = $(btn);
+            b.disabled = swLock || !!(st && st.active === id); // the connection that carries the traffic needs no switch to
+            b.classList.toggle('hidden', !!(st && st.pinned === id));
+        });
+        $('inet-fo-to-auto').classList.toggle('hidden', !(st && st.pinned));
+        $('inet-fo-to-auto').disabled = swLock;
         $('inet-fo-status').classList.toggle('inet-bad', !!(st && st.failed_over));
         $('inet-fo-draft').classList.toggle('hidden', !failover.pending);
         const ev = (st && st.events) || [];
@@ -800,6 +813,27 @@ window.InternetModule = (function () {
     }
 
     let foSaving = false;
+    let foSwitching = false;
+
+    async function switchTo(to) {
+        foSwitching = true;
+        renderFailover();
+        const res = await apiFetch('/api/v1/failover/switch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ to }),
+        });
+        foSwitching = false;
+        if (!res || !res.ok) {
+            let err = {};
+            try { err = res ? await res.json() : {}; } catch (e) { /* not JSON */ }
+            showMessage(err.error || 'The traffic could not be switched.', 'error');
+            renderFailover();
+            return;
+        }
+        failover = await res.json();
+        renderFailover();
+    }
     const foValues = () => ({ failback: $('inet-fo-failback').checked, recovery: intOf($('inet-fo-recovery').value), balanced: $('inet-fo-mode-balanced').checked,
         w1: intOf($('inet-fo-w1').value), w2: intOf($('inet-fo-w2').value) });
     function foDirty() {

@@ -129,3 +129,36 @@ func (a *API) HandleFailover(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, a.failoverView())
 }
+
+type switchRequest struct {
+	To string `json:"to"` // "wan", "wan2" or "auto"
+}
+
+// HandleFailoverSwitch: POST /api/v1/failover/switch {"to": "wan" | "wan2" | "auto"} moves the traffic to a connection now, or hands it back
+// to the settings. It is not a change of the configuration (no draft, no commit): it lasts until "auto" is chosen or the daemon restarts.
+func (a *API) HandleFailoverSwitch(w http.ResponseWriter, r *http.Request) {
+	if !allowMethods(w, r, http.MethodPost) {
+		return
+	}
+	var req switchRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	switch {
+	case a.FailoverPin == nil:
+		writeJSON(w, http.StatusNotImplemented, errorBody{Error: "switching by hand is not available on this system"})
+		return
+	case !a.Manager.NetworkConfig().HasWan2():
+		writeJSON(w, http.StatusConflict, errorBody{Error: "there is no second internet connection in effect"})
+		return
+	case req.To != config.WanFirst && req.To != config.WanSecond && req.To != "auto":
+		fieldErrors(w, http.StatusBadRequest, "Choose wan, wan2 or auto.", []config.FieldError{{Field: "to", Message: "must be wan, wan2 or auto"}})
+		return
+	}
+	id := req.To
+	if id == "auto" {
+		id = ""
+	}
+	a.FailoverPin(id)
+	writeJSON(w, http.StatusOK, a.failoverView())
+}

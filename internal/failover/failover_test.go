@@ -3,6 +3,7 @@ package failover
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -337,5 +338,94 @@ func TestTheServicesAreToldOnceForEachMoveAndNeverForAnythingElse(t *testing.T) 
 	r.step(200 * time.Second)
 	if count() != 2 || told[1].To != "wan" {
 		t.Fatalf("%+v", told)
+	}
+}
+
+func TestTheAdministratorCanSwitchTheTrafficByHandAndBackToAutomatic(t *testing.T) {
+	r := newRig(t)
+	r.step(0)
+	// to the second connection, at once, though the first is fine
+	r.c.Pin("wan2")
+	r.step(time.Second)
+	st := r.c.Status()
+	if st.Active != "wan2" || st.Pinned != "wan2" || !st.FailedOver && st.Preferred != "wan2" || r.m.metrics() != "eth0=200 eth2=100" {
+		t.Fatalf("%s %+v", r.m.metrics(), st)
+	}
+	if ev := st.Events; len(ev) != 1 || ev[0].Reason != "switched by hand" || ev[0].To != "wan2" {
+		t.Fatalf("%+v", ev)
+	}
+	// it stays there as long as the pinned connection works, however long the first has been up
+	r.step(time.Hour)
+	if r.c.Status().Active != "wan2" {
+		t.Fatalf("%+v", r.c.Status())
+	}
+	// the pinned connection fails: the traffic still goes to the other
+	r.state["wan2"] = "offline"
+	r.step(time.Second)
+	if r.c.Status().Active != "wan" || r.m.metrics() != "eth0=100 eth2=1000" {
+		t.Fatalf("%s %+v", r.m.metrics(), r.c.Status())
+	}
+	r.state["wan2"] = "online"
+	r.step(time.Second)
+	r.step(300 * time.Second)
+	if r.c.Status().Active != "wan2" {
+		t.Fatalf("the pinned connection is back and is the one chosen: %+v", r.c.Status())
+	}
+	// back to automatic: the preferred connection at once (no recovery time to wait: nothing failed)
+	r.c.Pin("")
+	r.step(time.Second)
+	st = r.c.Status()
+	if st.Active != "wan" || st.Pinned != "" || r.m.metrics() != "eth0=100 eth2=200" {
+		t.Fatalf("%s %+v", r.m.metrics(), st)
+	}
+	if ev := st.Events; ev[0].Reason != "back to automatic" {
+		t.Fatalf("%+v", ev[0])
+	}
+	// pinning the connection that already carries the traffic changes nothing
+	n := len(st.Events)
+	r.c.Pin("wan")
+	r.step(time.Second)
+	if len(r.c.Status().Events) != n {
+		t.Fatalf("%+v", r.c.Status().Events)
+	}
+}
+
+func TestWhileSharingTheRoutersOwnTrafficStillMovesWhenThePreferredConnectionFails(t *testing.T) {
+	r := newRig(t)
+	r.cfg.WanFailover = &config.FailoverConfig{Balanced: true}
+	r.step(0)
+	r.state["wan"] = "offline"
+	r.step(time.Second)
+	if r.c.Status().Active != "wan2" || r.m.metrics() != "eth0=1000 eth2=100" {
+		t.Fatalf("%s %+v", r.m.metrics(), r.c.Status())
+	}
+}
+
+func TestTheLastChangesSurviveARestartOfTheDaemon(t *testing.T) {
+	path := t.TempDir() + "/sub/failover_events.json"
+	r := newRig(t)
+	r.c.EventsPath = path
+	r.step(0)
+	r.state["wan"] = "offline"
+	r.step(time.Second)
+	// a new controller (the daemon restarted) shows what happened before
+	r2 := newRig(t)
+	r2.c.EventsPath = path
+	if ev := r2.c.Status().Events; len(ev) != 1 || ev[0].To != "wan2" || !strings.Contains(ev[0].Reason, "Internet is down") {
+		t.Fatalf("%+v", ev)
+	}
+	// and the new changes come before the old ones (a restarted controller starts on the preferred connection, so nothing moved yet)
+	r2.step(0)
+	r2.state["wan"] = "offline"
+	r2.step(time.Second)
+	if ev := r2.c.Status().Events; len(ev) != 2 || !ev[0].Time.After(ev[1].Time) && !ev[0].Time.Equal(ev[1].Time) {
+		t.Fatalf("%+v", ev)
+	}
+	// a file that is not what it should be is ignored
+	os.WriteFile(path, []byte("not json"), 0600)
+	r3 := newRig(t)
+	r3.c.EventsPath = path
+	if ev := r3.c.Status().Events; len(ev) != 0 {
+		t.Fatalf("%+v", ev)
 	}
 }

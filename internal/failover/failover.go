@@ -53,7 +53,8 @@ type Status struct {
 	Reason     string            `json:"reason,omitempty"` // why
 	States     map[string]string `json:"states"`           // each connection's verdict
 	Recovering int               `json:"recovering_seconds,omitempty"`
-	Events     []Event           `json:"events"` // newest first
+	Pinned     string            `json:"pinned,omitempty"` // the connection that was switched to by hand, until "automatic" is chosen
+	Events     []Event           `json:"events"`           // newest first
 }
 
 // Controller decides which connection carries the traffic and keeps the routes that way.
@@ -67,17 +68,22 @@ type Controller struct {
 	// OnChange, when set, is called (in a goroutine of its own) after the traffic has moved to the other connection, with the routes
 	// already changed: the services that have to follow (names, tunnels) are told here.
 	OnChange func(Event)
+	// EventsPath, when set, is a small file the last changes are kept in (read when the controller starts, written at each change).
+	EventsPath string
 
-	mu        sync.Mutex
-	active    string
-	since     time.Time
-	reason    string
-	preferred string
-	upSince   map[string]time.Time
-	states    map[string]string
-	events    []Event
-	lbApplied string // the firewall table that is loaded
-	managed   bool   // tables, rules and the firewall table of balance.go were made
+	mu         sync.Mutex
+	active     string
+	since      time.Time
+	reason     string
+	preferred  string
+	upSince    map[string]time.Time
+	states     map[string]string
+	events     []Event
+	pinned     string // a connection the administrator switched to by hand ("": the settings decide); not kept over a restart
+	pinChanged bool   // the pin was set or cleared since the last look: the traffic moves at once
+	loaded     bool   // the event file was read
+	lbApplied  string // the firewall table that is loaded
+	managed    bool   // tables, rules and the firewall table of balance.go were made
 }
 
 func logf(format string, args ...any) { log.Printf("[failover] "+format, args...) }
@@ -173,11 +179,15 @@ func (c *Controller) Step(ctx context.Context) {
 		return
 	}
 	now := c.now()
-	pref := preferredOf(cfg)
 	set := cfg.FailoverSettings()
 	ids := []string{config.WanFirst, config.WanSecond}
 
 	c.mu.Lock()
+	c.loadEvents()
+	pref := preferredOf(cfg)
+	if c.pinned != "" {
+		pref = c.pinned // switched by hand: it is the preferred connection until the administrator says automatic (it is still left if it is down)
+	}
 	if c.upSince == nil {
 		c.upSince = map[string]time.Time{}
 	}
@@ -196,14 +206,20 @@ func (c *Controller) Step(ctx context.Context) {
 	c.states = states
 	prev, changedPref := c.active, false
 	// a changed preference is taken at once, with no waiting: the administrator asked for it (unless that connection is down)
-	if c.preferred != "" && c.preferred != pref && prev != "" {
+	if (c.preferred != "" && c.preferred != pref || c.pinChanged) && prev != "" {
 		prev, changedPref = "", true
 	}
 	c.preferred = pref
 	next, why := decide(prev, pref, states, c.upSince, now, set)
 	if changedPref && why == "" {
 		why = "the preferred connection was changed"
+		if c.pinned != "" {
+			why = "switched by hand"
+		} else if c.pinChanged {
+			why = "back to automatic"
+		}
 	}
+	c.pinChanged = false
 	left := c.active
 	if next != c.active {
 		if c.active != "" {
@@ -212,6 +228,7 @@ func (c *Controller) Step(ctx context.Context) {
 				c.events = c.events[:maxEvents]
 			}
 			log.Printf("[failover] the traffic moves from %s to %s: %s", c.active, next, why)
+			c.saveEvents()
 		}
 		c.active, c.since, c.reason = next, now, why
 	}
@@ -363,11 +380,21 @@ func addrsOf(out string) []netip.Addr {
 	return as
 }
 
+// Pin switches the traffic to a connection by hand ("wan" or "wan2"), or back to automatic ("": the settings decide again). The
+// connection is the preferred one from now on, at once and without waiting for a recovery time; if it is down the traffic still goes
+// to the other. It is not kept over a restart of the daemon.
+func (c *Controller) Pin(id string) {
+	c.mu.Lock()
+	c.pinned, c.pinChanged = id, true
+	c.mu.Unlock()
+}
+
 // Status describes what is happening now.
 func (c *Controller) Status() Status {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	st := Status{Active: c.active, Preferred: c.preferred, States: map[string]string{}, Events: append([]Event{}, c.events...)}
+	c.loadEvents()
+	st := Status{Active: c.active, Preferred: c.preferred, Pinned: c.pinned, States: map[string]string{}, Events: append([]Event{}, c.events...)}
 	for k, v := range c.states {
 		st.States[k] = v
 	}

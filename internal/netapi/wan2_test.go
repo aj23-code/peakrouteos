@@ -383,3 +383,45 @@ func TestSharingTheTrafficHasWeightsOfItsOwnAndTheSharesFollowTheHealthOfTheConn
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestTheTrafficCanBeSwitchedByHandWithoutADraft(t *testing.T) {
+	c := baseline()
+	c.Wan2 = &config.WanConfig{Interface: "eth2", Mode: "dhcp"}
+	e := newEnv(t, &c)
+	post := func(body string) *httptest.ResponseRecorder {
+		return e.do(e.api.HandleFailoverSwitch, http.MethodPost, body, "application/json")
+	}
+	if rec := post(`{"to":"wan2"}`); rec.Code != http.StatusNotImplemented {
+		t.Fatalf("no controller: %d", rec.Code)
+	}
+	var pinned []string
+	e.api.FailoverPin = func(id string) { pinned = append(pinned, id) }
+	for body, want := range map[string]string{`{"to":"wan2"}`: "wan2", `{"to":"wan"}`: "wan", `{"to":"auto"}`: ""} {
+		if rec := post(body); rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", body, rec.Code, rec.Body)
+		}
+		if got := pinned[len(pinned)-1]; got != want {
+			t.Errorf("%s: pinned %q", body, got)
+		}
+	}
+	for _, body := range []string{`{"to":"wan3"}`, `{"to":""}`, `{}`} {
+		if rec := post(body); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d", body, rec.Code)
+		}
+	}
+	if len(pinned) != 3 {
+		t.Errorf("%v", pinned)
+	}
+	if staged, has := e.mgr.StagedNetworkConfig(); has && len(e.staged()) != 0 {
+		t.Errorf("a switch by hand made a draft: %+v", staged)
+	}
+	// nothing to switch with one connection in effect
+	one := newEnv(t, nil)
+	one.api.FailoverPin = func(string) { t.Error("pinned with one connection") }
+	if rec := one.do(one.api.HandleFailoverSwitch, http.MethodPost, `{"to":"wan2"}`, "application/json"); rec.Code != http.StatusConflict {
+		t.Fatalf("%d", rec.Code)
+	}
+	if rec := e.get(e.api.HandleFailoverSwitch); rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("%d", rec.Code)
+	}
+}

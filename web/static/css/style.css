@@ -1837,5 +1837,6 @@ a.cfg-btn { text-decoration: none; display: inline-block; }
 .up-job { margin-top: 0.8rem; }
 
 .inet-fo-status { margin: 0.4rem 0; font-size: 0.95rem; }
+.inet-fo-metered { margin: 0.8rem 0 0.4rem; }
 .inet-fo-events-title { margin: 1rem 0 0.3rem; font-size: 0.9rem; }
 .ov-note--warn { color: var(--accent-amber); }

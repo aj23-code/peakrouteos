@@ -67,6 +67,8 @@ type API struct {
 	// FailoverStatus says which internet connection carries the traffic and why, and how many seconds remain before it goes back to the
 	// preferred one (0: not waiting). Nil means it is not reported.
 	FailoverStatus func(cfg config.NetworkConfig) (failover.Status, int)
+	// FailoverPin switches the traffic to a connection by hand ("wan", "wan2") or back to automatic (""). Nil: not available.
+	FailoverPin func(id string)
 	// HardwareClock says whether the machine has a real-time clock chip. Nil means it is not reported (and not warned about).
 	HardwareClock func() bool
 	// SyslogStatuses says how sending to each syslog server in effect is going; SyslogTest sends a test message to each.
