@@ -28,6 +28,10 @@ func TestSharingTheTrafficAndAnsweringTheWayItCameInTheRealKernel(t *testing.T) 
 			t.Skipf("%s is not installed", tool)
 		}
 	}
+	// (some machines, such as GitHub's runners, do not let a program make a user and network namespace)
+	if out, err := exec.Command("unshare", "-rn", "true").CombinedOutput(); err != nil {
+		t.Skipf("no user and network namespaces here: %v %s", err, out)
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
