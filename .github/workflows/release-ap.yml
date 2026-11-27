@@ -51,7 +51,7 @@ jobs:
           pigz -6 -c "${name}.rootfs" > "../../dist/${name}.rootfs.gz"
           ( cd ../../dist && sha256sum "${name}.rootfs.gz" > "${name}.rootfs.gz.sha256" )
           ls -lh ../../dist
-      - name: Sign (the access points only install what this key signed: docs/updates.md, "Signed releases")
+      - name: Sign (the access points only install what this key signed, see docs/updates.md)
         env:
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
         run: |

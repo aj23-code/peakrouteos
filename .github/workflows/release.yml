@@ -40,7 +40,7 @@ jobs:
           pigz -6 -c peakroute-os.img > "dist/${name}.img.gz"
           ( cd dist && sha256sum "${name}.img.gz" > "${name}.img.gz.sha256" )
           ls -lh dist
-      - name: Sign (the routers only install what this key signed: docs/updates.md, "Signed releases")
+      - name: Sign (the routers only install what this key signed, see docs/updates.md)
         env:
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
         run: |
