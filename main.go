@@ -19,6 +19,7 @@ import (
 	"peakroute/internal/config"
 	"peakroute/internal/daemon"
 	"peakroute/internal/ddns"
+	"peakroute/internal/failover"
 	"peakroute/internal/filtering"
 	"peakroute/internal/forget"
 	"peakroute/internal/fwlog"
@@ -150,6 +151,22 @@ func main() {
 	wanProbe2 := newProber(config.WanSecond)
 	whileRouter(wanProbe.Run)
 	go daemon.RunWhile(pollerCtx, routerWorkEvery, func() bool { return isRouter() && cfgMgr.NetworkConfig().HasWan2() }, wanProbe2.Run)
+
+	// with two connections: the traffic goes through the preferred one, and through the other while that one is down
+	failoverCtl := &failover.Controller{
+		Config: cfgMgr.NetworkConfig,
+		State: func(id string) string {
+			if id == config.WanSecond {
+				return wanProbe2.Status().State
+			}
+			return wanProbe.Status().State
+		},
+		Runner: runner,
+	}
+	go daemon.RunWhile(pollerCtx, routerWorkEvery, func() bool { return isRouter() && cfgMgr.NetworkConfig().HasWan2() }, failoverCtl.Run)
+	netAPI.FailoverStatus = func(cfg config.NetworkConfig) (failover.Status, int) {
+		return failoverCtl.Status(), failoverCtl.RecoveringIn(cfg)
+	}
 
 	// answer time questions on the networks that serve the time (the router's own clock follows its time servers; this repeats it)
 	timeServer := &timeserver.Server{
@@ -390,6 +407,7 @@ func main() {
 	mux.HandleFunc("/api/v1/dns/forwards", requireAuth(routerOnly(netAPI.HandleDNSForwards)))
 	mux.HandleFunc("/api/v1/dns/forwards/{id}", requireAuth(routerOnly(netAPI.HandleDNSForward)))
 	mux.HandleFunc("/api/v1/uplinks", requireAuth(routerOnly(netAPI.HandleUplinks)))
+	mux.HandleFunc("/api/v1/failover", requireAuth(routerOnly(netAPI.HandleFailover)))
 	mux.HandleFunc("/api/v1/uplinks/{id}", requireAuth(routerOnly(netAPI.HandleUplink)))
 	mux.HandleFunc("/api/v1/uplinks/{id}/health", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		switch r.PathValue("id") {

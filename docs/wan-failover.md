@@ -1,4 +1,4 @@
-# A second internet connection: failover and load balancing (plan, 2026-11-27; phases 1 and 2 built 2026-11-27)
+# A second internet connection: failover and load balancing (plan, 2026-11-27; phases 1, 2 and 3 built 2026-11-27)
 
 Goal: a router that can have **two internet connections** (WAN and WAN 2), watches each one, and either **fails over** from the
 first to the second when the first stops working, or **balances** the networks' traffic over both, switched on and managed like
@@ -107,6 +107,33 @@ Settings (new, on the Internet page, shown when there is a second uplink):
 | Wireless (the AP/cellular case) | a USB tethering dongle or a second router shows up as a port; nothing special |
 
 ## 7. Phases
+
+**Phase 3 is built** (2026-11-27): the failover.
+
+- **`internal/failover`** (`Controller`, started while the router has two connections): every 2 s it reads each connection's verdict
+  (phase 2), decides which connection carries the traffic and sets the metrics of the default routes: **carrying 100, up and waiting
+  200, down 1000**. A down connection keeps its route, so its checks can still go out through it and see it come back. A route that
+  comes back with another metric (a DHCP renewal, a PPP reconnect) is put right at the next look. A connection with no default route
+  yet (no lease) is left alone, and a gateway is never made up.
+- **The rules** (`decide`): the preferred connection carries the traffic. It is left only when it is **down** (a connection not yet
+  judged is not down) and the other one is not. The traffic goes back when the preferred one has been **up for the recovery time**
+  (counted from when it came up, so one that keeps dropping starts again), or at once when the other one fails. **With both down
+  nothing moves.** Choosing another preferred connection moves the traffic at once (unless that one is down).
+- **Connections that were open** through the connection that was left are ended (`conntrack -D --reply-dst <its address>`): they
+  were translated to that address and would otherwise wait for a timeout, so devices start again through the other connection.
+- **Settings** (`wan_failover`, `config.FailoverConfig`; nothing is written for the defaults): *go back when it is up again* (on) and
+  *wait before going back* (120 s, 10-3600). `GET/PUT /api/v1/failover` returns and stages them and reports the state: which
+  connection carries the traffic, since when and why, the verdicts, the seconds left before going back, and the last 30 changes
+  (kept in memory, and written to the system log as `[failover]`).
+- **The pages:** a Failover card on the Internet page (status, the two settings, recent changes) and a line on the Overview while the
+  traffic is on the other connection.
+- Tested: the rules (every combination, the recovery time, flapping, failback off, a changed preference, one connection, no route
+  yet, point-to-point routes), the commands against a fake routing table, the API, and **the real kernel with the real health checks**
+  (`failover/kernel_test.go`): the upstream of the first connection stops answering pings and the traffic moves to the second within
+  seconds, the kept route lets the check see it answer again, the traffic goes back only after the recovery time, and with both down
+  nothing moves. The page's script ran in a browser with mocked answers. **Not run on a router with two lines.**
+- Not yet: the other mode (load balanced, phase 4), per-connection SQM, DDNS and DNS (phase 5). A connection that is *up* but too
+  slow is not a failure; only the health check's verdict counts.
 
 **Phase 2 is built** (2026-11-27): the watching.
 

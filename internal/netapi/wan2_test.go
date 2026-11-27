@@ -5,6 +5,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"peakroute/internal/config"
+	"peakroute/internal/failover"
 )
 
 // uplinkOf is the handler for /api/v1/uplinks/{id}.
@@ -202,5 +205,47 @@ func TestMistakesInTheHealthCheckAreReportedOnTheFormsFields(t *testing.T) {
 	}
 	if staged, _ := e.mgr.StagedNetworkConfig(); staged.WanProbe != nil {
 		t.Errorf("a refused change was staged: %+v", staged.WanProbe)
+	}
+}
+
+func TestTheFailoverSettingsAreADraftChangeAndTheStatusIsReportedWhileThereAreTwoConnections(t *testing.T) {
+	e := standard(t)
+	get := func() failoverResponse { return decodeInto[failoverResponse](t, e.get(e.api.HandleFailover)) }
+	if r := get(); r.Available || !r.Failback || r.RecoverySeconds != 120 || r.Status != nil {
+		t.Fatalf("one connection: %+v", r)
+	}
+	// two connections in effect, and a controller that reports
+	c := baseline()
+	c.Wan2 = &config.WanConfig{Interface: "eth2", Mode: "dhcp"}
+	e = newEnv(t, &c)
+	e.api.FailoverStatus = func(cfg config.NetworkConfig) (failover.Status, int) {
+		return failover.Status{Active: "wan2", Preferred: "wan", FailedOver: true, Reason: "Internet is down"}, 42
+	}
+	r := get()
+	if !r.Available || r.Status == nil || r.Status.Active != "wan2" || !r.Status.FailedOver || r.RecoveringIn != 42 || r.Names["wan2"] != "Internet 2" {
+		t.Fatalf("%+v", r)
+	}
+	rec := e.putJSON(e.api.HandleFailover, `{"failback":false,"recovery_seconds":300}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if r = decodeInto[failoverResponse](t, rec); r.Failback || r.RecoverySeconds != 300 || !r.Pending {
+		t.Fatalf("%+v", r)
+	}
+	staged, _ := e.mgr.StagedNetworkConfig()
+	if staged.WanFailover == nil || !staged.WanFailover.NoFailback || staged.WanFailover.RecoverySeconds != 300 {
+		t.Fatalf("%+v", staged.WanFailover)
+	}
+	if e.mgr.NetworkConfig().WanFailover != nil {
+		t.Error("the change took effect without a commit")
+	}
+	// the defaults leave nothing stored
+	e.putJSON(e.api.HandleFailover, `{"failback":true,"recovery_seconds":120}`)
+	if staged, _ = e.mgr.StagedNetworkConfig(); staged.WanFailover != nil {
+		t.Fatalf("%+v", staged.WanFailover)
+	}
+	rec = e.putJSON(e.api.HandleFailover, `{"recovery_seconds":3}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"field":"recovery_seconds"`) {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
 }

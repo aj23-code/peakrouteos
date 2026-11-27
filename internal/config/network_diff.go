@@ -63,6 +63,7 @@ var networkSettings = []networkSetting{
 	{"wan_dns", "WAN DNS servers", func(c NetworkConfig) string { return list(c.WanDNS) }},
 	{"wan_probe", "Internet health check", func(c NetworkConfig) string { return c.ProbeText() }},
 	{"wan2", "Second internet connection", func(c NetworkConfig) string { return c.Wan2Text() }},
+	{"wan_failover", "Internet failover", func(c NetworkConfig) string { return c.FailoverText() }},
 	{"wan_preferred", "Preferred internet connection", func(c NetworkConfig) string { return c.WanPreferredText() }},
 	{"lan_interfaces", "LAN ports", func(c NetworkConfig) string { return list(c.LanInterfaces) }},
 	{"lan_ip", "LAN IP address", func(c NetworkConfig) string { return text(c.LanIP) }},

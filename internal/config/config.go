@@ -120,15 +120,16 @@ type NetworkConfig struct {
 	VPN          *VPNConfig    `json:"vpn,omitempty"`           // tunnels between sites and remote access
 	WanPPPoE     *PPPoEConfig  `json:"wan_pppoe,omitempty"`
 	// A second internet connection (wan2.go) and which of the two the traffic prefers.
-	Wan2          *WanConfig   `json:"wan2,omitempty"`
-	WanPreferred  string       `json:"wan_preferred,omitempty"` // "" or "wan": the first connection; "wan2": the second
-	WanProbe      *ProbeConfig `json:"wan_probe,omitempty"`     // how the first connection is watched (probe.go); the second's is in Wan2
-	uplink        int          // 2 in the view of the second connection (WanView); 0 otherwise
-	LanInterfaces []string     `json:"lan_interfaces,omitempty"`
-	LanIP         string       `json:"lan_ip,omitempty"`
-	LanSubnet     string       `json:"lan_subnet,omitempty"`
-	DHCP          *DHCPConfig  `json:"dhcp,omitempty"`
-	Routes        []Route      `json:"routes,omitempty"`
+	Wan2          *WanConfig      `json:"wan2,omitempty"`
+	WanPreferred  string          `json:"wan_preferred,omitempty"` // "" or "wan": the first connection; "wan2": the second
+	WanProbe      *ProbeConfig    `json:"wan_probe,omitempty"`     // how the first connection is watched (probe.go); the second's is in Wan2
+	WanFailover   *FailoverConfig `json:"wan_failover,omitempty"`  // how the two connections take over from each other (failover.go)
+	uplink        int             // 2 in the view of the second connection (WanView); 0 otherwise
+	LanInterfaces []string        `json:"lan_interfaces,omitempty"`
+	LanIP         string          `json:"lan_ip,omitempty"`
+	LanSubnet     string          `json:"lan_subnet,omitempty"`
+	DHCP          *DHCPConfig     `json:"dhcp,omitempty"`
+	Routes        []Route         `json:"routes,omitempty"`
 	// Addresses kept for particular devices: the DHCP server always gives a device (by its hardware address) the same address
 	Reservations []Reservation `json:"reservations,omitempty"`
 	// Further local networks, and which LAN ports carry them. LanIsolated is the default network's
@@ -267,6 +268,10 @@ func (c NetworkConfig) clone() NetworkConfig {
 	if c.WanProbe != nil {
 		p := c.WanProbe.clone()
 		c.WanProbe = &p
+	}
+	if c.WanFailover != nil {
+		f := c.WanFailover.clone()
+		c.WanFailover = &f
 	}
 	c.LanInterfaces = append([]string(nil), c.LanInterfaces...)
 	c.Routes = append([]Route(nil), c.Routes...)

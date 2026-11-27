@@ -39,6 +39,8 @@ window.InternetModule = (function () {
     let uplink = null;        // the connection being edited (the last answer of the uplink endpoint for it)
     let uplinks = [];         // every connection there is: the first, and the second when a port has the role WAN 2
     let selectedId = 'wan';   // which of them the form shows
+    let failover = null;      // the last answer of the failover endpoint
+    let foTimer = null;
     let editable = true;
     let saving = false;
     let wired = false;
@@ -726,6 +728,10 @@ window.InternetModule = (function () {
             drawChart();
             loadHealth();
         });
+        $('inet-failover-card').addEventListener('input', renderFailover);
+        $('inet-failover-card').addEventListener('change', renderFailover);
+        $('inet-fo-save').addEventListener('click', saveFailover);
+        $('inet-fo-reset').addEventListener('click', () => { clearFieldErrors(); if (failover) foFill(); renderFailover(); });
         $('inet-card').addEventListener('input', renderForm);
         $('inet-card').addEventListener('change', renderForm);
         $('inet-save').addEventListener('click', save);
@@ -750,6 +756,91 @@ window.InternetModule = (function () {
         });
     }
 
+    // ---------------------------------------------------------------- failover
+
+    function foName(id) { return (failover && failover.names && failover.names[id]) || id; }
+
+    function foTime(iso) {
+        return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function renderFailover() {
+        const card = $('inet-failover-card');
+        const on = !!(failover && failover.available);
+        card.classList.toggle('hidden', !on);
+        if (!on) return;
+        const st = failover.status;
+        let text;
+        if (!st) text = 'The router is starting to watch both connections.';
+        else if (!st.failed_over) text = `${foName(st.active)} is carrying the traffic.`;
+        else {
+            text = `${foName(st.active)} is carrying the traffic` + (st.since ? ' since ' + foTime(st.since) : '') + (st.reason ? ` (${st.reason}).` : '.');
+            if (failover.recovering_in_seconds) text += ` ${foName(st.preferred)} is up again and takes over in ${failover.recovering_in_seconds} s.`;
+        }
+        $('inet-fo-status').textContent = text;
+        $('inet-fo-status').classList.toggle('inet-bad', !!(st && st.failed_over));
+        $('inet-fo-draft').classList.toggle('hidden', !failover.pending);
+        const ev = (st && st.events) || [];
+        $('inet-fo-events').innerHTML = ev.length
+            ? ev.slice(0, 10).map(e => `<li>${escapeHtml(foTime(e.time))} <span class="form-hint">${escapeHtml(foName(e.from))} \u2192 ${escapeHtml(foName(e.to))}: ${escapeHtml(e.reason || '')}</span></li>`).join('')
+            : '<li class="form-hint">Nothing since the router started.</li>';
+        const lock = !editable || foSaving;
+        $('inet-fo-failback').disabled = lock;
+        $('inet-fo-recovery').disabled = lock;
+        const dirty = foDirty();
+        $('inet-fo-save').disabled = lock || !dirty;
+        $('inet-fo-reset').disabled = foSaving || !dirty;
+        $('inet-fo-hint').textContent = dirty ? 'You have unsaved changes.' : '';
+    }
+
+    let foSaving = false;
+    const foValues = () => ({ failback: $('inet-fo-failback').checked, recovery: intOf($('inet-fo-recovery').value) });
+    function foDirty() {
+        if (!failover) return false;
+        const v = foValues();
+        return v.failback !== failover.failback || v.recovery !== failover.recovery_seconds;
+    }
+    function foFill() {
+        $('inet-fo-failback').checked = failover.failback;
+        $('inet-fo-recovery').value = String(failover.recovery_seconds);
+    }
+
+    async function loadFailover(keepEdits) {
+        const res = await apiFetch('/api/v1/failover');
+        if (!res || !res.ok) return;
+        failover = await res.json();
+        if (!keepEdits || !foDirty()) foFill();
+        renderFailover();
+    }
+
+    async function saveFailover() {
+        clearFieldErrors();
+        const v = foValues();
+        if (Number.isNaN(v.recovery)) { showFieldErrors([{ field: 'recovery_seconds', message: 'must be a whole number' }]); return; }
+        foSaving = true;
+        renderFailover();
+        const res = await apiFetch('/api/v1/failover', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ failback: v.failback, recovery_seconds: v.recovery }),
+        });
+        foSaving = false;
+        if (!res) { showMessage('The router did not answer. Try again.', 'error'); renderFailover(); return; }
+        if (!res.ok) {
+            let err = {};
+            try { err = await res.json(); } catch (e) { /* not JSON */ }
+            const leftovers = showFieldErrors(err.errors);
+            if (!err.errors || !err.errors.length || leftovers.length) showMessage(leftovers.join(' ') || err.error || `Saving failed (${res.status}).`, 'error');
+            renderFailover();
+            return;
+        }
+        failover = await res.json();
+        foFill();
+        renderFailover();
+        showMessage('Saved as a draft. Review and commit it from the bar at the top when you are ready.', 'ok');
+        if (window.ConfigBanner) window.ConfigBanner.refresh();
+    }
+
     function init() {
         wire();
         clearFieldErrors();
@@ -760,6 +851,9 @@ window.InternetModule = (function () {
         drawChart();
         loadHealth();
         loadUplink(false);
+        failover = null;
+        loadFailover(false);
+        foTimer = setInterval(() => loadFailover(true), 3000);
         scheduleHealth();
         wanPort = null;
         clearUsage('');
@@ -771,6 +865,7 @@ window.InternetModule = (function () {
         return () => {
             clearInterval(timer);
             timer = null;
+            clearInterval(foTimer);
             clearInterval(usageTimer);
             clearInterval(volumeTimer);
             window.removeEventListener('resize', resizeHandler);

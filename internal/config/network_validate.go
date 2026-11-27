@@ -173,6 +173,7 @@ func (c NetworkConfig) Validate() error {
 
 	// --- The second internet connection ---
 	c.validateWan2(add, lanPrefix, lanOK, wanPrefix, haveWanPrefix)
+	c.validateFailover(add)
 
 	// --- DHCP (nil = not managed by the JSON yet, which is valid) ---
 	validateDHCP(c.DHCP, lanPrefix, lanIP, lanOK, "the LAN subnet",

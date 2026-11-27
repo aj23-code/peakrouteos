@@ -165,6 +165,7 @@
               <span id="ov-state-text" class="ov-state-text">Checking&hellip;</span>
             </div>
             <p id="ov-note" class="ov-note hidden"></p>
+            <p id="ov-failover" class="ov-note ov-note--warn hidden" role="status"></p>
             <dl class="ov-stats">
               <div><dt>Latency</dt><dd id="ov-latency">&ndash;</dd></div>
               <div><dt>Gateway latency</dt><dd id="ov-gateway">&ndash;</dd></div>
@@ -485,6 +486,31 @@
             <button type="button" id="inet-reset" class="cfg-btn cfg-btn--ghost" disabled>Reset</button>
             <button type="button" id="inet-save" class="cfg-btn cfg-btn--primary" disabled>Save to draft</button>
           </div>
+        </section>
+
+        <section class="card hidden" id="inet-failover-card">
+          <div class="net-card-head">
+            <h2>Failover</h2>
+            <span id="inet-fo-draft" class="tag tag-draft hidden">Draft</span>
+          </div>
+          <p id="inet-fo-status" class="inet-fo-status" role="status"></p>
+          <p class="form-hint">The preferred connection carries the traffic. When its health check says it is down, the other one does; connections that were open break and start again through the other one.</p>
+          <label class="check"><input type="checkbox" id="inet-fo-failback"> Go back to the preferred connection when it is up again</label>
+          <div class="form-grid">
+            <div class="form-field" data-field="recovery_seconds">
+              <label for="inet-fo-recovery">Wait before going back (seconds)</label>
+              <input type="text" id="inet-fo-recovery" inputmode="numeric" autocomplete="off" spellcheck="false">
+              <p class="form-hint">10 to 3600. The preferred connection must have been up for this long, so one that keeps dropping is not trusted again at once.</p>
+              <p class="field-error hidden" data-error="recovery_seconds"></p>
+            </div>
+          </div>
+          <div class="form-actions">
+            <span id="inet-fo-hint" class="form-hint"></span>
+            <button type="button" id="inet-fo-reset" class="cfg-btn cfg-btn--ghost" disabled>Reset</button>
+            <button type="button" id="inet-fo-save" class="cfg-btn cfg-btn--primary" disabled>Save to draft</button>
+          </div>
+          <h3 class="inet-fo-events-title">Recent changes</h3>
+          <ul id="inet-fo-events" class="inet-targets"></ul>
         </section>
 
         <section class="traffic-interface-card inet-chart-card">

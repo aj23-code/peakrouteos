@@ -204,8 +204,24 @@ window.OverviewCards = (function () {
         box.innerHTML = (network.networks || []).map(networkHtml).join('');
     }
 
+    // with two internet connections: which one carries the traffic, when it is not the preferred one
+    function renderFailover() {
+        const el = $('ov-failover');
+        if (!el) return;
+        const f = network && network.failover;
+        const st = f && f.status;
+        if (!st || !st.failed_over) { el.classList.add('hidden'); return; }
+        const name = (id) => (f.names && f.names[id]) || id;
+        const since = st.since ? new Date(st.since).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        let text = `${name(st.active)} is carrying the traffic${since ? ' since ' + since : ''}` + (st.reason ? ` (${st.reason}).` : '.');
+        if (f.recovering_in_seconds) text += ` ${name(st.preferred)} is up again and takes over in ${f.recovering_in_seconds} s.`;
+        el.textContent = text;
+        el.classList.remove('hidden');
+    }
+
     function renderNetwork() {
         renderWan();
+        renderFailover();
         renderNetworks();
     }
 
@@ -213,9 +229,15 @@ window.OverviewCards = (function () {
         const [u, n] = await Promise.all([apiFetch('/api/v1/uplinks'), apiFetch('/api/v1/networks')]);
         if (!u || !u.ok || !n || !n.ok) return;
         const uplinks = await u.json(), networks = await n.json();
+        let failover = null;
+        if ((uplinks.uplinks || []).length > 1) {
+            const f = await apiFetch('/api/v1/failover');
+            if (f && f.ok) failover = await f.json();
+        }
         network = {
             uplink: (uplinks.uplinks || [])[0] || null,
             networks: networks.networks || [],
+            failover,
         };
         renderNetwork();
     }

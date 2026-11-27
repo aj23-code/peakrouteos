@@ -1835,3 +1835,7 @@ a.cfg-btn { text-decoration: none; display: inline-block; }
 .nav-item.nav-dot::after { content: ""; display: inline-block; width: 0.5rem; height: 0.5rem; margin-left: 0.5rem; border-radius: 50%; background: var(--accent-amber); vertical-align: middle; }
 .up-notes { white-space: pre-wrap; margin: 0.5rem 0; padding: 0.6rem 0.8rem; border: 1px solid var(--border-color); border-radius: 6px; font: inherit; font-size: 0.85rem; line-height: 1.5; color: var(--text-muted); max-height: 14rem; overflow: auto; }
 .up-job { margin-top: 0.8rem; }
+
+.inet-fo-status { margin: 0.4rem 0; font-size: 0.95rem; }
+.inet-fo-events-title { margin: 1rem 0 0.3rem; font-size: 0.9rem; }
+.ov-note--warn { color: var(--accent-amber); }
