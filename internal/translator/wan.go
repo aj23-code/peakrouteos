@@ -150,8 +150,9 @@ func dhcpHooks(cfg config.NetworkConfig) []string {
 	if !cfg.HasWan2() {
 		return dhcpClientHooks(name, "")
 	}
-	// two connections: the script that gives each default route its own metric, and keeps the second one's resolvers out of the file
-	// the router's DNS reads. The options are the stanza's own (ifupdown hands them to the client's script as IF_METRIC and so on).
+	// two connections: the script that gives each default route its own metric and makes the resolver file from both connections'
+	// resolvers (the domain is the first's: "peakroute-resolv no" on the second). The options are the stanza's own (ifupdown hands them
+	// to the client's script as IF_METRIC and so on).
 	hooks := dhcpClientHooks(name, PathUDHCPCWan)
 	hooks = append(hooks, fmt.Sprintf("metric %d", cfg.WanMetric()))
 	if cfg.IsSecondWan() {

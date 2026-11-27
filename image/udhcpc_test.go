@@ -93,7 +93,7 @@ func TestTheDHCPScriptLeavesTheRecoveryAddressAlone(t *testing.T) {
 
 // The router's script for two internet connections (docs/wan-failover.md): each default route has its own metric, and a connection
 // that is told so does not touch the resolver file.
-func TestTheTwoConnectionScriptGivesEachDefaultRouteItsMetricAndKeepsTheSecondOutOfTheResolverFile(t *testing.T) {
+func TestTheTwoConnectionScriptGivesEachDefaultRouteItsMetricAndMergesBothConnectionsResolvers(t *testing.T) {
 	l := newDHCPLab(t)
 	run := func(ev string, vars ...string) string {
 		return strings.Join(l.eventOf("udhcpc-wan", ev, vars...), "\n")
@@ -112,8 +112,9 @@ func TestTheTwoConnectionScriptGivesEachDefaultRouteItsMetricAndKeepsTheSecondOu
 	if got != want {
 		t.Fatalf("second connection: %q", got)
 	}
-	if b, _ := os.ReadFile(l.resolv); string(b) != "domain isp-a\nnameserver 203.0.113.1\n" {
-		t.Fatalf("the second connection wrote the resolver file: %q", b)
+	// the second connection's resolvers are added after the first's (the one that carries the traffic first), the domain stays the first's
+	if b, _ := os.ReadFile(l.resolv); string(b) != "domain isp-a\nnameserver 203.0.113.1\nnameserver 198.51.100.1\n" {
+		t.Fatalf("resolv.conf with both: %q", b)
 	}
 	// a renewal with nothing changed removes nothing; a new gateway or metric replaces the old route
 	if got = run("renew", "interface=eth1", "IF_METRIC=200", "IF_PEAKROUTE_RESOLV=no", "ip=198.51.100.7", "mask=24", "router=198.51.100.1"); strings.Contains(got, "route del") {
@@ -127,6 +128,10 @@ func TestTheTwoConnectionScriptGivesEachDefaultRouteItsMetricAndKeepsTheSecondOu
 	got = run("deconfig", "interface=eth1")
 	if !strings.Contains(got, "route del default via 198.51.100.254 dev eth1 metric 100") || !strings.Contains(got, "addr flush dev eth1") {
 		t.Fatalf("deconfig: %q", got)
+	}
+	// and what it told goes with it: the first connection's resolvers are what is left
+	if b, _ := os.ReadFile(l.resolv); string(b) != "domain isp-a\nnameserver 203.0.113.1\n" {
+		t.Fatalf("resolv.conf after the second connection's lease is gone: %q", b)
 	}
 	// without a metric (a stanza that has none) the route is as Debian's script makes it
 	got = run("bound", "interface=eth2", "ip=192.0.2.5", "mask=24", "router=192.0.2.1")

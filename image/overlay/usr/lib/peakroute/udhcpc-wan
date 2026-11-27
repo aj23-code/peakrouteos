@@ -1,8 +1,10 @@
 #!/bin/sh
 # udhcpc's script for the internet connections of a router that has two of them (docs/wan-failover.md). Debian's own script gives every
 # default route the same metric, so the second connection's would be refused, and lets every connection write the resolver file. This
-# one gives the default route the metric of the interface's stanza (IF_METRIC, which ifupdown hands over from its "metric" line) and,
-# when the stanza says "peakroute-resolv no" (IF_PEAKROUTE_RESOLV), leaves the resolver file to the other connection. With one
+# one gives the default route the metric of the interface's stanza (IF_METRIC, which ifupdown hands over from its "metric" line) and
+# writes the resolver file from the resolvers of every connection that has a lease, the lowest metric (the one that carries the traffic)
+# first: a provider's resolvers often answer only its own customers, so after a failover the other connection's are needed. The domain
+# and search list are the first connection's only (the stanza of the second says "peakroute-resolv no": IF_PEAKROUTE_RESOLV). With one
 # connection the router runs Debian's script. udhcpc passes: $1 (deconfig, bound, renew, leasefail, nak) and $interface, $ip, $mask,
 # $subnet, $broadcast, $router, $dns, $domain, $search, $mtu.
 
@@ -24,12 +26,40 @@ drop() {
     rm -f "$STATE"
 }
 
+# write_resolvers makes the resolver file out of what every connection has (their state files, written below): nameservers by metric
+write_resolvers() {
+    [ "${IF_PEAKROUTE_RESOLV:-}" != no ] && { own_domain="$domain"; own_search="$search"; } || { own_domain=""; own_search=""; }
+    R="$(
+        [ -z "$own_domain" ] || echo "domain $own_domain"
+        [ -z "$own_search" ] || echo "search $own_search"
+        for f in "$RUN"/udhcpc.*; do
+            [ -f "$f" ] || continue
+            m=$(sed -n 's/^metric=//p' "$f")
+            for s in $(sed -n 's/^dns=//p' "$f"); do echo "${m:-0} $s"; done
+        done | sort -n -s -k1,1 | awk '!seen[$2]++ { print "nameserver " $2 }'
+    )"
+    if [ -x "$RESOLVCONF" ]; then
+        echo "$R" | "$RESOLVCONF" -a "$interface.udhcpc"
+    else
+        # the domain and search lines of the other connection are kept when this one has none
+        if [ -z "$own_domain$own_search" ] && [ -f "$RESOLV_CONF" ]; then
+            keep="$(grep -E '^(domain|search) ' "$RESOLV_CONF" 2>/dev/null)"
+            [ -z "$keep" ] || R="$keep
+$R"
+        fi
+        echo "$R" > "$RESOLV_CONF.peakroute.$$" && mv "$RESOLV_CONF.peakroute.$$" "$RESOLV_CONF"
+    fi
+}
+
 case "$1" in
     deconfig)
         ip link set "$interface" up
         drop
         ip -4 addr flush dev "$interface"
         [ -x "$RESOLVCONF" ] && "$RESOLVCONF" -d "$interface.udhcpc"
+        # what this connection told is no longer true: the other's resolvers stay
+        domain="" search="" dns=""
+        write_resolvers
         log notice "deconfigured"
         ;;
     bound|renew)
@@ -46,20 +76,9 @@ case "$1" in
             ip -4 route replace default via "$router" dev "$interface" metric "$METRIC" $onlink
         fi
         mkdir -p "$RUN"
-        # (the resolvers are kept too: the router's health check asks them, whether or not this connection owns the resolver file)
+        # (the resolvers are kept in the state file: the resolver file is made from all of them, and the health check asks them)
         printf 'router=%s\nmetric=%s\ndns=%s\n' "$router" "$METRIC" "$dns" > "$STATE"
-        if [ "$IF_PEAKROUTE_RESOLV" != no ]; then
-            R="$(
-                [ -z "$domain" ] || echo "domain $domain"
-                [ -z "$search" ] || echo "search $search"
-                for s in $dns; do echo "nameserver $s"; done
-            )"
-            if [ -x "$RESOLVCONF" ]; then
-                echo "$R" | "$RESOLVCONF" -a "$interface.udhcpc"
-            else
-                echo "$R" > "$RESOLV_CONF.peakroute.$$" && mv "$RESOLV_CONF.peakroute.$$" "$RESOLV_CONF"
-            fi
-        fi
+        write_resolvers
         log info "$1: $ip/${mask:-24} router=$router metric=$METRIC dns=\"$dns\""
         ;;
     leasefail|nak)

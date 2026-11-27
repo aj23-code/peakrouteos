@@ -77,8 +77,8 @@ func upstreamResolvers(cfg config.NetworkConfig, read func(string) ([]byte, erro
 	if len(configured) > 0 || strings.EqualFold(cfg.WanMode, "static") {
 		return configured, "DNS server you configured"
 	}
-	// the second connection does not write the resolver file (the first's resolvers are what the router uses): its DHCP script keeps
-	// what the provider said for it
+	// the resolver file holds both connections' resolvers once there are two, so it cannot say which are this one's: the DHCP script
+	// keeps what the provider said for each connection in its state file
 	if cfg.IsSecondWan() && cfg.WanKind() == config.WanDHCP {
 		if data, err := read(filepath.Join(runDir, "udhcpc."+cfg.WanDevice())); err == nil {
 			return ParseUdhcpcDNS(data), "DNS server from your provider"

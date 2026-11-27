@@ -197,7 +197,19 @@ func main() {
 	ddnsUpdater := &ddns.Updater{
 		Entries: func() []config.DDNSEntry { return cfgMgr.NetworkConfig().DDNSSettings().Entries },
 		WAN: func() (netip.Addr, bool) {
-			up, addr, _ := network.WANConnection(cfgMgr.NetworkConfig().WanDevice())
+			// with two connections: the address of the one that carries the traffic (the name is kept pointed at what works)
+			cfg := cfgMgr.NetworkConfig()
+			id := config.WanFirst
+			if cfg.HasWan2() {
+				if a := failoverCtl.Status().Active; a != "" {
+					id = a
+				}
+			}
+			v, ok := cfg.WanView(id)
+			if !ok {
+				return netip.Addr{}, false
+			}
+			up, addr, _ := network.WANConnection(v.WanDevice())
 			if !up || addr == "" {
 				return netip.Addr{}, false
 			}
