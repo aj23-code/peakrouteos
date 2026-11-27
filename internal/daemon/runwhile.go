@@ -26,12 +26,18 @@ func RunWhile(ctx context.Context, every time.Duration, want func() bool, work f
 	tick := time.NewTicker(every)
 	defer tick.Stop()
 	for {
+		if ctx.Err() != nil { // shutting down: work that ended with the context must not be started again
+			return
+		}
 		if cur != nil {
 			select {
 			case <-cur.done: // it returned by itself
 				halt()
 			default:
 			}
+		}
+		if ctx.Err() != nil {
+			return
 		}
 		if on := want(); on && cur == nil {
 			wctx, cancel := context.WithCancel(ctx)
