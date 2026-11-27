@@ -27,8 +27,9 @@ func renderSQM(cfg config.NetworkConfig) (string, bool) {
 		perHost = 1
 	}
 	return fmt.Sprintf("# Written by PeakRoute from Internet, Smart queue management. Changes made here are lost.\n"+
+		"# (the speeds are what the router shapes to: the line's speeds times the percentage)\n"+
 		"SQM_DEV=%s\nSQM_DOWN_KBIT=%d\nSQM_UP_KBIT=%d\nSQM_LINK=%s\nSQM_PERHOST=%d\n",
-		cfg.WanDevice(), s.DownloadKbit, s.UploadKbit, s.Link, perHost), true
+		cfg.WanDevice(), s.ShapedDownKbit(), s.ShapedUpKbit(), s.Link, perHost), true
 }
 
 // ensureSafeSQM is the render-time twin of the validation: what goes into the file is read by a shell.
@@ -36,6 +37,9 @@ func ensureSafeSQM(cfg config.NetworkConfig) error {
 	s := cfg.SQMSettings()
 	if s.DownloadKbit < 0 || s.DownloadKbit > config.MaxSQMKbit || s.UploadKbit < 0 || s.UploadKbit > config.MaxSQMKbit {
 		return fmt.Errorf("refusing to render the shaping speeds %d/%d", s.DownloadKbit, s.UploadKbit)
+	}
+	if s.Percent != 0 && (s.Percent < config.MinSQMPercent || s.Percent > config.MaxSQMPercent) {
+		return fmt.Errorf("refusing to render the shaping percentage %d", s.Percent)
 	}
 	if !config.ValidSQMLink(s.Link) {
 		return fmt.Errorf("refusing to render the connection kind %q", s.Link)

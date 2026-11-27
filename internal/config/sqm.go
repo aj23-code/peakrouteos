@@ -27,18 +27,51 @@ const (
 	DefaultSQMLink = SQMEthernet
 )
 
-// SQMConfig is the shaping of the internet connection. A speed of 0 leaves that direction alone.
+const (
+	// DefaultSQMPercent is how much of the plan's speed the router shapes to when none is chosen. A line rarely delivers all of what it is
+	// sold at, and the queue only works while the router is the slowest point of the path, so a little under is right.
+	DefaultSQMPercent = 95
+	MinSQMPercent     = 50
+	MaxSQMPercent     = 100
+)
+
+// SQMConfig is the shaping of the internet connection. The speeds are the line's (the plan, or what a test measured): what the router
+// shapes to is that speed times Percent. A speed of 0 leaves that direction alone.
 type SQMConfig struct {
 	Enabled      bool   `json:"enabled"`
-	DownloadKbit int    `json:"download_kbit"`
-	UploadKbit   int    `json:"upload_kbit"`
-	Link         string `json:"link,omitempty"` // one of SQMLinks; empty: ethernet
+	DownloadKbit int    `json:"download_kbit"`     // the line's download speed
+	UploadKbit   int    `json:"upload_kbit"`       // the line's upload speed
+	Percent      int    `json:"percent,omitempty"` // shape at this share of those speeds; 0: DefaultSQMPercent
+	Link         string `json:"link,omitempty"`    // one of SQMLinks; empty: ethernet
 	// PerHost shares the line fairly between the devices behind the router (rather than between connections only): one device with
 	// many connections cannot take the line from the others.
 	PerHost bool `json:"per_host"`
 }
 
 func (s SQMConfig) clone() SQMConfig { return s }
+
+// EffectivePercent is the share of the line's speed the router shapes to.
+func (s SQMConfig) EffectivePercent() int {
+	if s.Percent == 0 {
+		return DefaultSQMPercent
+	}
+	return s.Percent
+}
+
+// shaped applies the percentage to a speed; a line that has a speed is never shaped to nothing.
+func (s SQMConfig) shaped(kbit int) int {
+	if kbit <= 0 {
+		return 0
+	}
+	if v := kbit * s.EffectivePercent() / 100; v >= 1 {
+		return v
+	}
+	return 1
+}
+
+// ShapedDownKbit and ShapedUpKbit are what the router shapes to: the line's speeds times the percentage.
+func (s SQMConfig) ShapedDownKbit() int { return s.shaped(s.DownloadKbit) }
+func (s SQMConfig) ShapedUpKbit() int   { return s.shaped(s.UploadKbit) }
 
 // SQMSettings returns the configuration, or the defaults when none was ever saved: off, fair between devices.
 func (c NetworkConfig) SQMSettings() SQMConfig {
@@ -68,7 +101,7 @@ func ValidSQMLink(s string) bool {
 	return false
 }
 
-// validateSQM checks the shaping; errors are reported on sqm.download_kbit, sqm.upload_kbit and sqm.link.
+// validateSQM checks the shaping; errors are reported on sqm.download_kbit, sqm.upload_kbit, sqm.percent and sqm.link.
 func (c NetworkConfig) validateSQM(add func(field, format string, args ...any)) {
 	if c.SQM == nil {
 		return
@@ -79,6 +112,9 @@ func (c NetworkConfig) validateSQM(add func(field, format string, args ...any)) 
 	}
 	if s.UploadKbit < 0 || s.UploadKbit > MaxSQMKbit {
 		add("sqm.upload_kbit", "must be between 0 and %d (Mbit/s: 0 to %d)", MaxSQMKbit, MaxSQMKbit/1000)
+	}
+	if s.Percent != 0 && (s.Percent < MinSQMPercent || s.Percent > MaxSQMPercent) {
+		add("sqm.percent", "must be between %d and %d", MinSQMPercent, MaxSQMPercent)
 	}
 	if s.Link != "" && !ValidSQMLink(s.Link) {
 		add("sqm.link", "must be one of %s", strings.Join(SQMLinks, ", "))
@@ -105,6 +141,7 @@ func (s SQMConfig) SQMText() string {
 		}
 		return fmt.Sprintf("%g Mbit/s", float64(k)/1000)
 	}
+	shaping := fmt.Sprintf("shaped at %d%% of that", s.EffectivePercent())
 	fair := "fair between connections"
 	if s.PerHost {
 		fair = "fair between devices"
@@ -113,5 +150,5 @@ func (s SQMConfig) SQMText() string {
 	if link == "" {
 		link = DefaultSQMLink
 	}
-	return fmt.Sprintf("download %s, upload %s, %s, %s", speed(s.DownloadKbit), speed(s.UploadKbit), link, fair)
+	return fmt.Sprintf("line download %s, upload %s, %s, %s, %s", speed(s.DownloadKbit), speed(s.UploadKbit), shaping, link, fair)
 }

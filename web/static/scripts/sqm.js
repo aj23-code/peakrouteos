@@ -4,7 +4,9 @@
 
 window.SQMModule = (function () {
     let data = null;      // GET /api/v1/sqm
-    let form = null;      // { enabled, down, up, link, perHost } as typed
+    let form = null;      // { enabled, down, up, percent, link, perHost } as typed
+    let speed = null;     // GET /api/v1/sqm/speedtest: how the speed test is going
+    let speedTimer = null;
     let errors = {};
     let message = null;
     let busy = false;
@@ -16,10 +18,14 @@ window.SQMModule = (function () {
     const text = (n) => (n ? String(n) : '');
 
     function formOf(d) {
-        return { enabled: !!d.enabled, down: text(d.download_mbit), up: text(d.upload_mbit), link: d.link || 'ethernet', perHost: !!d.per_host };
+        return { enabled: !!d.enabled, down: text(d.download_mbit), up: text(d.upload_mbit), percent: String(d.percent || d.default_percent || 95), link: d.link || 'ethernet', perHost: !!d.per_host };
     }
+    const pct = (f) => { const v = parseInt(String(f.percent), 10); return Number.isFinite(v) ? v : 0; };
+    const nice = (n) => (Math.round(n * 10) / 10).toString();
+    // what the router will shape to, from the form as typed
+    const shaped = (mbit, f) => (mbit > 0 ? nice(Math.max(0.001, mbit * pct(f) / 100)) : null);
     const num = (s) => { const v = parseFloat(String(s).replace(',', '.')); return Number.isFinite(v) && v > 0 ? v : 0; };
-    const same = (a, b) => a.enabled === b.enabled && num(a.down) === num(b.down) && num(a.up) === num(b.up) && a.link === b.link && a.perHost === b.perHost;
+    const same = (a, b) => a.enabled === b.enabled && num(a.down) === num(b.down) && num(a.up) === num(b.up) && pct(a) === pct(b) && a.link === b.link && a.perHost === b.perHost;
     const dirty = () => !!(data && form && !same(form, formOf(data)));
 
     function showMessage(t, kind) {
@@ -35,12 +41,30 @@ window.SQMModule = (function () {
             <span class="form-hint">queue wait ${ms(d.avg_delay_us)} ms on average, ${ms(d.peak_delay_us)} ms at worst &middot; ${d.drops.toLocaleString()} packets dropped to keep it short</span></div>`;
     }
 
+    // the speed test: a button, how it is going, and what it measured (which is put into the fields above, to be saved or changed)
+    function speedHtml(lock) {
+        const running = speed && speed.state === 'running';
+        let line = '';
+        if (running) line = `<span class="form-hint">Measuring the ${speed.phase === 'upload' ? 'upload' : 'download'}&hellip; this takes about twenty seconds${speed.pauses_shaping ? ', and shaping is paused meanwhile' : ''}.</span>`;
+        else if (speed && speed.state === 'done' && speed.result) line = `<span class="form-hint">Measured ${nice(speed.result.download_mbit)} down and ${nice(speed.result.upload_mbit)} up, and put in the fields above. Check them, then save.</span>`;
+        else if (speed && speed.state === 'error') line = `<span class="form-hint net-warn">${escapeHtml(speed.error || 'The speed test failed.')}</span>`;
+        return `<div class="form-actions" style="justify-content:flex-start;gap:12px">
+            <button type="button" class="cfg-btn" id="sqm-measure"${lock || running ? ' disabled' : ''}>${running ? 'Measuring&hellip;' : 'Measure my speed'}</button>${line}</div>
+            <p class="form-hint">The test downloads and uploads test data (up to about 400 MB each way, less on a slower line) with Cloudflare&rsquo;s public speed test (speed.cloudflare.com). It is an estimate: run it when nothing else is using the line, and use your plan&rsquo;s speeds instead if you know them.</p>`;
+    }
+
     function statusHtml() {
         if (!data.running) return '';
         const st = data.status;
         return `<h3 class="form-section">Running now on ${escapeHtml(data.wan_device)}</h3>
             ${st ? directionHtml('Upload', st.upload) + directionHtml('Download', st.download) : '<p class="form-hint">The queues could not be read.</p>'}
             <p class="form-hint">Dropping a few packets while a line is full is how the queue tells busy connections to slow down: it is what keeps the wait short.</p>`;
+    }
+
+    function shapedText() {
+        const d = shaped(num(form.down), form), u = shaped(num(form.up), form);
+        if (!d && !u) return 'nothing yet: enter a speed';
+        return `${d ? d + ' Mbit/s down' : 'download not shaped'}, ${u ? u + ' Mbit/s up' : 'upload not shaped'}`;
     }
 
     function render() {
@@ -56,15 +80,25 @@ window.SQMModule = (function () {
             <p class="form-hint">Keeps calls, games and web pages quick while something else is downloading or uploading. Without it a full line queues packets for hundreds of milliseconds at your provider; this makes the router hold the queue instead, short and fair. It works best set a little below the speed your line really delivers.</p>
             <label class="toggle toggle--block"><input type="checkbox" data-sqm="enabled"${on ? ' checked' : ''}${lock ? ' disabled' : ''}><span><strong>Shape the internet connection</strong><span class="form-hint">Off: nothing is changed on the connection.</span></span></label>
             <div class="${on ? '' : 'is-off'}">
+                <h3 class="form-section">Your line</h3>
+                <p class="form-hint">Type the speeds of your plan (what the provider sells you), or measure them. Leave a speed empty to leave that direction alone.</p>
                 <div class="form-grid">
                     <div class="form-field"><label for="sqm-down">Download speed (Mbit/s)</label>
-                        <input type="text" id="sqm-down" data-sqm="down" inputmode="decimal" value="${escapeHtml(form.down)}" placeholder="for example 450" autocomplete="off"${lock || !on ? ' disabled' : ''}>${err('download_mbit')}</div>
+                        <input type="text" id="sqm-down" data-sqm="down" inputmode="decimal" value="${escapeHtml(form.down)}" placeholder="for example 500" autocomplete="off"${lock || !on ? ' disabled' : ''}>${err('download_mbit')}</div>
                     <div class="form-field"><label for="sqm-up">Upload speed (Mbit/s)</label>
                         <input type="text" id="sqm-up" data-sqm="up" inputmode="decimal" value="${escapeHtml(form.up)}" placeholder="for example 40" autocomplete="off"${lock || !on ? ' disabled' : ''}>${err('upload_mbit')}</div>
+                </div>
+                ${speedHtml(lock || !on)}
+                <h3 class="form-section">What the router shapes to</h3>
+                <div class="form-grid">
+                    <div class="form-field"><label for="sqm-percent">Share of your line (%)</label>
+                        <input type="text" id="sqm-percent" data-sqm="percent" inputmode="numeric" value="${escapeHtml(form.percent)}" placeholder="${data.default_percent || 95}" autocomplete="off"${lock || !on ? ' disabled' : ''}>${err('percent')}</div>
+                    <div class="form-field"><label>The router will shape to</label>
+                        <p id="sqm-shaped" class="sqm-shaped"><strong>${shapedText()}</strong></p></div>
                     <div class="form-field form-field--wide"><label for="sqm-link">Kind of connection</label>
                         <select id="sqm-link" class="role-select" data-sqm="link"${lock || !on ? ' disabled' : ''}>${links}</select>${err('link')}</div>
                 </div>
-                <p class="form-hint">Start at 90 to 95 % of what a speed test shows with nothing else using the line (a plan sold as 500 Mbit/s that tests at 470: try 440). Leave a speed empty to leave that direction alone. Then test with a bufferbloat test, such as <a href="https://www.waveform.com/tools/bufferbloat" target="_blank" rel="noopener">waveform.com/tools/bufferbloat</a>: the grade should rise; if it does not, lower the speeds a little more.</p>
+                <p class="form-hint">A line rarely delivers all of what it is sold at, and the queue only works while the router is the slowest point, so the default is ${data.default_percent || 95} %. Test with a bufferbloat test, such as <a href="https://www.waveform.com/tools/bufferbloat" target="_blank" rel="noopener">waveform.com/tools/bufferbloat</a>, after committing: if the grade does not rise, lower the share a little (90 %, then 85 %).</p>
                 <label class="toggle toggle--block"><input type="checkbox" data-sqm="perHost"${form.perHost ? ' checked' : ''}${lock || !on ? ' disabled' : ''}><span><strong>Share the line fairly between devices</strong><span class="form-hint">One device with many connections cannot take the line from the others. On is right for a home.</span></span></label>
             </div>
             ${err('enabled')}
@@ -90,7 +124,7 @@ window.SQMModule = (function () {
         showMessage('');
         busy = true; render();
         const res = await apiFetch('/api/v1/sqm', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enabled: form.enabled, download_mbit: num(form.down), upload_mbit: num(form.up), link: form.link, per_host: form.perHost }) });
+            body: JSON.stringify({ enabled: form.enabled, download_mbit: num(form.down), upload_mbit: num(form.up), percent: pct(form), link: form.link, per_host: form.perHost }) });
         busy = false;
         if (!res || !res.ok) {
             let e = {};
@@ -107,6 +141,34 @@ window.SQMModule = (function () {
         render();
     }
 
+    async function measure() {
+        showMessage('');
+        const res = await apiFetch('/api/v1/sqm/speedtest', { method: 'POST' });
+        if (!res || (!res.ok && res.status !== 409)) {
+            let e = {};
+            try { e = res ? await res.json() : {}; } catch (x) { /* not JSON */ }
+            speed = { state: 'error', error: e.error || 'The speed test could not be started.' };
+            render();
+            return;
+        }
+        speed = await res.json();
+        render();
+        clearInterval(speedTimer);
+        speedTimer = setInterval(async () => {
+            const r = await apiFetch('/api/v1/sqm/speedtest');
+            if (!r || !r.ok) return;
+            speed = await r.json();
+            if (speed.state === 'done' && speed.result) {
+                // the numbers go into the form, to be checked and saved (a test changes nothing by itself)
+                form.down = nice(speed.result.download_mbit);
+                form.up = nice(speed.result.upload_mbit);
+                if (!form.enabled) form.enabled = true;
+            }
+            if (speed.state !== 'running') { clearInterval(speedTimer); speedTimer = null; }
+            render();
+        }, 1000);
+    }
+
     function wire() {
         if (wired) return;
         wired = true;
@@ -116,6 +178,9 @@ window.SQMModule = (function () {
             const k = e.target.dataset && e.target.dataset.sqm;
             if (!k || !form) return;
             if (k === 'down' || k === 'up') { form[k] = e.target.value; delete errors[k === 'down' ? 'download_mbit' : 'upload_mbit']; }
+            if (k === 'percent') { form.percent = e.target.value; delete errors.percent; }
+            const sh = $('sqm-shaped');
+            if (sh) sh.innerHTML = `<strong>${shapedText()}</strong>`;
             const state = view.querySelector('#sqm-section .form-actions .form-hint');
             const save = $('sqm-save'), reset = $('sqm-reset');
             if (state) state.textContent = dirty() ? 'You have unsaved changes.' : '';
@@ -131,14 +196,17 @@ window.SQMModule = (function () {
         });
         view.addEventListener('click', (e) => {
             if (e.target.id === 'sqm-save') save();
+            if (e.target.id === 'sqm-measure') measure();
             if (e.target.id === 'sqm-reset' && data) { form = formOf(data); errors = {}; showMessage(''); render(); }
         });
     }
 
     function init() {
         wire();
-        data = null; form = null; errors = {}; message = null; busy = false;
+        data = null; form = null; errors = {}; message = null; busy = false; speed = null;
         load(false).then(render);
+        // a test that was started before (or in another tab) is picked up
+        apiFetch('/api/v1/sqm/speedtest').then(async (r) => { if (r && r.ok) { const s = await r.json(); if (s.state === 'running') { speed = s; measureResume(); } } });
         // how the queues are doing changes by itself: look again now and then (not while something is being typed)
         timer = setInterval(async () => {
             const active = document.activeElement;
@@ -146,7 +214,20 @@ window.SQMModule = (function () {
             await load(true);
             render();
         }, 10000);
-        return () => { clearInterval(timer); timer = null; };
+        return () => { clearInterval(timer); timer = null; clearInterval(speedTimer); speedTimer = null; };
+    }
+
+    // follow a test that is already running
+    function measureResume() {
+        clearInterval(speedTimer);
+        speedTimer = setInterval(async () => {
+            const r = await apiFetch('/api/v1/sqm/speedtest');
+            if (!r || !r.ok) return;
+            speed = await r.json();
+            if (speed.state !== 'running') { clearInterval(speedTimer); speedTimer = null; }
+            render();
+        }, 1000);
+        render();
     }
 
     return { init };

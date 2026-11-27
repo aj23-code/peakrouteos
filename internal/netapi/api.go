@@ -23,6 +23,7 @@ import (
 	"peakroute/internal/filtering"
 	"peakroute/internal/network"
 	"peakroute/internal/ovpn"
+	"peakroute/internal/speedtest"
 	"peakroute/internal/syslogfwd"
 	"peakroute/internal/wg"
 	"peakroute/internal/wireless"
@@ -53,6 +54,9 @@ type API struct {
 	DNSAddr string
 	// TimeStatus reads how the router's clock stands (the time zone, whether it follows a time server). Nil means it is not reported.
 	TimeStatus func(ctx context.Context) (network.TimeStatus, bool)
+	// SpeedTest measures the internet connection (the smart queue management card fills in the line's speeds with it). Nil: not available.
+	SpeedTest func(ctx context.Context, progress func(phase string)) (speedtest.Result, error)
+	speed     speedJob
 	// SQMStatus reads how the shaping of the internet connection is doing. Nil means it is not reported.
 	SQMStatus func(ctx context.Context) network.SQMStatus
 	// FilteringStatus reports whether AdGuard Home is installed and answering. Nil means it is not reported.

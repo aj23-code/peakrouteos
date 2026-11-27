@@ -26,6 +26,7 @@ import (
 	"peakroute/internal/network"
 	"peakroute/internal/ovpn"
 	"peakroute/internal/presence"
+	"peakroute/internal/speedtest"
 	"peakroute/internal/timeserver"
 	"peakroute/internal/translator"
 	"peakroute/internal/wanhealth"
@@ -293,6 +294,16 @@ func main() {
 	netAPI.DDNSUpdate = ddnsUpdater.UpdateNow
 	mux.HandleFunc("/api/v1/filtering", requireAuth(routerOnly(netAPI.HandleFiltering)))
 	mux.HandleFunc("/api/v1/sqm", requireAuth(routerOnly(netAPI.HandleSQM)))
+	mux.HandleFunc("/api/v1/sqm/speedtest", requireAuth(routerOnly(netAPI.HandleSQMSpeedTest)))
+	// The speed test measures the line, not the shaping: while shaping runs it is taken off for the test (about twenty seconds) and put
+	// back after, whatever the outcome (the helper reads the committed configuration, so "back" is what is committed)
+	netAPI.SpeedTest = func(ctx context.Context, progress func(string)) (speedtest.Result, error) {
+		if cfgMgr.NetworkConfig().SQMActive() && !c.Dev {
+			runner.Run(ctx, translator.PathSQMGo, "stop")
+			defer func() { runner.Run(context.WithoutCancel(ctx), translator.PathSQMGo, "reconcile") }()
+		}
+		return (&speedtest.Tester{}).Run(ctx, progress)
+	}
 	netAPI.SQMStatus = func(ctx context.Context) network.SQMStatus {
 		return network.ReadSQMStatus(ctx, cfgMgr.NetworkConfig().WanDevice())
 	}

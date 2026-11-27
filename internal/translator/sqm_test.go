@@ -34,13 +34,20 @@ func TestNothingIsShapedUntilItIsSwitchedOn(t *testing.T) {
 
 func TestTheShapingFileNamesTheConnectionAndWhatToDoWithIt(t *testing.T) {
 	got := content(t, shaped(nil), PathSQM)
-	for _, want := range []string{"SQM_DEV=eth0\n", "SQM_DOWN_KBIT=900000\n", "SQM_UP_KBIT=40000\n", "SQM_LINK=docsis\n", "SQM_PERHOST=1\n"} {
+	// the line is 900 and 40 Mbit/s; the router shapes to 95 % of that unless told otherwise
+	for _, want := range []string{"SQM_DEV=eth0\n", "SQM_DOWN_KBIT=855000\n", "SQM_UP_KBIT=38000\n", "SQM_LINK=docsis\n", "SQM_PERHOST=1\n"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in\n%s", want, got)
 		}
 	}
 	if got := content(t, shaped(func(s *config.SQMConfig) { s.PerHost = false }), PathSQM); !strings.Contains(got, "SQM_PERHOST=0\n") {
 		t.Errorf("%s", got)
+	}
+	if got := content(t, shaped(func(s *config.SQMConfig) { s.Percent = 90 }), PathSQM); !strings.Contains(got, "SQM_DOWN_KBIT=810000\n") || !strings.Contains(got, "SQM_UP_KBIT=36000\n") {
+		t.Errorf("90 %%: %s", got)
+	}
+	if got := content(t, shaped(func(s *config.SQMConfig) { s.Percent = 100; s.UploadKbit = 0 }), PathSQM); !strings.Contains(got, "SQM_DOWN_KBIT=900000\n") || !strings.Contains(got, "SQM_UP_KBIT=0\n") {
+		t.Errorf("100 %%, no upload: %s", got)
 	}
 	// a PPPoE connection is shaped on the session's interface
 	cfg := shaped(nil)
@@ -82,10 +89,12 @@ func TestSwitchingShapingOnAndOffRunsOnlyTheShapingAction(t *testing.T) {
 
 func TestShapingHasItsOwnValidation(t *testing.T) {
 	bad := map[string]func(*config.SQMConfig){
-		"no speed":     func(s *config.SQMConfig) { s.DownloadKbit, s.UploadKbit = 0, 0 },
-		"negative":     func(s *config.SQMConfig) { s.DownloadKbit = -5 },
-		"over 10 Gbit": func(s *config.SQMConfig) { s.UploadKbit = 10_000_001 },
-		"unknown line": func(s *config.SQMConfig) { s.Link = "carrier-pigeon" },
+		"no speed":         func(s *config.SQMConfig) { s.DownloadKbit, s.UploadKbit = 0, 0 },
+		"negative":         func(s *config.SQMConfig) { s.DownloadKbit = -5 },
+		"over 10 Gbit":     func(s *config.SQMConfig) { s.UploadKbit = 10_000_001 },
+		"unknown line":     func(s *config.SQMConfig) { s.Link = "carrier-pigeon" },
+		"percent too low":  func(s *config.SQMConfig) { s.Percent = 20 },
+		"percent over 100": func(s *config.SQMConfig) { s.Percent = 120 },
 	}
 	for name, set := range bad {
 		if err := shaped(set).Validate(); err == nil || !strings.Contains(err.Error(), "sqm.") {

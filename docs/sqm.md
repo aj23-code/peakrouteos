@@ -10,10 +10,18 @@ only (an access point has no connection to shape).
 Internet page, card **Smart queue management** (a draft like every other change; shaping starts at the commit):
 
 - **Shape the internet connection**: off by default. Off writes nothing and changes nothing on the connection.
-- **Download speed** and **Upload speed** (Mbit/s): *there is no sensible default*, because it is the speed of **your** line, and a number that is
-  too high does nothing while one that is too low wastes speed. The page says how to find it: start at **90 to 95 %** of what a speed test shows
-  with nothing else on the line, test with a bufferbloat test (waveform.com/tools/bufferbloat), and lower it a little if the grade does not rise.
-  Leave one empty to leave that direction alone (a line that only needs the upload shaped, say). At least one is needed.
+- **Your line**: **Download speed** and **Upload speed** (Mbit/s), the speeds of **your plan** (what the provider sells), typed by hand, **or
+  measured** with **Measure my speed**. Leave one empty to leave that direction alone; at least one is needed.
+- **Measure my speed** runs a speed test from the router (about twenty seconds) with Cloudflare's public test (`speed.cloudflare.com`: a download
+  of random bytes and an upload that is thrown away) and puts the two numbers into the fields: *a test changes nothing by itself*, the person
+  checks them and saves. It uses up to about 400 MB each way (less on a slower line), says so on the page, and is an estimate: four connections,
+  the first second left out while they warm up, the upload counted by what the other end **acknowledged** (TCP's own count, not what was handed
+  to the send buffer, which at a slow upload would be seconds of data and pass for speed). **While shaping is on, it is taken off for the
+  test and put back after** (otherwise the test would measure the shaping), whatever the outcome.
+- **Share of your line (%)**: what the router shapes to is the line's speed times this, **95 % by default** (50 to 100). A line rarely
+  delivers all of what it is sold at, and the queue only works while the router is the slowest point of the path. The page shows the result
+  ("will shape to 475 Mbit/s down, 38 Mbit/s up") as it is typed. If a bufferbloat test (waveform.com/tools/bufferbloat) after committing does not
+  improve, lower it a little (90, then 85). The default is not written to the file.
 - **Kind of connection** (default **fibre or an Ethernet hand-off**): the link adds bytes to every packet that the router does not see
   (headers of the cable system, of DSL cells...), and cake counts them so the speeds mean the line's speeds. Cable (DOCSIS), DSL VDSL2 or
   ADSL (PPPoE) have their own. A PPPoE connection left on the Ethernet kind gets a note in the review.
@@ -31,7 +39,7 @@ Internet page, card **Smart queue management** (a draft like every other change;
 - The connection kind picks cake's own keyword (`ethernet`, `docsis`, `pppoe-ptm` for VDSL, `pppoe-vcmux` for ADSL) which sets the overhead and the
   smallest packet it counts.
 - **Files and service.** The translator writes `/etc/default/peakroute-sqm` (`SQM_DEV`, `SQM_DOWN_KBIT`, `SQM_UP_KBIT`, `SQM_LINK`,
-  `SQM_PERHOST`) while shaping is on and removes it when it is off. The action (service `sqm`, verb *apply*) runs
+  `SQM_PERHOST`; the speeds are what the router shapes to, the line's speeds times the percentage) while shaping is on and removes it when it is off. The action (service `sqm`, verb *apply*) runs
   `/usr/lib/peakroute/sqm reconcile`: with the file the kernel is made to match (replacing, never stacking), without it everything is
   taken away. Switching it on, off or changing a speed touches **nothing else**: no networking restart, no firewall reload, no DHCP restart.
 - **Coming back up.** `tc` settings do not survive an interface going away. `if-up.d/peakroute-sqm` (every interface that comes up) and
@@ -47,10 +55,10 @@ Checked with the real kernel's cake and tc in throw-away network namespaces: the
 right options, a second run does not stack, another device is left alone, upload-only removes the ifb, a device that is not there is not an
 error, and taking the file away takes everything away. **Shaping really limits the rate:** a TCP stream across a veth pair that ran at 13.7 Gbit/s
 unshaped was held to 7.5 Mbit/s at a setting of 8 Mbit/s (goodput, with the Ethernet overhead counted) and to 47.1 at 50, and an 8 Mbit/s shaping of
-the incoming side did the same. **Not checked:** a real provider's line, the bufferbloat grade, CPU cost on the router's hardware (cake is
+the incoming side did the same. The speed test is checked against a server that moves a known rate (it measures within 30 %), the data cap, a failing server, and a cancelled test; the two Cloudflare endpoints answered a 100 kB download and a 100 kB upload with 200. **Not checked:** a real provider's line, the test's accuracy on one, the bufferbloat grade, CPU cost on the router's hardware (cake is
 the heavier queue: a small router may not keep up at gigabit speeds), and the interface hooks under real ifupdown and pppd.
 
 ## Left out for now
 
-Automatic speed measurement or adjustment (cake-autorate), per-network or per-device speed limits, a choice of DSCP handling (diffserv4,
+Automatic adjustment of the speeds over time (cake-autorate), choosing the speed test server, per-network or per-device speed limits, a choice of DSCP handling (diffserv4,
 besteffort), ACK filtering, and shaping a second internet connection (when there is one).

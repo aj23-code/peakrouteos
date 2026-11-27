@@ -1161,6 +1161,12 @@ time because `tc qdisc replace` keeps what is not named: found by the test). `if
 (`start-if`, never failing the interface). Card on the Internet page (`sqm.js`), status from `tc -j -s qdisc` (`network/sqmstatus.go`). Verified
 with the real kernel in user namespaces, including real throughput limiting (13.7 Gbit/s -> 7.5 Mbit/s at 8, both directions). Not verified: a real
 line, CPU on small hardware, the hooks under real ifupdown/pppd.
+**SQM, plan speeds and a speed test (same day):** the stored speeds are the *line's* (`download_kbit`/`upload_kbit`, the plan or a measurement) and
+`percent` (default 95, not written; 50-100) says what share the router shapes to (`ShapedDownKbit/UpKbit`, written to `/etc/default/peakroute-sqm`).
+`internal/speedtest`: Cloudflare's `__down`/`__up`, 4 HTTP/1.1 connections (not HTTP/2: one TCP connection does not fill a fast line), 8 s per direction, a
+1 s warm-up left out, a 400 MB cap per direction, upload rate from TCP_INFO `bytes_acked` summed over the connections (the sender's own count is inflated by the
+send buffer: found by a test). `GET/POST /api/v1/sqm/speedtest` (one job at a time; fills nothing in by itself, the page puts the numbers into the form);
+main.go takes shaping off for the test (`sqm stop`) and puts it back (`sqm reconcile`) when it ends. Probed once with 100 kB each way; not run against a real line.
 
 ## 7g. Wireless, and PeakRoute on access points (started 2026-10-08)
 
