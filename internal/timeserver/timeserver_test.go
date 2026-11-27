@@ -157,8 +157,15 @@ func TestTheServerAnswersOnTheAddressesItIsGivenAndOnlyThose(t *testing.T) {
 	mu.Lock()
 	addrs = nil
 	mu.Unlock()
-	time.Sleep(150 * time.Millisecond)
-	conn, err := net.ListenPacket("udp", "127.0.0.1:31123")
+	// (the server looks every 20 ms; on a busy machine that can take a while, so the port is waited for)
+	var conn net.PacketConn
+	var err error
+	for i := 0; i < 100; i++ {
+		time.Sleep(50 * time.Millisecond)
+		if conn, err = net.ListenPacket("udp", "127.0.0.1:31123"); err == nil {
+			break
+		}
+	}
 	if err != nil {
 		t.Fatalf("the port was not freed: %v", err)
 	}
