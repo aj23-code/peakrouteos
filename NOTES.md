@@ -1677,6 +1677,8 @@ every future page works on every screen automatically.
 
 - **Debian checks (2026-11-27).** `buildImage.sh` installs `intel-microcode` and `amd64-microcode` after the security `dist-upgrade` (before `update-initramfs -u -k all`, which puts the microcode at the start of the initramfs) and writes `packages.txt` (`dpkg-query`, "name version") to `peakroute-os-amd64-generic-<version>.packages`; `release.yml` attaches it (the updater only reads assets ending `.update`, so it is not mistaken for one). `debian-security.yml` (Mondays, or by hand) downloads the newest `v*` release's list, runs `.github/scripts/debian-updates.sh` in `debian:trixie` with the build's sources, and opens, updates or closes an issue "Debian has newer packages than <tag>". Tested: the script with a fake archive (`image/debianupdates_test.go`) and for real in a `debian:trixie` container with podman. A security fix can be older than a point release's version of the same package (openssl: main has 3.5.9, security 3.5.7): it is reported as an update.
 
+- **AdGuard Home scan (2026-11-27).** `release.yml` runs `.github/scripts/scan-adguard.sh` on the AdGuard Home binary the build left in `build/adguardhome/` (govulncheck v1.10.0 built first and run in `-mode=binary`; exit 3 is "found"; the script always exits 0 for a finding and 2 when it could not run; the workflow ignores both) and writes the result to the job summary. Report only, by decision: pinning a version was left out. Test: `image/scanadguard_test.go` with a fake scanner.
+
 ## 12. Open questions for the maintainer
 
 - 9e first slice: DHCP only (a dnsmasq restart cannot lock anyone out) or LAN address plus DHCP.

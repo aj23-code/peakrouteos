@@ -27,6 +27,14 @@ Releases are **signed** and routers only install what the maker's key signed (do
   vulnerabilities in the Go standard library and in the packages used that the code can actually reach. A failing run means: raise the Go
   version in `go.mod` (the builds use it) or the package that is named. First run, 2026-11-27: 14 reachable standard-library
   vulnerabilities in go1.27.1 (mostly the HTTP server), fixed by go1.27.4.
+- **AdGuard Home** is downloaded at build time (the newest release, checked against the checksums published beside it, which catches a
+  damaged download and not a release GitHub itself serves wrongly) and is a separate Go program that `govulncheck` on our code does not
+  look inside. So the release workflow scans the program that went into the image (`.github/scripts/scan-adguard.sh`, govulncheck in
+  binary mode) and puts the result in the run's summary. It **only reports**: a vulnerability AdGuard has not fixed yet is not something a
+  release can wait for. First run, 2026-11-27: the same advisory our own check shows as unreachable (GO-2026-5932, the unmaintained
+  `x/crypto/openpgp` package) is reachable in AdGuard Home, with no released fix. AdGuard Home is not reachable from the internet (loopback,
+  behind the router's sign-in, DNS only from the networks), which is why this is a report and not a gate. Pinning a version was considered
+  and left out: it would trade the unlikely risk of a tampered release for the likelier one of running an old version.
 - **GitHub:** code scanning (CodeQL), Dependabot and secret scanning with push protection are on.
 - **Debian:** every image build applies the security updates of the day (`trixie-security` and `trixie-updates`, then `dist-upgrade`); a
   router has them once it updates to a release built after. **A weekly check** (`.github/workflows/debian-security.yml`) tells you when

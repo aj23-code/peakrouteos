@@ -30,6 +30,13 @@ jobs:
           UPDATE_REPO: ${{ github.repository }}
           UPDATE_NOTES: Release ${{ github.ref_name }}
         run: ./full_build.sh
+      - name: Scan AdGuard Home (reports, never fails the release)
+        run: |
+          # the AdGuard Home program the build put in the image, which our own vulnerability check does not look inside
+          bin=$(find build /var/tmp/peakroute-build -path '*adguardhome/AdGuardHome/AdGuardHome' -type f 2>/dev/null | head -1)
+          if [ -z "$bin" ]; then echo "AdGuard Home was not found in the build folder: not scanned"; exit 0; fi
+          SCAN_OUTPUT="$RUNNER_TEMP/agh-scan.txt" sh .github/scripts/scan-adguard.sh "$bin" || true
+          { echo '### AdGuard Home'; echo '```'; cat "$RUNNER_TEMP/agh-scan.txt" 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Package
         run: |
           mkdir -p dist
