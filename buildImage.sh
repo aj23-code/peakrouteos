@@ -253,6 +253,10 @@ cp /etc/resolv.conf "${ROOTFS_DIR}/etc/resolv.conf"   # the download needs a nam
 chroot "${ROOTFS_DIR}" apt-get update -q
 chroot "${ROOTFS_DIR}" env DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y -q -o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef
 chroot "${ROOTFS_DIR}" env DEBIAN_FRONTEND=noninteractive apt-get autoremove --purge -y -q
+# CPU microcode: the fixes for the processor's own flaws (Spectre and its kin) that the kernel cannot make by itself. The kernel loads
+# them from the start of the initramfs, which the update-initramfs below makes. Debian keeps them in non-free-firmware, which is enabled.
+# (Only the x86 router: the access point's processor takes none.)
+chroot "${ROOTFS_DIR}" env DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends intel-microcode amd64-microcode
 echo "      kernels in the image: $(ls "${ROOTFS_DIR}"/boot/vmlinuz-* | sed 's|.*/vmlinuz-||' | tr '\n' ' ')"
 
 # No default password for anyone: root is locked (passwd -l: no password of any kind, not even an empty one, can log in as root) and the
@@ -298,6 +302,10 @@ for f in 'scripts/local-bottom/peakroute-state' 'overlay.ko' 'e2fsck'; do
         exit 1
     }
 done
+
+# What is in the image, for the weekly check of what Debian has published since (.github/workflows/debian-security.yml): a line for every
+# package, "name version", kept with the release
+chroot "${ROOTFS_DIR}" dpkg-query -W -f='${binary:Package} ${Version}\n' | sort > "${BUILD_DIR}/packages.txt"
 
 # Small: no caches, no lists, no manual pages (the licences stay)
 chroot "${ROOTFS_DIR}" apt-get clean || true
@@ -441,11 +449,15 @@ MANIFEST
 tar -C "${BUNDLE_DIR}" --format=ustar -cf "${BUNDLE}" manifest.json rootfs.img.gz
 rm -rf "${BUNDLE_DIR}"
 
+# the package list goes beside them (a release attaches it)
+PACKAGES="$(dirname "${OUTPUT_IMG}")/peakroute-os-amd64-generic-${VERSION}.packages"
+cp "${BUILD_DIR}/packages.txt" "${PACKAGES}"
+
 # the person who ran sudo owns the outputs
 ( cd "$(dirname "${OUTPUT_IMG}")" && sha256sum "$(basename "${OUTPUT_IMG}")" > "$(basename "${OUTPUT_IMG}").sha256" \
     && sha256sum "$(basename "${BUNDLE}")" > "$(basename "${BUNDLE}").sha256" )
 if [ -n "${SUDO_UID:-}" ]; then
-    chown "${SUDO_UID}:${SUDO_GID:-${SUDO_UID}}" "${OUTPUT_IMG}" "${OUTPUT_IMG}.sha256" "${BUNDLE}" "${BUNDLE}.sha256"
+    chown "${SUDO_UID}:${SUDO_GID:-${SUDO_UID}}" "${OUTPUT_IMG}" "${OUTPUT_IMG}.sha256" "${BUNDLE}" "${BUNDLE}.sha256" "${PACKAGES}"
 fi
 
 echo "[+] Successfully built ${VERSION}:"

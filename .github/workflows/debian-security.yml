@@ -1,0 +1,73 @@
+name: debian-security
+# Every week: has Debian published newer versions (above all in trixie-security) of the packages in the newest router release? A release
+# carries the fixes of the day it was built and routers only get them with the next release, so this is the reminder that one is due.
+# The release lists its packages (peakroute-os-amd64-generic-<tag>.packages, written by buildImage.sh); the list is compared with what
+# trixie, trixie-updates and trixie-security hold now, and an issue says what is behind (it is updated while there is something, and
+# closed when a release has caught up). Run by hand: Actions > debian-security > Run workflow.
+on:
+  schedule:
+    - cron: "47 5 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: The newest router release and its package list
+        id: release
+        run: |
+          tag=$(gh release list --limit 30 --json tagName,isDraft --jq '[.[] | select(.isDraft | not) | select(.tagName | test("^v[0-9]"))][0].tagName')
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          if [ -z "$tag" ]; then echo "found=no" >> "$GITHUB_OUTPUT"; echo "No router release yet." >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          if gh release download "$tag" --pattern '*.packages' --output packages.txt 2>/dev/null && [ -s packages.txt ]; then
+            echo "found=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=no" >> "$GITHUB_OUTPUT"
+            echo "${tag} has no package list (the next release has one): nothing to compare until the next release." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: What Debian has published since
+        if: steps.release.outputs.found == 'yes'
+        run: |
+          docker run --rm -v "$PWD":/w debian:trixie sh -c '
+            rm -f /etc/apt/sources.list.d/debian.sources
+            cat > /etc/apt/sources.list <<SOURCES
+          deb http://deb.debian.org/debian trixie main non-free-firmware
+          deb http://deb.debian.org/debian trixie-updates main non-free-firmware
+          deb http://deb.debian.org/debian-security trixie-security main non-free-firmware
+          SOURCES
+            apt-get update -q >/dev/null
+            sh /w/.github/scripts/debian-updates.sh /w/packages.txt > /w/updates.txt'
+          wc -l < updates.txt
+      - name: Say so
+        if: steps.release.outputs.found == 'yes'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          security=$(grep -c '(security)$' updates.txt || true)
+          other=$(grep -c '(update)$' updates.txt || true)
+          open=$(gh issue list --state open --search '"Debian has newer packages than" in:title' --json number --jq '.[0].number // empty')
+          if [ "$security" -eq 0 ] && [ "$other" -eq 0 ]; then
+            echo "${TAG} is up to date with Debian." >> "$GITHUB_STEP_SUMMARY"
+            if [ -n "$open" ]; then gh issue close "$open" --comment "${TAG} is up to date with Debian again."; fi
+            exit 0
+          fi
+          title="Debian has newer packages than ${TAG}: ${security} security, ${other} other"
+          {
+            echo "The newest release (${TAG}) was built with the packages Debian had that day. Debian now has newer ones. Routers get them with the next release: tag one (every build brings the packages up to date) when the security ones matter."
+            echo
+            echo "**${security} security updates** (trixie-security) and **${other} other updates** (trixie-updates and point releases):"
+            echo
+            echo '```'
+            head -150 updates.txt
+            echo '```'
+            if [ "$(wc -l < updates.txt)" -gt 150 ]; then echo "(and $(( $(wc -l < updates.txt) - 150 )) more)"; fi
+            echo
+            echo "Checked by the weekly debian-security workflow; this issue is updated while something is behind and closed when a release has caught up."
+          } > body.md
+          cat body.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$open" ]; then gh issue edit "$open" --title "$title" --body-file body.md; else gh issue create --title "$title" --body-file body.md; fi

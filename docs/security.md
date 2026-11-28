@@ -28,5 +28,12 @@ Releases are **signed** and routers only install what the maker's key signed (do
   version in `go.mod` (the builds use it) or the package that is named. First run, 2026-11-27: 14 reachable standard-library
   vulnerabilities in go1.27.1 (mostly the HTTP server), fixed by go1.27.4.
 - **GitHub:** code scanning (CodeQL), Dependabot and secret scanning with push protection are on.
-- **Debian:** every image build applies the security updates of the day; a router has them once it updates to a release built after.
+- **Debian:** every image build applies the security updates of the day (`trixie-security` and `trixie-updates`, then `dist-upgrade`); a
+  router has them once it updates to a release built after. **A weekly check** (`.github/workflows/debian-security.yml`) tells you when
+  one is due: each release lists its packages (`peakroute-os-amd64-generic-<tag>.packages`, "name version" per line), and the check compares
+  the newest release's list with what Debian holds now (`.github/scripts/debian-updates.sh`, run in a `debian:trixie` container) and opens
+  an issue naming what is behind, security ones first. The issue is updated while something is behind and closed when a release has
+  caught up. A release from before the lists has nothing to compare: the next one does. It reports; it does not build a release.
+- **CPU microcode** (`intel-microcode`, `amd64-microcode`, from `non-free-firmware`) is in the router image: the processor's own fixes
+  (Spectre and its kin), loaded from the start of the initramfs.
 - Run by hand: `go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...`
