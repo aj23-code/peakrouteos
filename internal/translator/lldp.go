@@ -46,9 +46,16 @@ func ensureSafeLLDP(cfg config.NetworkConfig) error {
 	return ensureSafe(lldpPorts(cfg)...)
 }
 
+// lldpd runs as the system user _lldpd (privilege separation, it refuses to start without), which the lldpd package makes when it is installed.
+// /etc is an overlay whose upper layer holds the passwd and group files from the day an account was first made on the machine, so a user a
+// newer image adds never shows: the command makes the user and group when they are missing (it found this on a router updated from an
+// image without lldpd: "no _lldpd user for privilege separation").
+//
 // lldpCommand brings the service in line with the file: running with it, stopped and not started at boot without it. A machine without lldpd
 // (an image from before this) has nothing to stop; with the file it needs the package.
 var lldpCommand = command{"sh", []string{"-c", `if [ -f ` + PathLLDP + ` ]; then ` +
 	`command -v lldpd >/dev/null 2>&1 || { echo "lldpd is not installed on this system" >&2; exit 1; }; ` +
+	`getent group _lldpd >/dev/null || groupadd --system _lldpd; ` +
+	`getent passwd _lldpd >/dev/null || useradd --system --gid _lldpd --home-dir /run/lldpd --no-create-home --shell /usr/sbin/nologin _lldpd; ` +
 	`systemctl enable lldpd.service && systemctl restart lldpd.service; ` +
 	`else command -v lldpd >/dev/null 2>&1 || exit 0; systemctl disable --now lldpd.service; fi`}}

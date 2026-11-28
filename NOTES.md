@@ -1691,6 +1691,8 @@ every future page works on every screen automatically.
 
 - **Access point release parity (2026-11-28).** `release-ap.yml` already ran `check.sh`, `govulncheck` and the signing step (`peakroute-sign sign` then `verify`); the AP image already applied Debian's security updates. Added: `buildImageU6Plus.sh` writes `<name>.packages` (`dpkg-query`, before the final clean-up), `release-ap.yml` attaches it, and `debian-security.yml` is a matrix over `v*` and `ap-v*` releases (the newest of each, an issue per product; `gh --jq` takes no `--arg`, so the expressions read `env.PREFIX`). The AP binary has the monitoring token code (`daemon.go`) and `apmonitor.js`.
 
+- **lldpd would not start on an updated router (2026-11-28).** Journal: "no _lldpd user for privilege separation". `/etc` is an overlay (`docs/updates.md`): its upper layer in `/data/overlay/etc` holds the `passwd` and `group` files from the day an account was first made on the machine, so a system user that a newer image's package adds (here `_lldpd`, made by lldpd's postinst) never shows on a router that was updated and not freshly flashed. `lldpCommand` (`translator/lldp.go`) now makes the group and user when missing, before enabling the service (test with fake tools). **The same will happen to any package added later that has a system user of its own:** create the user where it is first needed, as here, or merge the files at boot.
+
 ## 12. Open questions for the maintainer
 
 - 9e first slice: DHCP only (a dnsmasq restart cannot lock anyone out) or LAN address plus DHCP.

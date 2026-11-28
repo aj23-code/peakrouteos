@@ -1,6 +1,9 @@
 package translator
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -72,5 +75,45 @@ func TestLLDPIsInTheReviewOfChanges(t *testing.T) {
 	changes := config.DiffNetwork(a, b)
 	if len(changes) != 1 || changes[0].Field != "lldp" || changes[0].New != "on (LAN ports)" || changes[0].Old != "off" {
 		t.Fatalf("%+v", changes)
+	}
+}
+
+// lldpd refuses to start without its _lldpd user, which a router updated from an image without lldpd does not have (its /etc overlay keeps
+// the old passwd and group files): the command makes them first, and only when they are missing.
+func TestTheLLDPCommandMakesTheUserLldpdNeedsBeforeStartingIt(t *testing.T) {
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "log")
+	conf := filepath.Join(dir, "peakroute.conf")
+	os.WriteFile(conf, []byte("x"), 0600)
+	fake := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+body+"\n"), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func(have string) []string {
+		os.Remove(logFile)
+		fake("getent", `case "$1 $2" in "group _lldpd"|"passwd _lldpd") case "`+have+`" in *"$1"*) exit 0;; esac;; esac; exit 2`)
+		for _, n := range []string{"groupadd", "useradd", "systemctl", "lldpd"} {
+			fake(n, `echo "`+n+` $*" >> `+logFile)
+		}
+		script := strings.ReplaceAll(lldpCommand.args[1], PathLLDP, conf)
+		cmd := exec.Command("sh", "-c", script)
+		cmd.Env = []string{"PATH=" + dir + ":/usr/bin:/bin"}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+		b, _ := os.ReadFile(logFile)
+		return strings.Split(strings.TrimSpace(string(b)), "\n")
+	}
+	got := run("") // neither the group nor the user
+	if len(got) != 4 || !strings.HasPrefix(got[0], "groupadd --system _lldpd") || !strings.HasPrefix(got[1], "useradd --system --gid _lldpd") ||
+		!strings.Contains(got[1], "--home-dir /run/lldpd") || got[2] != "systemctl enable lldpd.service" || got[3] != "systemctl restart lldpd.service" {
+		t.Errorf("%q", got)
+	}
+	if got = run("group passwd"); len(got) != 2 || got[0] != "systemctl enable lldpd.service" { // both there: nothing is made
+		t.Errorf("%q", got)
+	}
+	if got = run("group"); len(got) != 3 || !strings.HasPrefix(got[0], "useradd") { // only the group
+		t.Errorf("%q", got)
 	}
 }
