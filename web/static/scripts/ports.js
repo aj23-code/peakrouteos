@@ -250,7 +250,8 @@ window.PortsModule = (function () {
         load();
         // Link state changes while you look; never replace what the person is editing
         pollInterval = setInterval(() => { if (!dirty && !saving) load(); }, 5000);
-        return () => { clearInterval(pollInterval); pollInterval = null; };
+        const neighbours = window.NeighboursCard ? window.NeighboursCard.init() : null;
+        return () => { clearInterval(pollInterval); pollInterval = null; if (typeof neighbours === 'function') neighbours(); };
     }
 
     return { init };

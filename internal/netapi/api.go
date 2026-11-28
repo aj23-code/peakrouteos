@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"peakroute/internal/failover"
+	"peakroute/internal/lldp"
 	"strings"
 	"sync"
 
@@ -69,6 +70,8 @@ type API struct {
 	FailoverStatus func(cfg config.NetworkConfig) (failover.Status, int)
 	// FailoverPin switches the traffic to a connection by hand ("wan", "wan2") or back to automatic (""). Nil: not available.
 	FailoverPin func(id string)
+	// LLDPNeighbours reads what lldpd has heard on the LAN ports (an error: it is not running). Nil: not available.
+	LLDPNeighbours func(ctx context.Context) ([]lldp.Neighbour, error)
 	// HardwareClock says whether the machine has a real-time clock chip. Nil means it is not reported (and not warned about).
 	HardwareClock func() bool
 	// SyslogStatuses says how sending to each syslog server in effect is going; SyslogTest sends a test message to each.

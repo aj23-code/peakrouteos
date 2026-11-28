@@ -1,4 +1,4 @@
-# Device pages, history, LLDP and SNMP (plan, 2026-11-28; phase 1 built 2026-11-28)
+# Device pages, history, LLDP and SNMP (plan, 2026-11-28; phases 1 and 2 built 2026-11-28)
 
 Goal: click a device's name in the Clients list and get **a page of its own** (like Meraki's client page): who it is, where it is
 connected (the Wi-Fi network and signal, or the **switch and port** it is plugged into), what it has used over time and what it is doing
@@ -92,6 +92,27 @@ Opened from the Clients list (the name is a link; `#device/<mac>` so it can be b
   down, a device that appears, presence changes, a restart), the API (names, Wi-Fi, bad addresses, ranges, totals, peaks, stretches, no
   history), the routes together on a real mux, the vendor lookup, the connection filter; the page's script ran in a browser against its real
   markup with mocked answers, and the address handling of `app.js` with good and bad addresses.
+
+## 3b. Phase 2 as built (LLDP)
+
+- **The switch:** `lldp` in `network.json` (a draft like everything else), the *Neighbours* card on the Ports page (`neighbours.js`,
+  `GET/PUT /api/v1/lldp`). Off by default. `lldpd` is in the image (installed, not running, like avahi); switching it on writes
+  `/etc/lldpd.d/peakroute.conf` (`translator/lldp.go`: `configure system interface pattern <the LAN ports>`, a system description and the
+  port id as the interface name) and a commit enables and restarts `lldpd.service`; off removes the file and stops it. **Only the LAN
+  ports**, never the internet port and not Wi-Fi.
+- **Neighbours** (`internal/lldp`): `lldpcli -f json show neighbors details`, read through helpers that cope with lldpd's JSON changing shape
+  (one thing is an object, several are a list; a system with no name has no name key; one address is a string, several a list). For each
+  router port: the neighbour's name, chassis id, port id and description, system description, addresses, the capabilities it has on
+  (Bridge, Router, Wlan...), the port's VLAN, whether it spoke LLDP or CDP.
+- **Where a device is** (`network.ReadBridgeFDB`, `bridge -j fdb show`, asked at most every 5 s): the port of the router's bridge that has
+  learned the device's hardware address. The device page's *Port* line says that port and, when LLDP has heard a neighbour on it, "behind
+  *switch-hall*, its port *Port 7*". A device behind a switch is on the port the switch is plugged into: the switch's own port for it is
+  phase 3 (SNMP). A Wi-Fi device is not placed on a cable port.
+- **What the neighbours see:** the router announces itself (its name, "PeakRoute OS") on the LAN ports, so a managed switch lists it.
+- Tested: the parser on one neighbour, several, a nameless CDP neighbour, odd shapes and garbage; the bridge table parser; the
+  renderer (LAN ports only, never the internet port, an unsafe port name refused), the plan (one action), the command, the review; the
+  API (draft only, asked only while in effect, lldpd not answering); the device page's attachment; the card and the port line in a browser
+  with mocked answers (which found and fixed a checkbox that was reset on every redraw). **lldpd itself has not run on a router here.**
 
 ## 4. SNMP: what it takes
 

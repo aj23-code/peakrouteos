@@ -179,6 +179,7 @@ var serviceCommands = map[string]command{
 	SvcNftables:   {"systemctl", []string{"reload", "nftables"}},
 	SvcDnsmasq:    {"systemctl", []string{"restart", "dnsmasq"}},
 	SvcMDNS:       mdnsCommand,
+	SvcLLDP:       lldpCommand,
 	SvcFiltering:  filterCommand,
 	SvcSQM:        sqmCommand,
 	SvcRoutes:     routesApplyCommand(PathRoutes),

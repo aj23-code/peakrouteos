@@ -162,13 +162,14 @@ if [ "${REUSE_ROOTFS}" != "1" ]; then
     #   without it avahi is left unconfigured and the whole build fails (v1.0.2-beta). avahi runs on the bus, too.
     # - wireguard-tools, openvpn: the VPN. systemd-timesyncd, tzdata: the clock. ca-certificates: Dynamic DNS over https.
     # - ieee-data: the registry of who made which network card (a device's page names its maker from its hardware address).
+    # - lldpd: LLDP and CDP, to see (and be seen by) the switches and access points on the LAN ports. Installed, not running, until Ports switches it on.
     # - iputils-ping, iputils-tracepath: the diagnostics. libnss-myhostname: the machine finds its own name.
     DEBIAN_FRONTEND=noninteractive debootstrap \
         --arch=amd64 \
         --variant=minbase \
         --components=main,non-free-firmware \
         --keyring="${DEBIAN_KEYRING}" \
-        --include=linux-image-amd64,initramfs-tools,udev,kmod,systemd-sysv,grub-efi-amd64,grub-pc-bin,grub-common,sudo,procps,gdisk,dosfstools,e2fsprogs,rsync,ifupdown,bridge-utils,vlan,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ppp,conntrack,dbus,avahi-daemon,hostapd,wpasupplicant,iw,wireless-regdb,rfkill,libnss-myhostname,systemd-timesyncd,tzdata,wireguard-tools,openvpn,firmware-iwlwifi,firmware-atheros,firmware-mediatek,firmware-realtek,ieee-data,ca-certificates,lsb-release,util-linux,fdisk,nano,passwd \
+        --include=linux-image-amd64,initramfs-tools,udev,kmod,systemd-sysv,grub-efi-amd64,grub-pc-bin,grub-common,sudo,procps,gdisk,dosfstools,e2fsprogs,rsync,ifupdown,bridge-utils,vlan,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ppp,conntrack,dbus,avahi-daemon,lldpd,hostapd,wpasupplicant,iw,wireless-regdb,rfkill,libnss-myhostname,systemd-timesyncd,tzdata,wireguard-tools,openvpn,firmware-iwlwifi,firmware-atheros,firmware-mediatek,firmware-realtek,ieee-data,ca-certificates,lsb-release,util-linux,fdisk,nano,passwd \
         trixie "${ROOTFS_DIR}" http://deb.debian.org/debian/
     touch "${ROOTFS_DIR}/.peakroute-debootstrapped"
 else
@@ -277,6 +278,9 @@ chroot "${ROOTFS_DIR}" systemctl disable wpa_supplicant.service 2>/dev/null || t
 # avahi (mDNS) stays off until a network shares it: the daemon then writes its configuration and starts it. With the packaged file gone
 # the review of a first commit has no stray "remove avahi-daemon.conf" line.
 chroot "${ROOTFS_DIR}" systemctl disable avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
+# lldpd (neighbour discovery, Ports) is off too until it is switched on: the daemon then writes /etc/lldpd.d/peakroute.conf and starts it
+chroot "${ROOTFS_DIR}" systemctl disable lldpd.service 2>/dev/null || true
+rm -f "${ROOTFS_DIR}/etc/lldpd.d/peakroute.conf"
 rm -f "${ROOTFS_DIR}/etc/avahi/avahi-daemon.conf"
 chroot "${ROOTFS_DIR}" systemctl mask systemd-firstboot.service
 

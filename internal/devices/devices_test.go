@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"peakroute/internal/devhistory"
+	"peakroute/internal/lldp"
 	"peakroute/internal/network"
 	"peakroute/internal/wireless"
 )
@@ -195,5 +196,31 @@ func TestTheRoutesFindTheAddressInAnEscapedPathAndLiveNextToTheRemoveRoute(t *te
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/api/v1/clients/a8:bb:cc:00:00:01/name", nil))
 	if rec.Code != http.StatusTeapot {
 		t.Errorf("the name route: %d", rec.Code)
+	}
+}
+
+func TestAWiredDeviceIsSaidToBeBehindThePortAndTheSwitchOnIt(t *testing.T) {
+	s, _ := rig(t)
+	s.Where = func(_ context.Context, mac string) *Where {
+		if mac != "02:11:22:33:44:55" {
+			return nil
+		}
+		return &Where{Port: "eth2", Bridge: "br0", VLAN: 20, Neighbour: &lldp.Neighbour{LocalPort: "eth2", Name: "switch-hall", PortID: "Port 7"}}
+	}
+	_, b := get(t, s.HandleClient, "/x", "02:11:22:33:44:55")
+	at, _ := b["attached"].(map[string]any)
+	if at == nil || at["port"] != "eth2" || at["vlan"].(float64) != 20 {
+		t.Fatalf("%+v", b)
+	}
+	if nb, _ := at["neighbour"].(map[string]any); nb == nil || nb["name"] != "switch-hall" || nb["port_id"] != "Port 7" {
+		t.Fatalf("%+v", at)
+	}
+	// a device on Wi-Fi is not placed on a cable port, and one the bridge has not learned has nothing
+	if _, b = get(t, s.HandleClient, "/x", "a8:bb:cc:00:00:01"); b["attached"] != nil {
+		t.Errorf("%+v", b["attached"])
+	}
+	s.Where = func(context.Context, string) *Where { return nil }
+	if _, b = get(t, s.HandleClient, "/x", "02:11:22:33:44:55"); b["attached"] != nil {
+		t.Errorf("%+v", b["attached"])
 	}
 }

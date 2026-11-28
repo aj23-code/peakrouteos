@@ -61,6 +61,19 @@ window.DevicePage = (function () {
         const q = dbm >= -55 ? 'excellent' : dbm >= -65 ? 'good' : dbm >= -75 ? 'fair' : 'weak';
         return `${dbm} dBm (${q})`;
     }
+    // where the router's bridge has found the device: its own port, and the switch or access point plugged into it when that has said who it is
+    function portText(at) {
+        if (!at) return '<span class="form-hint">the switch port is not known yet</span>';
+        let t = `<code>${escapeHtml(at.port)}</code>` + (at.vlan > 1 ? ` <span class="form-hint">VLAN ${at.vlan}</span>` : '');
+        const n = at.neighbour;
+        if (n) {
+            const who = n.name || n.chassis_id || 'a switch';
+            t += `<br><span class="form-hint">behind ${escapeHtml(who)}${n.port_id ? ', its port ' + escapeHtml(n.port_id) : ''}${n.port_desc ? ' (' + escapeHtml(n.port_desc) + ')' : ''}</span>`;
+        } else {
+            t += '<br><span class="form-hint">the router sees it on this port: a switch beyond it is not known yet</span>';
+        }
+        return t;
+    }
     const row = (k, v) => v === '' || v == null ? '' : `<div><dt>${k}</dt><dd>${v}</dd></div>`;
 
     // ---------------------------------------------------------------- the device
@@ -114,7 +127,7 @@ window.DevicePage = (function () {
             }
         } else if (d.connection === 'wired') {
             rows.push(row('Connected by', 'Cable'));
-            rows.push(row('Port', '<span class="form-hint">the switch port is not known yet</span>'));
+            rows.push(row('Port', portText(d.attached)));
         } else {
             rows.push(row('Connected by', 'Not known'));
         }

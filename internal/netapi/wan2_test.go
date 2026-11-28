@@ -2,6 +2,7 @@ package netapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"peakroute/internal/config"
 	"peakroute/internal/failover"
+	"peakroute/internal/lldp"
 	"peakroute/internal/speedtest"
 )
 
@@ -423,5 +425,52 @@ func TestTheTrafficCanBeSwitchedByHandWithoutADraft(t *testing.T) {
 	}
 	if rec := e.get(e.api.HandleFailoverSwitch); rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("%d", rec.Code)
+	}
+}
+
+func TestLLDPIsSwitchedInTheDraftAndTheNeighboursAreReadWhileItRuns(t *testing.T) {
+	e := standard(t)
+	rec := e.get(e.api.HandleLLDP)
+	v := decodeInto[lldpResponse](t, rec)
+	if v.Enabled || v.Active || v.Available || v.Running || v.Neighbours == nil || len(v.Neighbours) != 0 || len(v.Ports) != 1 || v.Ports[0] != "eth1" || !v.Editable {
+		t.Fatalf("%+v", v)
+	}
+	asked := 0
+	e.api.LLDPNeighbours = func(context.Context) ([]lldp.Neighbour, error) {
+		asked++
+		return []lldp.Neighbour{{LocalPort: "eth1", Name: "switch-hall", PortID: "Port 7"}}, nil
+	}
+	// off: lldpd is not asked (it is not running)
+	if v = decodeInto[lldpResponse](t, e.get(e.api.HandleLLDP)); !v.Available || asked != 0 || v.Running {
+		t.Fatalf("%+v %d", v, asked)
+	}
+	rec = e.putJSON(e.api.HandleLLDP, `{"enabled":true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	v = decodeInto[lldpResponse](t, rec)
+	if !v.Enabled || v.Active || !v.Pending || v.Running || asked != 0 {
+		t.Fatalf("a draft is not running yet: %+v", v)
+	}
+	if staged, _ := e.mgr.StagedNetworkConfig(); !staged.LLDP || e.mgr.NetworkConfig().LLDP {
+		t.Fatal("the switch did not go to the draft only")
+	}
+	// in effect: asked, and answered
+	c := baseline()
+	c.LLDP = true
+	on := newEnv(t, &c)
+	on.api.LLDPNeighbours = func(context.Context) ([]lldp.Neighbour, error) {
+		return []lldp.Neighbour{{LocalPort: "eth1", Name: "switch-hall", PortID: "Port 7"}}, nil
+	}
+	if v = decodeInto[lldpResponse](t, on.get(on.api.HandleLLDP)); !v.Active || !v.Running || len(v.Neighbours) != 1 || v.Neighbours[0].Name != "switch-hall" || v.Pending {
+		t.Fatalf("%+v", v)
+	}
+	// lldpd not answering: not running, no neighbours, no failure
+	on.api.LLDPNeighbours = func(context.Context) ([]lldp.Neighbour, error) { return nil, errors.New("not running") }
+	if v = decodeInto[lldpResponse](t, on.get(on.api.HandleLLDP)); v.Running || len(v.Neighbours) != 0 {
+		t.Fatalf("%+v", v)
+	}
+	if rec = e.putJSON(e.api.HandleLLDP, `{}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("%d", rec.Code)
 	}
 }

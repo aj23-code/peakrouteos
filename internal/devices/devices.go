@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"peakroute/internal/devhistory"
+	"peakroute/internal/lldp"
 	"peakroute/internal/network"
 	"peakroute/internal/oui"
 	"peakroute/internal/wireless"
@@ -25,7 +26,20 @@ type Service struct {
 	History *devhistory.Store
 	// Stations are the devices on the router's own Wi-Fi radios with their signal and rates (nil: not known).
 	Stations func(ctx context.Context) wireless.StationReport
-	Now      func() time.Time
+	// Where says which of the router's own ports a device is behind (what its bridge has learned), and what is plugged into that port (nil: not
+	// known on this system).
+	Where func(ctx context.Context, mac string) *Where
+	Now   func() time.Time
+}
+
+// Where is where the router has found a device: the port its frames come in on, and, when that port has a switch or access point on it that
+// has said who it is (LLDP), which one. A device behind a switch is on the port the switch is plugged into: the switch's own port for it is
+// what SNMP adds (docs/device-pages.md, phase 3).
+type Where struct {
+	Port      string          `json:"port"`
+	Bridge    string          `json:"bridge,omitempty"`
+	VLAN      int             `json:"vlan,omitempty"`
+	Neighbour *lldp.Neighbour `json:"neighbour,omitempty"`
 }
 
 func (s *Service) now() time.Time {
@@ -59,6 +73,7 @@ type Detail struct {
 	Band           string `json:"band,omitempty"`
 	// Wifi is how the device is doing on one of the router's own radios, while it is there.
 	Wifi       *wireless.Station `json:"wifi,omitempty"`
+	Attached   *Where            `json:"attached,omitempty"`
 	TotalBytes uint64            `json:"total_bytes"`
 	// HistoryKept says whether usage and presence are being kept at all.
 	HistoryKept bool               `json:"history_kept"`
@@ -133,6 +148,9 @@ func (s *Service) HandleClient(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
+	}
+	if s.Where != nil && l.Connection != "wifi" {
+		d.Attached = s.Where(r.Context(), mac)
 	}
 	if s.History != nil {
 		if ev, err := s.History.Events(mac, s.now().Add(-30*24*time.Hour), 20); err == nil && ev != nil {

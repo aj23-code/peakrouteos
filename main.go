@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"peakroute/internal/clientnames"
@@ -25,6 +26,7 @@ import (
 	"peakroute/internal/filtering"
 	"peakroute/internal/forget"
 	"peakroute/internal/fwlog"
+	"peakroute/internal/lldp"
 	"peakroute/internal/netapi"
 	"peakroute/internal/network"
 	"peakroute/internal/ovpn"
@@ -502,7 +504,53 @@ func main() {
 		}
 		whileRouter(sampler.Run)
 	}
+	// What lldpd has heard on the LAN ports (docs/device-pages.md, phase 2), and where the router's bridge has learned each device: asked at most
+	// every few seconds, however many pages ask
+	var nbMu sync.Mutex
+	var nbAt, fdbAt time.Time
+	var nbCache []lldp.Neighbour
+	var nbErr error
+	var fdbCache map[string]network.Attachment
+	neighbours := func(ctx context.Context) ([]lldp.Neighbour, error) {
+		nbMu.Lock()
+		defer nbMu.Unlock()
+		if time.Since(nbAt) > 5*time.Second {
+			nbCache, nbErr = lldp.Read(ctx, runner)
+			nbAt = time.Now()
+		}
+		return nbCache, nbErr
+	}
+	bridgeTable := func(ctx context.Context) map[string]network.Attachment {
+		nbMu.Lock()
+		defer nbMu.Unlock()
+		if time.Since(fdbAt) > 5*time.Second || fdbCache == nil {
+			fdbCache = network.ReadBridgeFDB(ctx, runner)
+			fdbAt = time.Now()
+		}
+		return fdbCache
+	}
+	netAPI.LLDPNeighbours = neighbours
+	mux.HandleFunc("/api/v1/lldp", requireAuth(routerOnly(netAPI.HandleLLDP)))
 	deviceSvc := &devices.Service{
+		Where: func(ctx context.Context, mac string) *devices.Where {
+			att, ok := bridgeTable(ctx)[strings.ToLower(mac)]
+			if !ok {
+				return nil
+			}
+			w := &devices.Where{Port: att.Port, Bridge: att.Bridge, VLAN: att.VLAN}
+			if cfgMgr.NetworkConfig().LLDP {
+				if ns, err := neighbours(ctx); err == nil {
+					for _, n := range ns {
+						if n.LocalPort == att.Port {
+							n := n
+							w.Neighbour = &n
+							break
+						}
+					}
+				}
+			}
+			return w
+		},
 		List: func(ctx context.Context) []network.ClientLease {
 			leases := clientList(ctx)
 			annotateClients(ctx, leases)

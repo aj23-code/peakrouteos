@@ -33,8 +33,8 @@ func TestRenderProducesOneFilePerServiceInApplyOrder(t *testing.T) {
 			services = append(services, a.Service)
 		}
 	}
-	if got := strings.Join(services, ","); got != "sysctl,networking,routes,regdomain,nftables,dnsmasq,mdns,filtering,sqm,ntp" {
-		t.Errorf("artifacts are grouped as %s, want sysctl,networking,routes,regdomain,nftables,dnsmasq,mdns,filtering,sqm,ntp", got)
+	if got := strings.Join(services, ","); got != "sysctl,networking,routes,regdomain,nftables,dnsmasq,mdns,lldp,filtering,sqm,ntp" {
+		t.Errorf("artifacts are grouped as %s, want sysctl,networking,routes,regdomain,nftables,dnsmasq,mdns,lldp,filtering,sqm,ntp", got)
 	}
 
 	nft, _ := hasArtifact(d, PathNftables)

@@ -136,6 +136,7 @@ type NetworkConfig struct {
 	// own isolation switch (the extra networks carry theirs).
 	LanIsolated bool `json:"lan_isolated,omitempty"`
 	LanMDNS     bool `json:"lan_mdns,omitempty"`   // the default network's own mDNS switch (Network.MDNS)
+	LLDP        bool `json:"lldp,omitempty"`       // listen for, and announce to, the equipment plugged into the LAN ports (translator/lldp.go)
 	LanNTP      bool `json:"lan_ntp,omitempty"`    // ... and its switch for serving the time (Network.NTP)
 	LanFilter   bool `json:"lan_filter,omitempty"` // ... and its switch for filtering DNS (Network.Filter)
 	// ... and its priority and limits on the shaped internet line (Network.QoSPriority and the limits)

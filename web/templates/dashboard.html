@@ -720,6 +720,24 @@
         <p class="form-note">You are probably connected through a LAN port. If you change which ports are the LAN, you will lose
           your connection when you commit: plug into one of the new LAN ports, open this page, and confirm within 60 seconds,
           or the change is reverted automatically.</p>
+
+        <section class="card" id="lldp-card">
+          <div class="net-card-head"><h2>Neighbours</h2><span id="lldp-draft" class="tag tag-draft hidden">Draft</span><span id="lldp-state" class="tag"></span></div>
+          <p class="form-hint">What is plugged into the LAN ports: the switch or access point at the other end of each cable, its name and the port it is. With this on, the router also tells them what it is, so a switch lists it by name. It uses LLDP (and reads CDP), on the LAN ports only, never the internet port.</p>
+          <label class="check"><input type="checkbox" id="lldp-enabled"> Discover neighbours (LLDP)</label>
+          <div class="form-actions">
+            <span id="lldp-hint" class="form-hint"></span>
+            <button type="button" id="lldp-reset" class="cfg-btn cfg-btn--ghost" disabled>Reset</button>
+            <button type="button" id="lldp-save" class="cfg-btn cfg-btn--primary" disabled>Save to draft</button>
+          </div>
+          <div class="table-container hidden" id="lldp-table-wrap">
+            <table class="data-table">
+              <thead><tr><th>Router port</th><th>Neighbour</th><th>Its port</th><th>Address</th><th>Kind</th></tr></thead>
+              <tbody id="lldp-list"></tbody>
+            </table>
+          </div>
+          <p class="form-hint" id="lldp-empty"></p>
+        </section>
       </div>
 
       <!-- View: Local Networks -->
@@ -1170,6 +1188,7 @@
   <script src="/static/scripts/admins.js"></script>
   <script src="/static/scripts/leases.js"></script>
   <script src="/static/scripts/device.js"></script>
+  <script src="/static/scripts/neighbours.js"></script>
   <script src="/static/scripts/syslogs.js"></script>
 </body>
 </html>

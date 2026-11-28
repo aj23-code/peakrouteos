@@ -295,6 +295,16 @@ func Render(cfg config.NetworkConfig, mode string) (Desired, error) {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathAvahi, Remove: true, Service: SvcMDNS})
 	}
 
+	// LLDP, on the LAN ports (a file only while it is on)
+	if err := ensureSafeLLDP(cfg); err != nil {
+		return Desired{}, err
+	}
+	if content, ok := renderLLDP(cfg); ok {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathLLDP, Content: []byte(content), Mode: 0644, Service: SvcLLDP})
+	} else {
+		d.Artifacts = append(d.Artifacts, Artifact{Path: PathLLDP, Remove: true, Service: SvcLLDP})
+	}
+
 	// DNS filtering (AdGuard Home runs while a file says so)
 	if content, ok := renderFilteringMarker(cfg, lan); ok {
 		d.Artifacts = append(d.Artifacts, Artifact{Path: PathFiltering, Content: []byte(content), Mode: 0644, Service: SvcFiltering})

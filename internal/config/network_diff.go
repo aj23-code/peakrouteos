@@ -74,6 +74,7 @@ var networkSettings = []networkSetting{
 		}
 		return "not isolated"
 	}},
+	{"lldp", "Neighbour discovery (LLDP)", func(c NetworkConfig) string { return onOff(c.LLDP, "on (LAN ports)", "off") }},
 	{"lan_mdns", "Default network mDNS", func(c NetworkConfig) string { return onOff(c.LanMDNS, "shared (mDNS on)", "off") }},
 	{"lan_ntp", "Default network time server", func(c NetworkConfig) string { return onOff(c.LanNTP, "serves the time", "off") }},
 	{"lan_qos", "Default network priority and limits", func(c NetworkConfig) string {
