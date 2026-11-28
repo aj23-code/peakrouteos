@@ -70,8 +70,19 @@ func (a *API) HandleConnections(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 	rep := ConnectionsReport{Connections: []Connection{}}
+	// ?ip= keeps the connections of one device: the ones it started and the ones forwarded to it
+	only := r.URL.Query().Get("ip")
 	if a.Connections != nil {
 		if conns, count, max, ok := a.Connections(); ok {
+			if only != "" {
+				kept := conns[:0:0]
+				for _, c := range conns {
+					if dnat, _ := c.DestinationNAT(); c.Src == only || c.Dst == only || dnat == only {
+						kept = append(kept, c)
+					}
+				}
+				conns = kept
+			}
 			rep.Known, rep.Count, rep.Max, rep.Total = true, count, max, len(conns)
 			for _, c := range conns {
 				rep.Accounting = rep.Accounting || c.HasCounters

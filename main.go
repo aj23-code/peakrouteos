@@ -19,6 +19,8 @@ import (
 	"peakroute/internal/config"
 	"peakroute/internal/daemon"
 	"peakroute/internal/ddns"
+	"peakroute/internal/devhistory"
+	"peakroute/internal/devices"
 	"peakroute/internal/failover"
 	"peakroute/internal/filtering"
 	"peakroute/internal/forget"
@@ -477,6 +479,41 @@ func main() {
 	}
 	mux.HandleFunc("/api/v1/dhcp/leases", requireAuth(network.LeaseHandler(func(ctx context.Context) []network.ClientLease { return clientList(ctx) }, annotateClients)))
 
+	// What each device did over time (docs/device-pages.md, phase 1): bytes sent and received each minute, and when it came and went. A device's
+	// page reads it. Without the database (it could not be opened) the page still works, without graphs.
+	devHistory, err := devhistory.Open(filepath.Join(configDir, "device_history.db"))
+	if err != nil {
+		log.Printf("[!] Device history unavailable: %v", err)
+		devHistory = nil
+	} else {
+		c.OnClose(func() { devHistory.Close() })
+		sampler := &devhistory.Sampler{
+			Store:      devHistory,
+			Directions: usage.Directions,
+			Clients: func(ctx context.Context) []devhistory.Client {
+				leases := clientList(ctx)
+				annotateClients(ctx, leases)
+				out := make([]devhistory.Client, 0, len(leases))
+				for _, l := range leases {
+					out = append(out, devhistory.Client{MAC: l.MACAddress, IP: l.IPAddress, Status: l.Status, Connection: l.Connection, SSID: l.SSID, Band: l.Band, Network: l.Network})
+				}
+				return out
+			},
+		}
+		whileRouter(sampler.Run)
+	}
+	deviceSvc := &devices.Service{
+		List: func(ctx context.Context) []network.ClientLease {
+			leases := clientList(ctx)
+			annotateClients(ctx, leases)
+			return leases
+		},
+		History:  devHistory,
+		Stations: c.Stations.Get,
+	}
+	mux.HandleFunc("GET /api/v1/clients/{mac}", requireAuth(routerOnly(deviceSvc.HandleClient)))
+	mux.HandleFunc("GET /api/v1/clients/{mac}/history", requireAuth(routerOnly(deviceSvc.HandleHistory)))
+
 	// Removing a device that is gone from the Clients list: its lease, its neighbour (ARP) entry, the presence memory and its nickname
 	leaseFile := network.LeasePaths[len(network.LeasePaths)-1]
 	for _, p := range network.LeasePaths {
@@ -522,7 +559,12 @@ func main() {
 			})
 			return err == nil, err
 		},
-		ForgetSeen:   presenceTracker.Forget,
+		ForgetSeen: func(mac string) {
+			presenceTracker.Forget(mac)
+			if devHistory != nil {
+				devHistory.Forget(mac) // and what its page kept
+			}
+		},
 		DropNickname: func(mac string) error { return clientNames.Set(mac, "") },
 	}
 	mux.HandleFunc("/api/v1/clients/{mac}", requireAuth(routerOnly(forgetSvc.HandleDevice)))

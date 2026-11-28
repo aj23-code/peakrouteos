@@ -161,13 +161,14 @@ if [ "${REUSE_ROOTFS}" != "1" ]; then
     #   because avahi-daemon depends on "default-dbus-system-bus | dbus-system-bus", virtual packages that debootstrap does not resolve:
     #   without it avahi is left unconfigured and the whole build fails (v1.0.2-beta). avahi runs on the bus, too.
     # - wireguard-tools, openvpn: the VPN. systemd-timesyncd, tzdata: the clock. ca-certificates: Dynamic DNS over https.
+    # - ieee-data: the registry of who made which network card (a device's page names its maker from its hardware address).
     # - iputils-ping, iputils-tracepath: the diagnostics. libnss-myhostname: the machine finds its own name.
     DEBIAN_FRONTEND=noninteractive debootstrap \
         --arch=amd64 \
         --variant=minbase \
         --components=main,non-free-firmware \
         --keyring="${DEBIAN_KEYRING}" \
-        --include=linux-image-amd64,initramfs-tools,udev,kmod,systemd-sysv,grub-efi-amd64,grub-pc-bin,grub-common,sudo,procps,gdisk,dosfstools,e2fsprogs,rsync,ifupdown,bridge-utils,vlan,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ppp,conntrack,dbus,avahi-daemon,hostapd,wpasupplicant,iw,wireless-regdb,rfkill,libnss-myhostname,systemd-timesyncd,tzdata,wireguard-tools,openvpn,firmware-iwlwifi,firmware-atheros,firmware-mediatek,firmware-realtek,ca-certificates,lsb-release,util-linux,fdisk,nano,passwd \
+        --include=linux-image-amd64,initramfs-tools,udev,kmod,systemd-sysv,grub-efi-amd64,grub-pc-bin,grub-common,sudo,procps,gdisk,dosfstools,e2fsprogs,rsync,ifupdown,bridge-utils,vlan,iproute2,iputils-ping,iputils-tracepath,nftables,dnsmasq,dnsmasq-utils,udhcpc,ppp,conntrack,dbus,avahi-daemon,hostapd,wpasupplicant,iw,wireless-regdb,rfkill,libnss-myhostname,systemd-timesyncd,tzdata,wireguard-tools,openvpn,firmware-iwlwifi,firmware-atheros,firmware-mediatek,firmware-realtek,ieee-data,ca-certificates,lsb-release,util-linux,fdisk,nano,passwd \
         trixie "${ROOTFS_DIR}" http://deb.debian.org/debian/
     touch "${ROOTFS_DIR}/.peakroute-debootstrapped"
 else
@@ -310,7 +311,8 @@ chroot "${ROOTFS_DIR}" dpkg-query -W -f='${binary:Package} ${Version}\n' | sort 
 # Small: no caches, no lists, no manual pages (the licences stay)
 chroot "${ROOTFS_DIR}" apt-get clean || true
 rm -rf "${ROOTFS_DIR}"/var/lib/apt/lists/* "${ROOTFS_DIR}"/var/cache/apt/* "${ROOTFS_DIR}"/tmp/* \
-       "${ROOTFS_DIR}"/usr/share/man/* "${ROOTFS_DIR}"/usr/share/info/*
+       "${ROOTFS_DIR}"/usr/share/man/* "${ROOTFS_DIR}"/usr/share/info/* \
+       "${ROOTFS_DIR}"/usr/share/ieee-data/*.txt "${ROOTFS_DIR}"/usr/share/ieee-data/iab.csv   # (only the three registries the program reads stay)
 
 umount -l "${ROOTFS_DIR}/dev/pts" "${ROOTFS_DIR}/proc" "${ROOTFS_DIR}/sys" "${ROOTFS_DIR}/dev"
 

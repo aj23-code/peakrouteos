@@ -117,22 +117,35 @@ function thisDevice() { return pageMode() === 'AP' ? 'access point' : 'router'; 
 
 function allowedView(name) {
     if (!name || !document.getElementById(`view-${name}`)) return false;
+    // a device's own page is reached from the Clients list (#device/<hardware address>), not from the menu
+    if (name === 'device') return pageMode() === 'ROUTER';
     // the Traffic page has no menu entry of its own: it is reached from the Overview and the Ports page, which only a router has
     return !!document.querySelector(`.nav-item[data-view="${CSS.escape(name)}"]`) || (name === 'traffic' && pageMode() === 'ROUTER');
 }
 
+// The hardware address in #device/aa:bb:cc:dd:ee:ff ("" when the address is not one of a device's page)
+function deviceFromAddress() {
+    let name = '';
+    try { name = decodeURIComponent(location.hash.replace(/^#\/?/, '')); } catch (e) { name = ''; }
+    const m = /^device\/([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})$/.exec(name);
+    return m ? m[1].toLowerCase() : '';
+}
+
 function viewFromAddress() {
+    if (deviceFromAddress()) return allowedView('device') ? 'device' : '';
     let name = '';
     try { name = decodeURIComponent(location.hash.replace(/^#\/?/, '')); } catch (e) { name = ''; }
     return allowedView(name) ? name : '';
 }
 
 let currentView = '';   // the page being shown
+let currentDevice = ''; // ... and, on a device's page, which device
 
 function loadView(viewName, fromHistory) {
     currentView = viewName;
+    currentDevice = viewName === 'device' ? deviceFromAddress() : '';
     // each page the person goes to is a step for the Back button (going Back itself, or the first page on load, is not)
-    if (!fromHistory && allowedView(viewName) && viewFromAddress() !== viewName) {
+    if (!fromHistory && viewName !== 'device' && allowedView(viewName) && viewFromAddress() !== viewName) {
         history.pushState(null, '', '#' + viewName);
     }
 
@@ -147,7 +160,8 @@ function loadView(viewName, fromHistory) {
         item.classList.remove('active');
     });
 
-    const activeNav = document.querySelector(`.nav-item[data-view="${viewName}"]`);
+    // a device's page belongs to the Clients menu entry
+    const activeNav = document.querySelector(`.nav-item[data-view="${viewName === 'device' ? 'dhcp' : viewName}"]`);
     if (activeNav) {
         activeNav.classList.add('active');
 
@@ -199,6 +213,11 @@ function loadView(viewName, fromHistory) {
         case 'dhcp':
             if (window.DHCPModule) {
                 activeViewCleanup = window.DHCPModule.init();
+            }
+            break;
+        case 'device':
+            if (window.DevicePage) {
+                activeViewCleanup = window.DevicePage.init(currentDevice);
             }
             break;
         case 'internet': {
@@ -474,7 +493,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const followAddress = () => {
         if (location.hash === '#') return;
         const view = viewFromAddress() || homeView();
-        if (view !== currentView) loadView(view, true);
+        if (view !== currentView || (view === 'device' && deviceFromAddress() !== currentDevice)) loadView(view, true);
     };
     window.addEventListener('popstate', followAddress);
     window.addEventListener('hashchange', followAddress);

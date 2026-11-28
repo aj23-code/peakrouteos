@@ -1679,6 +1679,8 @@ every future page works on every screen automatically.
 
 - **AdGuard Home scan (2026-11-27).** `release.yml` runs `.github/scripts/scan-adguard.sh` on the AdGuard Home binary the build left in `build/adguardhome/` (govulncheck v1.10.0 built first and run in `-mode=binary`; exit 3 is "found"; the script always exits 0 for a finding and 2 when it could not run; the workflow ignores both) and writes the result to the job summary. Report only, by decision: pinning a version was left out. Test: `image/scanadguard_test.go` with a fake scanner.
 
+- **Device pages, phase 1 (2026-11-28; docs/device-pages.md, section 3a).** `network.UsageTracker` keeps `up` and `down` per hardware address (`Directions()`; the new file keys are `omitempty`, old files load as before). `internal/devhistory` (`Store`: `usage_min`, `usage_5m`, `presence`, `Compact` hourly; `Sampler`: a minute, router only, in main.go after the leases handler) and `internal/devices` (`Service.HandleClient/HandleHistory`, routes `GET /api/v1/clients/{mac}[/history]` next to the older method-less remove route: a method pattern is more specific, so both live). `internal/oui` reads the IEEE registry from `/usr/share/ieee-data` (`ieee-data` is in the image's package list; the .txt files and `iab.csv` are deleted). `netapi.HandleConnections` takes `?ip=`. UI: `device.js`, `view-device`, `app.js` (`deviceFromAddress`, `currentDevice`), `leases.js` (`client-link`). Open: DNS and firewall sections, a retention setting, the switch port (phases 2 and 3).
+
 ## 12. Open questions for the maintainer
 
 - 9e first slice: DHCP only (a dnsmasq restart cannot lock anyone out) or LAN address plus DHCP.

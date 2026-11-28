@@ -1,4 +1,4 @@
-# Device pages, history, LLDP and SNMP (plan, 2026-11-28: nothing of this is built yet)
+# Device pages, history, LLDP and SNMP (plan, 2026-11-28; phase 1 built 2026-11-28)
 
 Goal: click a device's name in the Clients list and get **a page of its own** (like Meraki's client page): who it is, where it is
 connected (the Wi-Fi network and signal, or the **switch and port** it is plugged into), what it has used over time and what it is doing
@@ -64,6 +64,34 @@ Opened from the Clients list (the name is a link; `#device/<mac>` so it can be b
 4. **Nice to have, when the rest is used:** per-device bandwidth rank on the Overview, an alert when a watched switch stops answering,
    Wake-on-LAN from the device page, a *block this device* action (a firewall rule from the page), the same page for a device on an
    access point: this is in phase 3 (section 4b).
+
+## 3a. Phase 1 as built
+
+- **The page:** `#device/<hardware address>`, opened by clicking a device's name (or its address, when it has no name) in the Clients list
+  (`leases.js`, `client-link`); the Clients menu entry stays lit; an access point has no such page. `web/static/scripts/device.js`,
+  `view-device` in `dashboard.html`, routing in `app.js` (`deviceFromAddress`). Sections: *Device* (names, hardware address and its maker,
+  address with the *Static* and *Seen on* notes, network, reservation, lease), *Connection* (online or last seen; Wi-Fi network, band,
+  signal with a word for it, channel, link speed and time connected from the router's own radios; "the switch port is not known yet" for a
+  cable), *Usage* (received and sent over 1 h, 24 h or 30 d, busiest download and upload, bars you can hover), *When it was here* (a strip
+  of online and offline stretches and the last changes), *Connections now* (the device's open connections, from the connection table).
+- **History** (`internal/devhistory`, `device_history.db` in the configuration folder, SQLite): `UsageTracker` now keeps what each device
+  **sent and received** apart (`Directions()`, in `client_usage.json` as `up` and `down`: devices counted before this version have no
+  split, so their history starts now); a sampler (every minute, router only) writes the difference to `usage_min` (a row a minute) and
+  records changes of presence (online or offline, or moved to another Wi-Fi network, band or network) in `presence`; rows older than 25 h
+  are folded into `usage_5m`, everything older than 30 days is dropped (`DefaultRetention`; not a setting yet). **Bytes and presence
+  only: never where a device went.** Removing a device from the Clients list removes its history.
+- **API:** `GET /api/v1/clients/{mac}` (the device and its last 20 changes), `GET /api/v1/clients/{mac}/history?range=1h|24h|30d` (points of
+  1 min, 5 min or 1 h, totals, peaks and the online stretches), `GET /api/v1/firewall/connections?ip=` (the connections of one device).
+  `internal/devices` serves the first two next to the existing `DELETE /api/v1/clients/{mac}` (remove) and `PUT .../name`.
+- **The maker** comes from the IEEE registry (`internal/oui`, the Debian package `ieee-data` in the image: `oui.csv`, `mam.csv`,
+  `oui36.csv`; the rest of the package is deleted from the image). A *private* address (the "locally administered" bit: phones and
+  laptops make one up to be harder to follow) names no maker and is said to be private.
+- **Not yet in phase 1:** DNS lookups of the device (AdGuard Home's log for the client) and the firewall rules and log hits that mention it
+  (section 2, items 5 and 6 of the page); the switch port (phases 2 and 3); a setting for the retention.
+- Tested: the store (buckets, folding, retention, events, removal, reopening), the sampler (starting point, deltas, a counter that went
+  down, a device that appears, presence changes, a restart), the API (names, Wi-Fi, bad addresses, ranges, totals, peaks, stretches, no
+  history), the routes together on a real mux, the vendor lookup, the connection filter; the page's script ran in a browser against its real
+  markup with mocked answers, and the address handling of `app.js` with good and bad addresses.
 
 ## 4. SNMP: what it takes
 

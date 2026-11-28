@@ -1026,6 +1026,68 @@
       </div>
 
       <!-- View: DHCP & Clients (Dedicated Subpage) -->
+      <div id="view-device" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <p class="subtitle"><a href="#dhcp" data-goto="dhcp">&larr; Clients</a></p>
+            <h1 id="dev-title">Device</h1>
+            <p class="subtitle" id="dev-subtitle"></p>
+          </div>
+        </header>
+        <div id="dev-message" class="form-message hidden" role="alert"></div>
+
+        <div class="dev-grid">
+          <section class="card">
+            <div class="net-card-head"><h2>Device</h2><span id="dev-status" class="tag"></span></div>
+            <dl class="inet-live" id="dev-identity"></dl>
+          </section>
+          <section class="card">
+            <div class="net-card-head"><h2>Connection</h2></div>
+            <dl class="inet-live" id="dev-connection"></dl>
+          </section>
+        </div>
+
+        <section class="traffic-interface-card inet-chart-card">
+          <div class="traffic-card-header">
+            <div class="traffic-card-meta">
+              <span class="traffic-badge wan">USAGE</span>
+              <span class="form-hint">What this device sent and received through the router</span>
+            </div>
+            <div class="traffic-time-picker time-picker" id="dev-picker">
+              <button class="time-btn" data-range="1h">1h</button>
+              <button class="time-btn active" data-range="24h">24h</button>
+              <button class="time-btn" data-range="30d">30d</button>
+            </div>
+          </div>
+          <dl class="inet-stats" id="dev-stats"></dl>
+          <div class="traffic-chart-container">
+            <canvas id="dev-canvas" class="traffic-canvas" role="img" aria-label="Upload and download of the device over time"></canvas>
+          </div>
+          <p class="form-hint dev-hover" id="dev-hover">&nbsp;</p>
+          <div class="inet-legend">
+            <span><i class="inet-key" style="background:#0072CE"></i>Received (download)</span>
+            <span><i class="inet-key" style="background:#00A86B"></i>Sent (upload)</span>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="net-card-head"><h2>When it was here</h2><span class="form-hint" id="dev-presence-note"></span></div>
+          <div class="dev-strip" id="dev-strip" role="img" aria-label="When the device was online"></div>
+          <div class="dev-strip-axis"><span id="dev-strip-from"></span><span id="dev-strip-to"></span></div>
+          <ul class="dev-events" id="dev-events"></ul>
+        </section>
+
+        <section class="card card-nopadding">
+          <div class="card-header"><h2>Connections now</h2><span class="form-hint" id="dev-conn-note"></span></div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead><tr><th>Protocol</th><th>Remote address</th><th>State</th><th>Sent</th><th>Received</th></tr></thead>
+              <tbody id="dev-conns"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
       <div id="view-dhcp" class="view-section hidden">
         <header class="dash-header">
           <div>
@@ -1107,6 +1169,7 @@
   <script src="/static/scripts/vpn.js"></script>
   <script src="/static/scripts/admins.js"></script>
   <script src="/static/scripts/leases.js"></script>
+  <script src="/static/scripts/device.js"></script>
   <script src="/static/scripts/syslogs.js"></script>
 </body>
 </html>

@@ -121,3 +121,28 @@ func TestBothDirectionsCountWhenSorting(t *testing.T) {
 		t.Fatalf("the connection that moved the most data in total comes first: %+v", rep.Connections)
 	}
 }
+
+func TestConnectionsCanBeKeptToOneDevice(t *testing.T) {
+	e := standard(t)
+	mine := conn("192.168.1.50", "93.184.216.34", 443, 100, 900, 100)
+	fwd := conn("203.0.113.2", "203.0.113.10", 443, 5000, 5000, 50)
+	fwd.ReplySrc, fwd.ReplySrcPort = "192.168.1.50", 8443 // forwarded to it
+	other := conn("192.168.1.51", "1.1.1.1", 53, 1, 1, 10)
+	e.api.Connections = func() ([]network.Connection, int, int, bool) {
+		return []network.Connection{other, mine, fwd}, 3, 1000, true
+	}
+	_, rep := e.connections("?ip=192.168.1.50")
+	if rep.Total != 2 || rep.Shown != 2 || rep.Count != 3 {
+		t.Fatalf("%+v", rep)
+	}
+	for _, c := range rep.Connections {
+		if c.Src == "192.168.1.51" {
+			t.Errorf("another device's connection: %+v", c)
+		}
+	}
+	// a device with none has an empty list, not null, and the table's own count is still the whole table's
+	_, rep = e.connections("?ip=192.168.1.99")
+	if rep.Total != 0 || rep.Connections == nil || len(rep.Connections) != 0 || rep.Count != 3 {
+		t.Fatalf("%+v", rep)
+	}
+}

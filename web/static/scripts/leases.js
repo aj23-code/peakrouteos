@@ -39,6 +39,8 @@ window.DHCPModule = (function () {
         let main = shown ? `<strong>${escapeHtml(shown)}</strong>` : '';
         if (c.static) main = `<span class="tag" title="This device has an address of its own: it did not ask this router for one">Static</span>` + (shown ? ` ${main}` : '');
         const label = escapeHtml(shown || c.mac_address);
+        // the name opens the device's own page; a device with no name of its own is opened by its hardware address
+        main = `<a href="#device/${mac}" class="client-link" title="Open this device's page">${main || escapeHtml(c.mac_address)}</a>`;
         return `<td>${main} <button type="button" class="client-rename" data-rename="${mac}" title="${c.nickname ? 'Change the nickname' : 'Give this device a nickname'}" aria-label="Rename ${label}">&#9998;</button></td>`;
     }
 

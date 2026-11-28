@@ -44,6 +44,8 @@ type UsageTracker struct {
 
 	mu     sync.RWMutex
 	totals map[string]uint64 // hardware address (lower case) -> bytes
+	up     map[string]uint64 // ... of which sent by the device (counted since the split was kept: older totals have none)
+	down   map[string]uint64 // ... and received by it
 	seen   map[string]uint64 // "set|address" -> the counter at the last look
 	dirty  bool
 	warned bool
@@ -55,12 +57,14 @@ var GlobalTracker *UsageTracker
 
 // NewUsageTracker counts with the given runner and keeps its totals in the file (empty: in memory only).
 func NewUsageTracker(run Runner, path string) *UsageTracker {
-	return &UsageTracker{run: run, path: path, totals: map[string]uint64{}, seen: map[string]uint64{}}
+	return &UsageTracker{run: run, path: path, totals: map[string]uint64{}, seen: map[string]uint64{}, up: map[string]uint64{}, down: map[string]uint64{}}
 }
 
 type usageFile struct {
 	Totals map[string]uint64 `json:"totals"`
 	Seen   map[string]uint64 `json:"seen"`
+	Up     map[string]uint64 `json:"up,omitempty"`
+	Down   map[string]uint64 `json:"down,omitempty"`
 }
 
 // Load reads what was kept. A missing or unreadable file starts empty.
@@ -84,6 +88,12 @@ func (t *UsageTracker) Load() {
 	if f.Seen != nil {
 		t.seen = f.Seen
 	}
+	if f.Up != nil {
+		t.up = f.Up
+	}
+	if f.Down != nil {
+		t.down = f.Down
+	}
 }
 
 // Save writes the totals if they changed.
@@ -96,7 +106,7 @@ func (t *UsageTracker) Save() {
 		t.mu.Unlock()
 		return
 	}
-	b, err := json.Marshal(usageFile{Totals: t.totals, Seen: t.seen})
+	b, err := json.Marshal(usageFile{Totals: t.totals, Seen: t.seen, Up: t.up, Down: t.down})
 	t.dirty = false
 	t.mu.Unlock()
 	if err != nil {
@@ -118,6 +128,27 @@ func (t *UsageTracker) GetBytesForMAC(mac string) uint64 {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.totals[strings.ToLower(mac)]
+}
+
+// Directions returns how much each device has sent and received since the split was kept (hardware address, lower case). It is a copy.
+func (t *UsageTracker) Directions() map[string][2]uint64 {
+	out := map[string][2]uint64{}
+	if t == nil {
+		return out
+	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	for mac, v := range t.up {
+		d := out[mac]
+		d[0] = v
+		out[mac] = d
+	}
+	for mac, v := range t.down {
+		d := out[mac]
+		d[1] = v
+		out[mac] = d
+	}
+	return out
 }
 
 // Run looks at the counters every interval and saves the totals about once a minute and when ctx ends.
@@ -272,6 +303,11 @@ func (t *UsageTracker) Poll(ctx context.Context) {
 			}
 			if delta > 0 {
 				t.totals[mac] += delta
+				if strings.HasPrefix(name, "up") {
+					t.up[mac] += delta
+				} else {
+					t.down[mac] += delta
+				}
 				t.dirty = true
 			}
 			if t.seen[key] != bytes {

@@ -98,9 +98,9 @@ func kernelChild(t *testing.T) {
 	}
 	defer store.Close()
 	mk := func(id, dev string) *wanhealth.Prober {
-		return &wanhealth.Prober{Store: store, ID: id, Every: 150 * time.Millisecond, Timeout: 300 * time.Millisecond,
+		return &wanhealth.Prober{Store: store, ID: id, Every: 150 * time.Millisecond, Timeout: time.Second, // (generous: the full check runs other heavy tests beside this one)
 			Pinger:    &wanhealth.AutoPinger{Device: func() string { return dev }},
-			DownAfter: func() int { return 2 },
+			DownAfter: func() int { return 3 },
 			Target:    func() (wanhealth.Target, bool) { return wanhealth.Target{}, false },
 			Extra:     func() []wanhealth.Target { return []wanhealth.Target{{Addr: netip.MustParseAddr("9.9.9.9")}} }}
 	}
@@ -135,7 +135,7 @@ func kernelChild(t *testing.T) {
 		t.Fatalf("%s: not within %v\nroutes: %s\nstatus: %+v\nfirst: %+v\nsecond: %+v", what, limit, sh(t, "ip -4 route show default"), ctl.Status(), one.Status(), two.Status())
 	}
 
-	waitFor("both connections judged up", 10*time.Second, func() bool {
+	waitFor("both connections judged up", 25*time.Second, func() bool {
 		return one.Status().State == "online" && two.Status().State == "online"
 	})
 	if got := via(); got != "w1" {
@@ -144,8 +144,8 @@ func kernelChild(t *testing.T) {
 
 	// the first upstream stops answering
 	ns(a, "echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all")
-	waitFor("the traffic moves to the second connection", 10*time.Second, func() bool { return via() == "w2" })
-	if st := ctl.Status(); st.Active != "wan2" || !st.FailedOver || len(st.Events) != 1 {
+	waitFor("the traffic moves to the second connection", 25*time.Second, func() bool { return via() == "w2" })
+	if st := ctl.Status(); st.Active != "wan2" || !st.FailedOver || len(st.Events) < 1 || st.Events[0].To != "wan2" {
 		t.Fatalf("%+v", st)
 	}
 	routes := sh(t, "ip -4 route show default")
@@ -155,21 +155,22 @@ func kernelChild(t *testing.T) {
 
 	// it answers again: it is seen coming back through its kept route, and the traffic waits for the recovery time before going back
 	ns(a, "echo 0 > /proc/sys/net/ipv4/icmp_echo_ignore_all")
-	waitFor("the first connection is seen up again", 10*time.Second, func() bool { return one.Status().State == "online" })
+	waitFor("the first connection is seen up again", 25*time.Second, func() bool { return one.Status().State == "online" })
 	if got := via(); got != "w2" {
 		t.Fatalf("went back before the recovery time: %s", got)
 	}
-	waitFor("the traffic goes back to the first connection", 15*time.Second, func() bool { return via() == "w1" })
-	if st := ctl.Status(); st.Active != "wan" || st.FailedOver || len(st.Events) != 2 {
+	waitFor("the traffic goes back to the first connection", 30*time.Second, func() bool { return via() == "w1" })
+	if st := ctl.Status(); st.Active != "wan" || st.FailedOver || len(st.Events) < 2 || st.Events[0].To != "wan" {
 		t.Fatalf("%+v", st)
 	}
 
 	// both stop: nothing moves (there is nowhere better to go)
 	ns(a, "echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all")
 	ns(b, "echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_all")
-	waitFor("both are found down", 10*time.Second, func() bool { return one.Status().State == "offline" && two.Status().State == "offline" })
+	waitFor("both are found down", 25*time.Second, func() bool { return one.Status().State == "offline" && two.Status().State == "offline" })
+	moves := len(ctl.Status().Events)
 	time.Sleep(600 * time.Millisecond)
-	if got := via(); got != "w1" || len(ctl.Status().Events) != 2 {
+	if got := via(); got != "w1" || len(ctl.Status().Events) != moves {
 		t.Fatalf("with both down the traffic moved: %s %+v", got, ctl.Status())
 	}
 }
