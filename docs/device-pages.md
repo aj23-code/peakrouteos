@@ -12,6 +12,10 @@ know). Standalone mode only, router only.
   its network, its reservation, whether it is online and when it was last seen (`presence.Tracker`, a 20 s round: the Wi-Fi station list,
   and an ARP probe for the rest).
 - **There is no history**: the total only grows; nothing keeps a rate over time, and the presence tracker keeps only the last answer.
+- **PeakRoute AP already reports itself:** `GET /api/v1/ap/status` on the access point answers with its ports, radios, Wi-Fi networks
+  and the **devices connected now** (`wireless.Station`: signal, rates and so on); the router adopts the AP (`translator/adopt.go`), so it
+  holds the way to reach it. The U6+ has 256 MB of RAM (about 90 MB free, the daemon takes 20), which is what any addition to the AP has
+  to fit in.
 - **Wi-Fi stations** (`wireless.ParseStations`, `iw dev X station dump`) give signal, rates and bytes for the devices on the router's own
   radios, not for the access points (the U6+ AP has its own daemon).
 - **Live connections** of a device are in the connection table (`/api/v1/firewall/connections`), and DNS names it asked for are in
@@ -54,11 +58,12 @@ Opened from the Clients list (the name is a link; `#device/<mac>` so it can be b
    - **which ports lead to other switches** (`LLDP-MIB` remote table): a port that has a switch behind it carries many hardware
      addresses and is not where a device is plugged in; the device is put on the port **nearest to it** (the port that sees its
      address and has no switch behind it).
+   **PeakRoute APs are polled through their own API** (section 4b), so a Wi-Fi client's page names its AP, network, band and signal.
    Joined with the router's own ports (phase 2) this gives a map of what is plugged into what. A *Network devices* page lists the
    watched devices, their ports and their state; a change (a port down, a device moved to another port) is an event in the history.
 4. **Nice to have, when the rest is used:** per-device bandwidth rank on the Overview, an alert when a watched switch stops answering,
    Wake-on-LAN from the device page, a *block this device* action (a firewall rule from the page), the same page for a device on an
-   access point (PeakRoute AP's own station list, over its HTTPS API).
+   access point: this is in phase 3 (section 4b).
 
 ## 4. SNMP: what it takes
 
@@ -76,6 +81,25 @@ Opened from the Clients list (the name is a link; `#device/<mac>` so it can be b
   `BRIDGE-MIB` and often `Q-BRIDGE-MIB` and `LLDP-MIB`; unmanaged and "smart" switches usually do not. Access points (UniFi) often give
   `IF-MIB` and the station table in a vendor MIB: only the generic MIBs are used at first, vendor extras later by request.
 
+## 4b. PeakRoute AP in this
+
+The access points run PeakRoute AP, so they need not be treated like third-party switches:
+
+- **The router reads an AP through its own API, not SNMP** (phase 3 gains an *AP* kind of watched device, added when the AP is adopted):
+  the status the AP already serves has the stations (signal, rates, network and band) and the radios, with nothing new to run on the AP
+  and the same sign-in the adoption set up. A Wi-Fi client's page then says "**AP hall, Home 5 GHz, -58 dBm**" and the Network devices page
+  lists the AP with its radios, channel, clients and uptime; a client that moves between two APs shows as a change in its history.
+  Missing fields (channel utilisation, per-station bytes and retries) are added to the AP's status, which is cheaper than a new protocol.
+- **LLDP on the AP** (`lldpd`, about 1-2 MB): the AP announces its name to the switch it is plugged into, so the switch's own LLDP table
+  (and so our phase 3) names the port "PeakRoute AP hall". The AP's hardware address is in the switch's forwarding table too, so the page
+  can say "AP hall is on switch 2, port 7".
+- **An SNMP agent on the AP** is a separate and optional question, for **other tools** (LibreNMS, Zabbix, Grafana) that want to monitor it
+  without our API. Two ways: Debian's `snmpd` (net-snmp: the interface table with the port and radios' counters, system, CPU, memory and
+  disk; a small `pass_persist` script for a PeakRoute AP table of stations under a private enterprise number), or an agent inside the AP
+  daemon (no extra process, but v3 on the server side is ours to write). Costs: `snmpd` is a few MB of resident memory on a board with 90
+  MB free, and an open UDP port: so **off by default, v3 only, answering only the router's address** (and any address the administrator
+  adds), switched on from the AP page. Suggested: after phase 3, and only if you use such a tool.
+
 ## 5. Questions for the maintainer
 
 1. **Which switches and access points do you have** (make and model)? That decides which MIBs have to work first and what to test against.
@@ -84,5 +108,6 @@ Opened from the Clients list (the name is a link; `#device/<mac>` so it can be b
 3. **SNMP v3 as well as v2c from the start?** Plan: yes (gosnmp). v2c-only would be a smaller first slice.
 4. **LLDP: run `lldpd`, or only read?** `lldpd` also announces the router to the switches (they then list it by name), which most people
    want; it is one more daemon on the image.
-5. **Where does the device page live?** Plan: a view of its own (`#device/<mac>`) reached from the Clients list, the Overview's
+5. **An SNMP agent on the AP, for other monitoring tools?** Plan: later and optional (section 4b); the router does not need it.
+6. **Where does the device page live?** Plan: a view of its own (`#device/<mac>`) reached from the Clients list, the Overview's
    top-devices list and the firewall log, with a back link, not a pop-up.
