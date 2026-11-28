@@ -236,6 +236,10 @@ for f in 'scripts/local-bottom/peakroute-state' 'scripts/local-bottom/peakroute-
     grep -q "${f}" "${BUILD_DIR}/initrd.list" || { echo "Error: the initramfs does not hold ${f}"; exit 1; }
 done
 
+# What is in the image, for the weekly check of what Debian has published since (.github/workflows/debian-security.yml): a line for every
+# package, "name version", kept with the release
+chroot "${ROOTFS_DIR}" dpkg-query -W -f='${binary:Package} ${Version}\n' | sort > "${BUILD_DIR}/packages.txt"
+
 chroot "${ROOTFS_DIR}" apt-get clean || true
 rm -rf "${ROOTFS_DIR}"/var/lib/apt/lists/* "${ROOTFS_DIR}"/var/cache/apt/* "${ROOTFS_DIR}"/tmp/* \
        "${ROOTFS_DIR}"/usr/share/man/* "${ROOTFS_DIR}"/usr/share/info/*
@@ -351,5 +355,6 @@ MANIFEST
 tar -C "${BUNDLE_DIR}" --format=ustar -cf "${BUNDLE}" manifest.json rootfs.img.gz boot.fit
 rm -rf "${BUNDLE_DIR}"
 ( cd "${OUT_DIR}" && for f in "${NAME}.fit" "${NAME}.rootfs" "${NAME}.update"; do sha256sum "${f}" > "${f}.sha256"; done )
+cp "${BUILD_DIR}/packages.txt" "${OUT_DIR}/${NAME}.packages"
 [ -n "${SUDO_OWNER:-}" ] && chown -R "${SUDO_OWNER}" "${OUT_DIR}"
 echo "Done: ${OUT_DIR}/${NAME}.fit, .rootfs and .update. Install with image/boards/${BOARD}/install.sh (docs/u6plus.md)."

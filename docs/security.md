@@ -42,6 +42,7 @@ Releases are **signed** and routers only install what the maker's key signed (do
   the newest release's list with what Debian holds now (`.github/scripts/debian-updates.sh`, run in a `debian:trixie` container) and opens
   an issue naming what is behind, security ones first. The issue is updated while something is behind and closed when a release has
   caught up. A release from before the lists has nothing to compare: the next one does. It reports; it does not build a release.
+  **The access point is covered the same way:** `buildImageU6Plus.sh` applies the security updates and writes `peakroute-ap-arm64-ubnt-u6plus-<version>.packages`, `release-ap.yml` attaches it, and the weekly check compares the newest `ap-v*` release too (its own issue, "...than ap-v..."; the comparison runs against Debian's amd64 archive, whose versions match arm64's except for arm64-only packages, which are skipped). The access point's releases are checked (`check.sh`), scanned (`govulncheck`) and signed like the router's, and it installs only what that key signed.
 - **CPU microcode** (`intel-microcode`, `amd64-microcode`, from `non-free-firmware`) is in the router image: the processor's own fixes
   (Spectre and its kin), loaded from the start of the initramfs.
 - Run by hand: `go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...`

@@ -1689,6 +1689,8 @@ every future page works on every screen automatically.
 
 - **DNS and firewall sections of the device page (2026-11-28; docs/device-pages.md, section 3e).** `filtering.QueryLog.ForClient` (`/control/querylog?search=<ip>`, exact client check, `Report{Queries,Seen,Blocked,Top,TopBlocked}`), `devices/policy.go` (`FirewallFor`, `networkOf`, `HandleFirewall`, `HandleDNS`; `Service.Config/FirewallLog/DNS`, set in main.go, the log only when the store opened), routes `GET /api/v1/clients/{mac}/dns` and `/firewall`, cards `dev-dns` and `dev-fw` in `device.js`. Not stored anywhere; the DNS part depends on AdGuard Home's query-log format (v0.107).
 
+- **Access point release parity (2026-11-28).** `release-ap.yml` already ran `check.sh`, `govulncheck` and the signing step (`peakroute-sign sign` then `verify`); the AP image already applied Debian's security updates. Added: `buildImageU6Plus.sh` writes `<name>.packages` (`dpkg-query`, before the final clean-up), `release-ap.yml` attaches it, and `debian-security.yml` is a matrix over `v*` and `ap-v*` releases (the newest of each, an issue per product; `gh --jq` takes no `--arg`, so the expressions read `env.PREFIX`). The AP binary has the monitoring token code (`daemon.go`) and `apmonitor.js`.
+
 ## 12. Open questions for the maintainer
 
 - 9e first slice: DHCP only (a dnsmasq restart cannot lock anyone out) or LAN address plus DHCP.
