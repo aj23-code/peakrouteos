@@ -577,8 +577,16 @@ func main() {
 	if watched != nil {
 		deviceSvc.Edge = watched.Locate
 	}
+	deviceSvc.Config = cfgMgr.NetworkConfig
+	if fwLogStore != nil { // a nil *Store inside the interface would not be nil
+		deviceSvc.FirewallLog = fwLogStore
+	}
+	queryLog := &filtering.QueryLog{}
+	deviceSvc.DNS = queryLog.ForClient
 	mux.HandleFunc("GET /api/v1/clients/{mac}", requireAuth(routerOnly(deviceSvc.HandleClient)))
 	mux.HandleFunc("GET /api/v1/clients/{mac}/history", requireAuth(routerOnly(deviceSvc.HandleHistory)))
+	mux.HandleFunc("GET /api/v1/clients/{mac}/firewall", requireAuth(routerOnly(deviceSvc.HandleFirewall)))
+	mux.HandleFunc("GET /api/v1/clients/{mac}/dns", requireAuth(routerOnly(deviceSvc.HandleDNS)))
 
 	// Removing a device that is gone from the Clients list: its lease, its neighbour (ARP) entry, the presence memory and its nickname
 	leaseFile := network.LeasePaths[len(network.LeasePaths)-1]

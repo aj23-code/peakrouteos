@@ -317,6 +317,68 @@ window.DevicePage = (function () {
         }).join('');
     }
 
+    // ---------------------------------------------------------------- DNS and firewall (docs/device-pages.md, sections 5 and 6)
+
+    const clock = (ms) => whenText(Math.floor(ms / 1000));
+
+    function domainList(list) {
+        return list.length ? `<ol class="dev-top">${list.map(d => `<li><code>${escapeHtml(d.name)}</code> <span class="form-hint">${d.count}</span></li>`).join('')}</ol>` : '<p class="form-hint">None.</p>';
+    }
+
+    async function loadDNS() {
+        if (!detail) return;
+        const box = $('dev-dns'), note = $('dev-dns-note');
+        const res = await apiFetch(`/api/v1/clients/${encodeURIComponent(mac)}/dns`);
+        if (!res || !res.ok) { box.innerHTML = '<p class="form-hint">Could not be read.</p>'; return; }
+        const r = await res.json();
+        note.textContent = '';
+        if (!r.filtering) { box.innerHTML = '<p class="form-hint">DNS filtering is off, so the router does not keep what devices ask for. Turn it on for a network under DNS to see this.</p>'; return; }
+        if (!r.filtered) { box.innerHTML = `<p class="form-hint">DNS filtering is not on for ${escapeHtml(r.network || 'this device\'s network')}: its questions are not kept.</p>`; return; }
+        if (r.error) { box.innerHTML = `<p class="form-hint">${escapeHtml(r.error)}</p>`; return; }
+        if (!r.seen) { box.innerHTML = '<p class="form-hint">AdGuard Home has no questions from this device yet.</p>'; return; }
+        note.textContent = `${r.seen} lately, ${r.blocked} blocked`;
+        const rows = (r.queries || []).map(q => `<tr><td>${escapeHtml(clock(q.time))}</td><td><code>${escapeHtml(q.name)}</code></td><td>${escapeHtml(q.type || '')}</td>
+            <td>${q.blocked ? `<span class="tag tag-warn" title="${escapeHtml(q.rule || q.reason || '')}">Blocked</span>` : escapeHtml(q.cached ? 'cached' : (q.status || ''))}</td></tr>`).join('');
+        box.innerHTML = `<div class="dev-two">
+                <div><h3>Asked most</h3>${domainList(r.top || [])}</div>
+                <div><h3>Blocked most</h3>${domainList(r.top_blocked || [])}</div></div>
+            <div class="table-container"><table class="data-table"><thead><tr><th>When</th><th>Name</th><th>Type</th><th>Answer</th></tr></thead><tbody>${rows}</tbody></table></div>
+            <p class="form-hint">The newest questions AdGuard Home has of this device. Its own page has the full log and the filters.</p>`;
+    }
+
+    function actionTag(a) {
+        return a ? `<span class="tag ${a === 'allow' ? 'tag-ok' : 'tag-warn'}">${a === 'allow' ? 'Allow' : a === 'block' ? 'Block' : 'Reject'}</span>` : '';
+    }
+
+    async function loadFirewall() {
+        if (!detail) return;
+        const box = $('dev-fw'), note = $('dev-fw-note');
+        const res = await apiFetch(`/api/v1/clients/${encodeURIComponent(mac)}/firewall`);
+        if (!res || !res.ok) { box.innerHTML = '<p class="form-hint">Could not be read.</p>'; return; }
+        const r = await res.json();
+        const own = (r.rules || []).filter(x => x.scope === 'device'), wide = (r.rules || []).filter(x => x.scope === 'network');
+        const ruleRow = (x) => `<li>${actionTag(x.action)} <a href="#" data-goto="firewall-rules">${escapeHtml(x.name)}</a>
+            <span class="form-hint">${escapeHtml(x.text)}</span></li>`;
+        const parts = [];
+        if (r.forwards && r.forwards.length) {
+            parts.push(`<h3>Port forwards to this device</h3><ul class="dev-rules">${r.forwards.map(f => `<li><a href="#" data-goto="firewall-forwards">${escapeHtml(f.name)}</a> <span class="form-hint">${escapeHtml(f.text)}</span></li>`).join('')}</ul>`);
+        }
+        if (own.length) parts.push(`<h3>Rules that name this device</h3><ul class="dev-rules">${own.map(ruleRow).join('')}</ul>`);
+        if (wide.length) parts.push(`<details><summary>${wide.length} rule${wide.length === 1 ? '' : 's'} for everything on ${escapeHtml(r.network_name || 'its network')}</summary><ul class="dev-rules">${wide.map(ruleRow).join('')}</ul></details>`);
+        if (!parts.length) parts.push('<p class="form-hint">No rule or port forward names this device or its network.</p>');
+        if (!r.log_known) {
+            parts.push('<p class="form-hint">The firewall log cannot be read on this system.</p>');
+        } else if (!(r.log || []).length) {
+            parts.push(`<h3>Logged packets</h3><p class="form-hint">Nothing in the last ${r.log_days} days. Only rules with logging on are recorded.</p>`);
+        } else {
+            const rows = r.log.map(l => `<tr><td>${escapeHtml(clock(l.last))}</td><td>${actionTag(l.action)} ${escapeHtml(l.name)}</td>
+                <td>${l.direction === 'from' ? 'to' : 'from'} <code>${escapeHtml(l.peer)}${l.port ? ':' + l.port : ''}</code> ${escapeHtml((l.proto || '').toUpperCase())}</td><td>${l.count > 1 ? l.count + '×' : ''}</td></tr>`).join('');
+            parts.push(`<h3>Logged packets, last ${r.log_days} days</h3><div class="table-container"><table class="data-table"><thead><tr><th>Last seen</th><th>Rule</th><th>Traffic</th><th>Times</th></tr></thead><tbody>${rows}</tbody></table></div>`);
+        }
+        note.textContent = '';
+        box.innerHTML = parts.join('');
+    }
+
     // ---------------------------------------------------------------- lifecycle
 
     function pickRange(r) {
@@ -332,6 +394,7 @@ window.DevicePage = (function () {
         timers.forEach(clearInterval);
         timers = [
             setInterval(() => { if (!gone) loadDetail().then(loadConnections); }, 10000),
+            setInterval(() => { if (!gone) { loadDNS(); loadFirewall(); } }, 30000),
             setInterval(() => { if (!gone) loadHistory(); }, REFRESH_MS[range]),
         ];
     }
@@ -354,10 +417,10 @@ window.DevicePage = (function () {
         showMessage('');
         $('dev-title').textContent = 'Device';
         $('dev-subtitle').textContent = '';
-        ['dev-identity', 'dev-connection', 'dev-stats', 'dev-events', 'dev-strip', 'dev-conns'].forEach(id => { $(id).innerHTML = ''; });
+        ['dev-identity', 'dev-connection', 'dev-stats', 'dev-events', 'dev-strip', 'dev-conns', 'dev-dns', 'dev-fw'].forEach(id => { $(id).innerHTML = ''; });
         document.querySelectorAll('#dev-picker .time-btn').forEach(b => b.classList.toggle('active', b.dataset.range === range));
         drawChart();
-        loadDetail().then(loadConnections);
+        loadDetail().then(() => { loadConnections(); loadDNS(); loadFirewall(); });
         loadHistory();
         schedule();
         resizeHandler = () => drawChart();

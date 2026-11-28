@@ -151,6 +151,20 @@ Opened from the Clients list (the name is a link; `#device/<mac>` so it can be b
   (no forwarding table there yet).
 - **Not done:** uptime and the access point's name in the record (its status has neither), lldpd on the access point, an SNMP agent there.
 
+## 3e. DNS and firewall sections as built
+
+- **DNS** (`GET /api/v1/clients/{mac}/dns`, `devices/policy.go`, `filtering.QueryLog`): the newest questions AdGuard Home's query log has of the
+  device (its search finds an address inside longer ones, so the answers are checked for the exact client): the last 40, the names asked
+  and blocked most among the newest 500, and how many were blocked (with the filter rule). Only for a device on a network that has DNS
+  filtering on; otherwise the section says why there is nothing (filtering off, not on for this network, AdGuard Home not answering).
+  Nothing is stored by the router: it is read when the page is open. It is a window of AdGuard Home's own log (its retention, its
+  settings), not a history of the router.
+- **Firewall** (`GET /api/v1/clients/{mac}/firewall`, `FirewallFor`): the rules that name the device (a source or destination address or
+  range that holds its address), then, folded, the rules that are for everything on its network; port forwards that end at it; and the
+  logged packets (rules with logging on, `fwlog`) to or from it in the last 7 days, newest 50, each with the rule's name and action.
+  Links go to the firewall pages. A rule is judged by what it says, not by whether it would win over an earlier one (the page does not
+  evaluate the order).
+
 ## 4. SNMP: what it takes
 
 - **A library, or our own:** `github.com/gosnmp/gosnmp` (BSD-2, widely used, v1, v2c and v3) is the usual choice; the other way is a small

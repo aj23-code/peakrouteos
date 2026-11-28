@@ -1845,6 +1845,12 @@ a.cfg-btn { text-decoration: none; display: inline-block; }
 .dev-strip .seg.on { background: #00A86B; }
 .dev-strip .seg.off { background: rgba(148, 163, 184, 0.35); }
 .dev-strip-axis { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted, #64748B); margin-top: 0.25rem; }
+.dev-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem; margin-bottom: 0.8rem; }
+.dev-two h3, #dev-fw h3 { margin: 0.6rem 0 0.3rem; font-size: 0.85rem; color: var(--text-muted, #94A3B8); font-weight: 600; }
+.dev-top { margin: 0; padding-left: 1.2rem; font-size: 0.85rem; display: grid; gap: 0.15rem; }
+.dev-rules { list-style: none; margin: 0 0 0.6rem; padding: 0; font-size: 0.85rem; display: grid; gap: 0.3rem; }
+#dev-fw details { margin: 0.4rem 0 0.8rem; }
+#dev-fw summary { cursor: pointer; font-size: 0.85rem; }
 .dev-events { list-style: none; margin: 0.8rem 0 0; padding: 0; font-size: 0.85rem; display: grid; gap: 0.2rem; }
 .inet-fo-status { margin: 0.4rem 0; font-size: 0.95rem; }
 .inet-fo-metered { margin: 0.8rem 0 0.4rem; }

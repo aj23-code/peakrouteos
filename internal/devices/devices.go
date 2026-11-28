@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"peakroute/internal/config"
 	"peakroute/internal/devhistory"
+	"peakroute/internal/filtering"
 	"peakroute/internal/lldp"
 	"peakroute/internal/netdevices"
 	"peakroute/internal/network"
@@ -33,7 +35,12 @@ type Service struct {
 	// Edge says which switch port or access point the watched network equipment (SNMP, PeakRoute APs) has the device on, when any of it has seen it (nil: no
 	// watched equipment).
 	Edge func(mac string) *netdevices.Location
-	Now  func() time.Time
+	// Config is the active configuration (for the firewall rules and networks that apply to a device); FirewallLog the logged packets; DNS what
+	// AdGuard Home's query log has of a device (each nil: that section says it is not known).
+	Config      func() config.NetworkConfig
+	FirewallLog FirewallLog
+	DNS         func(ctx context.Context, ip string) (filtering.Report, error)
+	Now         func() time.Time
 }
 
 // Where is where the router has found a device: the port its frames come in on, and, when that port has a switch or access point on it that

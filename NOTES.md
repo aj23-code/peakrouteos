@@ -1687,6 +1687,8 @@ every future page works on every screen automatically.
 
 - **PeakRoute AP driver, phase 3b of the device pages (2026-11-28; docs/device-pages.md, section 3d).** `netdevices.Monitor` (`monitor.go`: token hash in `monitor_token.json`, `Generate/Revoke/Check`, `Allow(signIn, h)` accepts the bearer token for GET only, `HandleMonitoring`) wired in `daemon.go` for `/api/v1/ap/status` (when the file cannot be opened the route is session-only) and `/api/v1/ap/monitoring` (409 on a router). `netdevices.APDriver` (`ap.go`: HTTPS, `InsecureSkipVerify` with `VerifyPeerCertificate` pinning the SHA-256 fingerprint; first answer's is stored through `Pin` = `Store.SetFingerprint`; `ErrCertificateChanged`), `APAuth{Port,Token,Fingerprint}`, `APRequest` (`trust_new_certificate`), `APView` (no token). UI: `apmonitor.js` (card under Operation mode), AP kind in `netdevices.js`, `edgeRows` shows the Wi-Fi details. Never run against a real access point.
 
+- **DNS and firewall sections of the device page (2026-11-28; docs/device-pages.md, section 3e).** `filtering.QueryLog.ForClient` (`/control/querylog?search=<ip>`, exact client check, `Report{Queries,Seen,Blocked,Top,TopBlocked}`), `devices/policy.go` (`FirewallFor`, `networkOf`, `HandleFirewall`, `HandleDNS`; `Service.Config/FirewallLog/DNS`, set in main.go, the log only when the store opened), routes `GET /api/v1/clients/{mac}/dns` and `/firewall`, cards `dev-dns` and `dev-fw` in `device.js`. Not stored anywhere; the DNS part depends on AdGuard Home's query-log format (v0.107).
+
 ## 12. Open questions for the maintainer
 
 - 9e first slice: DHCP only (a dnsmasq restart cannot lock anyone out) or LAN address plus DHCP.
