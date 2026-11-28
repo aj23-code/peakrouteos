@@ -81,6 +81,23 @@ Opened from the Clients list (the name is a link; `#device/<mac>` so it can be b
   `BRIDGE-MIB` and often `Q-BRIDGE-MIB` and `LLDP-MIB`; unmanaged and "smart" switches usually do not. Access points (UniFi) often give
   `IF-MIB` and the station table in a vendor MIB: only the generic MIBs are used at first, vendor extras later by request.
 
+## 4a. One way to watch a device, two ways to talk to it
+
+Decided with the maintainer (2026-11-28): **PeakRoute devices are read through their own API; anything else through SNMP**, and both
+stay. In the code that is one idea, a **watched device** (name, address, kind, last poll, reachable or not) with a **driver** that fills in
+what the pages need and nothing else knows which driver it was:
+
+| Driver | For | Gives |
+|---|---|---|
+| `peakroute-ap` | PeakRoute APs (adopted) | radios, Wi-Fi networks, stations with signal and rates, ports, uptime, config state |
+| `snmp` | other switches, access points, anything with SNMP | system, ports (name, status, speed, counters, PoE), forwarding table (which hardware address is on which port), LLDP neighbours |
+| later: a PeakRoute switch, and the SDN controller | what the standalone router does not manage | the same record; the pages and the device page do not change |
+
+A driver returns one record: *ports* (name, up, speed, VLAN, neighbour, the hardware addresses learned on it), *clients* (hardware address,
+port or radio, signal where there is one) and *health* (uptime, errors). The device page and the Network devices page read the record, so the
+SDN controller, when it comes, is one more driver and not a rewrite. Nothing here assumes the controller: the standalone router is the
+only mode that is built.
+
 ## 4b. PeakRoute AP in this
 
 The access points run PeakRoute AP, so they need not be treated like third-party switches:
