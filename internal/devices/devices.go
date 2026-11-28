@@ -13,6 +13,7 @@ import (
 
 	"peakroute/internal/devhistory"
 	"peakroute/internal/lldp"
+	"peakroute/internal/netdevices"
 	"peakroute/internal/network"
 	"peakroute/internal/oui"
 	"peakroute/internal/wireless"
@@ -29,7 +30,10 @@ type Service struct {
 	// Where says which of the router's own ports a device is behind (what its bridge has learned), and what is plugged into that port (nil: not
 	// known on this system).
 	Where func(ctx context.Context, mac string) *Where
-	Now   func() time.Time
+	// Edge says which switch port or access point the watched network equipment (SNMP, PeakRoute APs) has the device on, when any of it has seen it (nil: no
+	// watched equipment).
+	Edge func(mac string) *netdevices.Location
+	Now  func() time.Time
 }
 
 // Where is where the router has found a device: the port its frames come in on, and, when that port has a switch or access point on it that
@@ -72,9 +76,11 @@ type Detail struct {
 	SSID           string `json:"ssid,omitempty"`
 	Band           string `json:"band,omitempty"`
 	// Wifi is how the device is doing on one of the router's own radios, while it is there.
-	Wifi       *wireless.Station `json:"wifi,omitempty"`
-	Attached   *Where            `json:"attached,omitempty"`
-	TotalBytes uint64            `json:"total_bytes"`
+	Wifi     *wireless.Station `json:"wifi,omitempty"`
+	Attached *Where            `json:"attached,omitempty"`
+	// Edge is the switch port or access point the watched equipment has the device on: further along than Attached, which is only the router's own port.
+	Edge       *netdevices.Location `json:"edge,omitempty"`
+	TotalBytes uint64               `json:"total_bytes"`
 	// HistoryKept says whether usage and presence are being kept at all.
 	HistoryKept bool               `json:"history_kept"`
 	Events      []devhistory.Event `json:"events"` // the newest first
@@ -151,6 +157,9 @@ func (s *Service) HandleClient(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Where != nil && l.Connection != "wifi" {
 		d.Attached = s.Where(r.Context(), mac)
+	}
+	if s.Edge != nil {
+		d.Edge = s.Edge(mac)
 	}
 	if s.History != nil {
 		if ev, err := s.History.Events(mac, s.now().Add(-30*24*time.Hour), 20); err == nil && ev != nil {

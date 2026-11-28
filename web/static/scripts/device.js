@@ -127,13 +127,34 @@ window.DevicePage = (function () {
             }
         } else if (d.connection === 'wired') {
             rows.push(row('Connected by', 'Cable'));
-            rows.push(row('Port', portText(d.attached)));
+            rows.push(row(d.edge ? 'Router port' : 'Port', portText(d.attached)));
         } else {
             rows.push(row('Connected by', 'Not known'));
         }
+        if (d.edge) rows.push(...edgeRows(d.edge, d.connection === 'wifi'));
         rows.push(row('Used through the router', `${bytesText(d.total_bytes)} since it was first counted`));
         $('dev-connection').innerHTML = rows.join('');
         renderEvents();
+    }
+
+    // Where the watched switches and access points have the device (docs/device-pages.md, phase 3)
+    function edgeRows(e, wifi) {
+        const out = [];
+        const kind = e.kind === 'peakroute-ap' ? 'Access point' : 'Switch';
+        const stale = e.stale ? ' <span class="tag tag-warn" title="That device is not answering now: this is where it last saw this one">last known</span>' : '';
+        out.push(row(kind, escapeHtml(e.device_name) + stale));
+        if (e.kind === 'peakroute-ap' && wifi) {
+            const c = e.client || {};
+            if (c.ssid) out.push(row('Wi-Fi', escapeHtml(c.ssid) + (c.band ? ' · ' + escapeHtml(c.band) : '')));
+            if (c.signal_dbm != null) out.push(row('Signal at the access point', signalText(c.signal_dbm)));
+            return out;
+        }
+        let port = escapeHtml(e.port) + (e.alias ? ` <span class="form-hint">${escapeHtml(e.alias)}</span>` : '');
+        if (e.uplink) port += ` <span class="form-hint">leads on to ${escapeHtml((e.neighbour && (e.neighbour.name || e.neighbour.id)) || 'more equipment')}, which is not watched: the device is further along</span>`;
+        out.push(row('Switch port', port));
+        const link = [e.up ? 'Up' : 'Down', e.up && e.speed_mbps ? (e.speed_mbps >= 1000 ? `${e.speed_mbps / 1000} Gbit/s` : `${e.speed_mbps} Mbit/s`) : '', e.vlan ? `VLAN ${e.vlan}` : ''].filter(Boolean).join(' · ');
+        out.push(row('Port link', link));
+        return out;
     }
 
     function eventText(e) {

@@ -47,6 +47,7 @@
               <a href="#" class="nav-item" data-view="dhcp">Clients</a>
               <a href="#" class="nav-item" data-view="wireless">Wireless</a>
               <a href="#" class="nav-item" data-view="routes">Routes</a>
+              <a href="#" class="nav-item" data-view="netdevices">Network devices</a>
             </div>
           </details>
 
@@ -970,6 +971,19 @@
         <div id="vpn-body" class="card-stack"></div>
       </div>
 
+      <!-- View: Network devices (switches read over SNMP) -->
+      <div id="view-netdevices" class="view-section hidden">
+        <header class="dash-header">
+          <div>
+            <h1>Network devices</h1>
+            <p class="subtitle">Switches the router reads over SNMP, to show which port each device is plugged into. Changes here take effect at once.</p>
+          </div>
+        </header>
+
+        <div id="netdev-message" class="form-message hidden" role="alert"></div>
+        <div id="netdev-body" class="card-stack"></div>
+      </div>
+
       <!-- View: Dynamic DNS -->
       <div id="view-ddns" class="view-section hidden">
         <header class="dash-header">
@@ -1179,6 +1193,7 @@
   <script src="/static/scripts/ap.js"></script>
   <script src="/static/scripts/ap_home.js"></script>
   <script src="/static/scripts/ddns.js"></script>
+  <script src="/static/scripts/netdevices.js"></script>
   <script src="/static/scripts/sqm.js"></script>
   <script src="/static/scripts/certificates.js"></script>
   <script src="/static/scripts/backup.js"></script>

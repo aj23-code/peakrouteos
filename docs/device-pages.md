@@ -114,6 +114,26 @@ Opened from the Clients list (the name is a link; `#device/<mac>` so it can be b
   API (draft only, asked only while in effect, lldpd not answering); the device page's attachment; the card and the port line in a browser
   with mocked answers (which found and fixed a checkbox that was reset on every redraw). **lldpd itself has not run on a router here.**
 
+## 3c. Phase 3a as built (watched devices, SNMP)
+
+- **Watched devices** are kept in `network_devices.json` (mode 0600, up to 32; ids `nd1`, `nd2`… never reused). They are **not** part of the
+  configuration draft: adding, changing or removing one takes effect at once, and a poll starts. They are **not in backups yet** (the
+  backup bundle holds the four config files): after a restore the switches are added again. The secrets (community, v3 passwords) are
+  never sent back to the page; a request that leaves a secret out keeps the stored one.
+- **Reading** (`internal/netdevices`): `Service.Run` polls every enabled device each minute, one after the other, through the `Driver` of its
+  kind (`snmp` now; `peakroute-ap` in phase 3b). `SNMPDriver` (gosnmp, v2c or v3, GET and walks only) reads the system group, `IF-MIB`
+  (name, alias, state, speed, octets, errors), the bridge table (`Q-BRIDGE-MIB` with VLANs, else `BRIDGE-MIB` learned entries), the port
+  VLAN and `LLDP-MIB` remote systems. A device that stops answering keeps its last record, marked not answering.
+- **Where is this device:** `Service.Locate(mac)` looks through every record for the ports that have learned the address and picks the end
+  of the line: a port with another switch or access point behind it (LLDP says bridge, router or WLAN AP) is an uplink and loses; without
+  LLDP the port that has learned the fewest addresses wins; an access point that has the device associated beats a switch port; a device
+  that is not answering now comes last and is shown as *last known*. The device page shows the switch (or access point), the port, its
+  link state, speed and VLAN (`edge` in `GET /api/v1/clients/{mac}`); when only an uplink port is known it says the device is further along.
+- **API** (router only): `GET/POST /api/v1/network-devices`, `GET/PUT/DELETE /api/v1/network-devices/{id}`, `POST …/{id}/poll`.
+  **Page:** *Network devices* under Network (`netdevices.js`): list with state, ports, add/edit (v3 offered first; v2c warns it is clear
+  text), read now, delete.
+- **Not done:** the access point driver (3b), a retention setting, switch make and model, an SNMP agent on the AP.
+
 ## 4. SNMP: what it takes
 
 - **A library, or our own:** `github.com/gosnmp/gosnmp` (BSD-2, widely used, v1, v2c and v3) is the usual choice; the other way is a small

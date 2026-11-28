@@ -277,6 +277,11 @@ function loadView(viewName, fromHistory) {
                 activeViewCleanup = window.VPNModule.init();
             }
             break;
+        case 'netdevices':
+            if (window.NetDevicesModule) {
+                activeViewCleanup = window.NetDevicesModule.init();
+            }
+            break;
         case 'ddns':
             if (window.DDNSModule) {
                 activeViewCleanup = window.DDNSModule.init();

@@ -28,6 +28,7 @@ import (
 	"peakroute/internal/fwlog"
 	"peakroute/internal/lldp"
 	"peakroute/internal/netapi"
+	"peakroute/internal/netdevices"
 	"peakroute/internal/network"
 	"peakroute/internal/ovpn"
 	"peakroute/internal/presence"
@@ -531,6 +532,17 @@ func main() {
 	}
 	netAPI.LLDPNeighbours = neighbours
 	mux.HandleFunc("/api/v1/lldp", requireAuth(routerOnly(netAPI.HandleLLDP)))
+	// Switches and access points the router watches (docs/device-pages.md, phase 3): read over SNMP, and each says which port has which device
+	var watched *netdevices.Service
+	if wstore, err := netdevices.OpenStore(filepath.Join(configDir, "network_devices.json")); err != nil {
+		log.Printf("[!] Watched devices unavailable: %v", err)
+	} else {
+		watched = &netdevices.Service{Store: wstore, Drivers: map[string]netdevices.Driver{netdevices.KindSNMP: &netdevices.SNMPDriver{}}}
+		whileRouter(watched.Run)
+		mux.HandleFunc("/api/v1/network-devices", requireAuth(routerOnly(watched.HandleCollection)))
+		mux.HandleFunc("/api/v1/network-devices/{id}", requireAuth(routerOnly(watched.HandleItem)))
+		mux.HandleFunc("/api/v1/network-devices/{id}/poll", requireAuth(routerOnly(watched.HandlePoll)))
+	}
 	deviceSvc := &devices.Service{
 		Where: func(ctx context.Context, mac string) *devices.Where {
 			att, ok := bridgeTable(ctx)[strings.ToLower(mac)]
@@ -558,6 +570,9 @@ func main() {
 		},
 		History:  devHistory,
 		Stations: c.Stations.Get,
+	}
+	if watched != nil {
+		deviceSvc.Edge = watched.Locate
 	}
 	mux.HandleFunc("GET /api/v1/clients/{mac}", requireAuth(routerOnly(deviceSvc.HandleClient)))
 	mux.HandleFunc("GET /api/v1/clients/{mac}/history", requireAuth(routerOnly(deviceSvc.HandleHistory)))
