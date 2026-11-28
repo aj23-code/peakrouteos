@@ -132,7 +132,24 @@ Opened from the Clients list (the name is a link; `#device/<mac>` so it can be b
 - **API** (router only): `GET/POST /api/v1/network-devices`, `GET/PUT/DELETE /api/v1/network-devices/{id}`, `POST …/{id}/poll`.
   **Page:** *Network devices* under Network (`netdevices.js`): list with state, ports, add/edit (v3 offered first; v2c warns it is clear
   text), read now, delete.
-- **Not done:** the access point driver (3b), a retention setting, switch make and model, an SNMP agent on the AP.
+- **Not done:** a retention setting, switch make and model, an SNMP agent on the AP.
+
+## 3d. Phase 3b as built (PeakRoute access points)
+
+- **On the access point:** *Operation mode* has a *Monitoring* card (`apmonitor.js`, `GET/POST/DELETE /api/v1/ap/monitoring`, session sign-in
+  as everything else). *Make a token* issues 256 random bits, shown once; only their SHA-256 is kept, in `monitor_token.json` (0600, outside
+  `network.json`, not in backups). A new token replaces the old; *Turn off* revokes it. The token is accepted as `Authorization: Bearer` on
+  `GET /api/v1/ap/status` **only** (`Monitor.Allow` wraps that one route: other paths and other methods still need a session).
+- **On the router:** a watched device of kind *PeakRoute access point* (address, token, port 443 by default). `APDriver` asks
+  `https://<address>/api/v1/ap/status` every minute. The access point makes its own certificate, so it is **trusted on first use**: the
+  SHA-256 of the certificate seen on the first answer that the token was accepted over is stored with the device (`Store.SetFingerprint`),
+  and a later answer with another certificate is refused (*the certificate is not the one trusted*) until the device is edited with
+  *Trust the access point's certificate again*. Changing the address or port forgets it too. The token is never sent back to a page.
+- **What it gives:** cable ports and Wi-Fi links (state, speed), each radio as a port (band, channel, how many devices), and every connected
+  Wi-Fi device with its network, band and signal. `Locate` prefers the access point that has a device associated over any switch port, so a
+  Wi-Fi device's page says *Access point: AP hall, Wi-Fi Home · 5 GHz, signal*; a device on a cable behind the access point is not seen by it
+  (no forwarding table there yet).
+- **Not done:** uptime and the access point's name in the record (its status has neither), lldpd on the access point, an SNMP agent there.
 
 ## 4. SNMP: what it takes
 

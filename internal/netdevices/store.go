@@ -186,7 +186,7 @@ func Validate(d Device) Errors {
 			add("snmp.version", `must be "2c" or "3"`)
 		}
 	case KindAP:
-		// checked where the AP is added (netdevices/ap.go)
+		validateAP(d, add)
 	default:
 		add("kind", `must be "snmp" or "peakroute-ap"`)
 	}
@@ -274,6 +274,26 @@ func (s *Store) Update(d Device) (Device, error) {
 		return d, nil
 	}
 	return Device{}, os.ErrNotExist
+}
+
+// SetFingerprint remembers the certificate an access point was first seen with (only when none is set yet).
+func (s *Store) SetFingerprint(id, fp string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, o := range s.list {
+		if o.ID != id || o.AP == nil || o.AP.Fingerprint != "" {
+			continue
+		}
+		n := clone(o)
+		n.AP.Fingerprint = fp
+		s.list[i] = n
+		if err := s.save(); err != nil {
+			s.list[i] = o
+			return err
+		}
+		return nil
+	}
+	return nil
 }
 
 // Delete takes a device out.

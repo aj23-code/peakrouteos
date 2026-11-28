@@ -31,6 +31,7 @@ import (
 	"peakroute/internal/console"
 	"peakroute/internal/fsutil"
 	"peakroute/internal/netapi"
+	"peakroute/internal/netdevices"
 	"peakroute/internal/network"
 	"peakroute/internal/pipeline"
 	"peakroute/internal/setup"
@@ -498,7 +499,21 @@ func Start(o Options) *Core {
 	mux.HandleFunc("/api/v1/wifi/radios/{name}", requireAuth(netAPI.HandleWifiRadio))
 	mux.HandleFunc("/api/v1/wifi/stations/{name}", requireAuth(netAPI.HandleWifiStation))
 	mux.HandleFunc("/api/v1/wifi/scan", requireAuth(netAPI.HandleWifiScan))
-	mux.HandleFunc("/api/v1/ap/status", requireAuth(netAPI.HandleAPStatus))
+	// A router that watches this access point asks for its status with a read-only token (docs/device-pages.md, phase 3b): the token opens
+	// that one read and nothing else. Its hash is kept apart from the settings, and it is issued and revoked from the access point's page.
+	if monitor, err := netdevices.OpenMonitor(filepath.Join(o.ConfigDir, "monitor_token.json")); err != nil {
+		log.Printf("[!] Monitoring token unavailable: %v", err)
+		mux.HandleFunc("/api/v1/ap/status", requireAuth(netAPI.HandleAPStatus))
+	} else {
+		mux.HandleFunc("/api/v1/ap/status", monitor.Allow(requireAuth, netAPI.HandleAPStatus))
+		mux.HandleFunc("/api/v1/ap/monitoring", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+			if !cfgMgr.NetworkConfig().IsAP() {
+				http.Error(w, "This device is not an access point.", http.StatusConflict)
+				return
+			}
+			monitor.HandleMonitoring(w, r)
+		}))
+	}
 	mux.HandleFunc("/api/v1/ap", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			netAPI.HandleAPSet(w, r)

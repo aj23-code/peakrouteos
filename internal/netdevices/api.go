@@ -23,6 +23,13 @@ type SNMPView struct {
 	PrivPassSet  bool   `json:"priv_pass_set"`
 }
 
+// APView is an access point's settings as a page sees them: never the token.
+type APView struct {
+	Port        int    `json:"port,omitempty"`
+	TokenSet    bool   `json:"token_set"`
+	Fingerprint string `json:"fingerprint,omitempty"` // of the certificate that is trusted ("" until the first answer)
+}
+
 // View is one watched device and what is known of it.
 type View struct {
 	ID          string    `json:"id"`
@@ -31,6 +38,7 @@ type View struct {
 	Kind        string    `json:"kind"`
 	Enabled     bool      `json:"enabled"`
 	SNMP        *SNMPView `json:"snmp,omitempty"`
+	AP          *APView   `json:"ap,omitempty"`
 	Polled      bool      `json:"polled"`    // it has been asked at least once
 	Reachable   bool      `json:"reachable"` // it answered the last time
 	Error       string    `json:"error,omitempty"`
@@ -48,6 +56,9 @@ func (s *Service) view(d Device) View {
 	if a := d.SNMP; a != nil {
 		v.SNMP = &SNMPView{Version: a.Version, Port: a.Port, User: a.User, AuthProto: a.AuthProto, PrivProto: a.PrivProto,
 			CommunitySet: a.Community != "", AuthPassSet: a.AuthPass != "", PrivPassSet: a.PrivPass != ""}
+	}
+	if a := d.AP; a != nil {
+		v.AP = &APView{Port: a.Port, TokenSet: a.Token != "", Fingerprint: a.Fingerprint}
 	}
 	st := s.StatusOf(d.ID)
 	v.Polled, v.Reachable, v.Error = !st.PolledAt.IsZero(), st.Reachable, st.Error
@@ -73,6 +84,15 @@ type Request struct {
 	Kind    string       `json:"kind"`
 	Enabled *bool        `json:"enabled"`
 	SNMP    *SNMPRequest `json:"snmp"`
+	AP      *APRequest   `json:"ap"`
+}
+
+// APRequest is the access point part of a Request. A token that is left out keeps the stored one; TrustNewCertificate forgets the remembered
+// certificate, so that the next answer's is trusted instead (the access point's was renewed).
+type APRequest struct {
+	Port                int     `json:"port"`
+	Token               *string `json:"token"`
+	TrustNewCertificate bool    `json:"trust_new_certificate"`
 }
 
 // SNMPRequest is the SNMP part of a Request.
@@ -123,6 +143,20 @@ func merge(old Device, r Request) Device {
 			}
 		}
 		d.SNMP = &a
+	}
+	if r.AP != nil && d.Kind == KindAP {
+		a := APAuth{Port: r.AP.Port}
+		if old.AP != nil {
+			a.Token, a.Fingerprint = old.AP.Token, old.AP.Fingerprint
+		}
+		if r.AP.Token != nil {
+			a.Token = strings.TrimSpace(*r.AP.Token)
+		}
+		// a different address or port is a different device: its certificate is not the one that was trusted
+		if r.AP.TrustNewCertificate || (old.AP != nil && (old.Address != d.Address || old.AP.Port != a.Port)) {
+			a.Fingerprint = ""
+		}
+		d.AP = &a
 	}
 	return d
 }

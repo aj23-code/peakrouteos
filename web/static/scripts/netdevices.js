@@ -73,11 +73,13 @@ window.NetDevicesModule = (function () {
         const id = escapeHtml(d.id);
         const shown = !!open[d.id];
         const v2c = d.snmp && d.snmp.version === '2c';
+        const apTrusted = d.ap && d.ap.fingerprint;
         return `<div class="fw-row fw-rule${d.enabled ? '' : ' fw-rule--off'} netdev-row">
-            <div class="fw-main"><div class="fw-name"><strong>${escapeHtml(d.name)}</strong> <span class="form-hint">${escapeHtml(d.address)} · SNMP ${d.snmp ? escapeHtml(d.snmp.version) : ''}</span></div>
+            <div class="fw-main"><div class="fw-name"><strong>${escapeHtml(d.name)}</strong> <span class="form-hint">${escapeHtml(d.address)} · ${d.kind === 'peakroute-ap' ? 'PeakRoute access point' : 'SNMP ' + (d.snmp ? escapeHtml(d.snmp.version) : '')}</span></div>
                 <div class="ddns-status">${statusHtml(d)}</div>
                 ${d.description ? `<div class="form-hint fw-text">${escapeHtml(d.system_name ? d.system_name + ' · ' : '')}${escapeHtml(d.description)}</div>` : ''}
                 ${v2c && d.enabled ? '<div class="form-hint">SNMP version 2c sends its community in clear text on the network; version 3 does not.</div>' : ''}
+                ${apTrusted ? `<div class="form-hint">Certificate trusted: <code>${escapeHtml(d.ap.fingerprint.slice(0, 16))}…</code></div>` : ''}
                 ${shown ? portsHtml(d) : ''}</div>
             <div class="fw-actions">
                 <button type="button" class="cfg-btn cfg-btn--ghost nd-ports" data-id="${id}">${shown ? 'Hide ports' : 'Ports'}</button>
@@ -92,7 +94,7 @@ window.NetDevicesModule = (function () {
         return `<section class="card">
             <div class="net-card-head"><h2>Watched devices</h2><span class="tag">${data.devices.length}</span>
                 <button type="button" class="cfg-btn" id="nd-add" style="margin-left:auto"${lock || data.devices.length >= data.max ? ' disabled' : ''}>Add a device</button></div>
-            <p class="form-hint">Switches the router reads over SNMP. Each says which of its ports a device is on, so a device's page can show the switch and port it is plugged into, and the speed and VLAN of that port. The router only reads: it never changes anything on the switch. Turn SNMP on in the switch first and allow this router's address to read it.</p>
+            <p class="form-hint">Switches the router reads over SNMP, and PeakRoute access points it reads through their own status page. Each says which of its ports a device is on, so a device's page can show the switch and port it is plugged into, and the speed and VLAN of that port. The router only reads: it never changes anything on the switch. Turn SNMP on in the switch first and allow this router's address to read it.</p>
             <div class="fw-list">${data.devices.length ? data.devices.map(rowHtml).join('') : '<div class="fw-row fw-empty">No devices yet.</div>'}</div>
         </section>`;
     }
@@ -115,6 +117,18 @@ window.NetDevicesModule = (function () {
         const parts = [];
         parts.push(field('Name', 'nd-ed-name', input('nd-ed-name', 'name', f.name, { placeholder: 'Hall switch' }), 'name', 'What the pages call it.'));
         parts.push(field('Address', 'nd-ed-address', input('nd-ed-address', 'address', f.address, { placeholder: '192.168.1.2' }), 'address', 'Its address on the network, or its host name.'));
+        if (!editing.id) {
+            parts.push(field('Kind', 'nd-ed-kind', `<select id="nd-ed-kind" class="role-select" data-ed="kind"${busy ? ' disabled' : ''}><option value="snmp"${f.kind === 'snmp' ? ' selected' : ''}>A switch or other device with SNMP</option><option value="peakroute-ap"${f.kind === 'peakroute-ap' ? ' selected' : ''}>A PeakRoute access point</option></select>`, 'kind'));
+        }
+        if (f.kind === 'peakroute-ap') {
+            parts.push(field('Monitoring token', 'nd-ed-token', input('nd-ed-token', 'token', f.token, { type: 'password', autocomplete: 'new-password', placeholder: f.tokenSet ? 'unchanged' : '' }), 'ap.token',
+                `Made on the access point's own page (Operation mode, Monitoring). It lets this router read the access point's status and nothing else.${f.tokenSet ? ' One is saved; leave this empty to keep it.' : ''}`));
+            parts.push(field('Port', 'nd-ed-port', input('nd-ed-port', 'port', f.port, { placeholder: '443' }), 'ap.port', 'The port of its web page. Left empty: 443.'));
+            if (editing.id && f.fingerprint) {
+                parts.push(`<div class="form-field form-field--wide"><label class="check"><input type="checkbox" data-ed="trust"${f.trust ? ' checked' : ''}${busy ? ' disabled' : ''}> Trust the access point's certificate again</label>
+                    <p class="form-hint">The access point makes its own certificate, and this router remembered the one it first saw (<code>${escapeHtml(f.fingerprint.slice(0, 16))}…</code>). Tick this only if the access point's certificate was renewed or it was reset: the next answer's certificate is trusted instead.</p></div>`);
+            }
+        } else {
         parts.push(field('SNMP version', 'nd-ed-version', `<select id="nd-ed-version" class="role-select" data-ed="version"${busy ? ' disabled' : ''}><option value="3"${f.version === '3' ? ' selected' : ''}>3 (user and passwords, can be encrypted)</option><option value="2c"${f.version === '2c' ? ' selected' : ''}>2c (a community)</option></select>`, 'snmp.version'));
         if (f.version === '2c') {
             parts.push(field('Community', 'nd-ed-community', input('nd-ed-community', 'community', f.community, { type: 'password', autocomplete: 'new-password', placeholder: f.communitySet ? 'unchanged' : '' }), 'snmp.community',
@@ -129,6 +143,7 @@ window.NetDevicesModule = (function () {
             }
         }
         parts.push(field('Port', 'nd-ed-port', input('nd-ed-port', 'port', f.port, { placeholder: '161' }), 'snmp.port', 'Left empty: 161.'));
+        }
         return `<section class="card fw-editor" id="nd-editor">
             <div class="net-card-head"><h2>${editing.id ? 'Edit device' : 'New device'}</h2></div>
             <div class="form-grid">${parts.join('')}</div>
@@ -157,10 +172,14 @@ window.NetDevicesModule = (function () {
     function openEditor(id) {
         const d = id ? data.devices.find(x => x.id === id) : null;
         const s = d && d.snmp;
-        const form = d
-            ? { name: d.name, address: d.address, enabled: d.enabled, version: s.version, port: s.port ? String(s.port) : '', community: '', user: s.user || '', authProto: s.auth_proto || '', authPass: '', privProto: s.priv_proto || '', privPass: '',
+        const ap = d && d.ap;
+        const form = d && ap
+            ? { kind: 'peakroute-ap', name: d.name, address: d.address, enabled: d.enabled, port: ap.port ? String(ap.port) : '', token: '', tokenSet: ap.token_set, fingerprint: ap.fingerprint || '', trust: false,
+                version: '3', community: '', user: '', authProto: 'SHA', authPass: '', privProto: 'AES', privPass: '', communitySet: false, authPassSet: false, privPassSet: false }
+            : d
+            ? { kind: 'snmp', name: d.name, address: d.address, enabled: d.enabled, version: s.version, port: s.port ? String(s.port) : '', community: '', user: s.user || '', authProto: s.auth_proto || '', authPass: '', privProto: s.priv_proto || '', privPass: '',
                 communitySet: s.community_set, authPassSet: s.auth_pass_set, privPassSet: s.priv_pass_set }
-            : { name: '', address: '', enabled: true, version: '3', port: '', community: '', user: '', authProto: 'SHA', authPass: '', privProto: 'AES', privPass: '', communitySet: false, authPassSet: false, privPassSet: false };
+            : { kind: 'snmp', token: '', tokenSet: false, fingerprint: '', trust: false, name: '', address: '', enabled: true, version: '3', port: '', community: '', user: '', authProto: 'SHA', authPass: '', privProto: 'AES', privPass: '', communitySet: false, authPassSet: false, privPassSet: false };
         editing = { id: id || null, form, errors: {}, message: null };
         render();
         const first = $('nd-ed-name');
@@ -170,14 +189,22 @@ window.NetDevicesModule = (function () {
     async function saveEditor() {
         const f = editing.form;
         const snmp = { version: f.version, port: parseInt(f.port, 10) || 0 };
-        if (f.version === '2c') {
+        if (f.kind === 'peakroute-ap') {
+            // nothing of the SNMP form is sent
+        } else if (f.version === '2c') {
             if (f.community !== '') snmp.community = f.community;
         } else {
             snmp.user = f.user; snmp.auth_proto = f.authProto; snmp.priv_proto = f.authProto ? f.privProto : '';
             if (f.authPass !== '') snmp.auth_pass = f.authPass;
             if (f.privPass !== '') snmp.priv_pass = f.privPass;
         }
-        const body = { name: f.name, address: f.address, kind: 'snmp', enabled: f.enabled, snmp };
+        const body = { name: f.name, address: f.address, kind: f.kind, enabled: f.enabled };
+        if (f.kind === 'peakroute-ap') {
+            body.ap = { port: parseInt(f.port, 10) || 0, trust_new_certificate: !!f.trust };
+            if (f.token !== '') body.ap.token = f.token;
+        } else {
+            body.snmp = snmp;
+        }
         editing.errors = {}; editing.message = null;
         busy = true; render();
         const base = '/api/v1/network-devices';
@@ -187,8 +214,8 @@ window.NetDevicesModule = (function () {
         if (!res || !res.ok) {
             const e = await errorOf(res, 'Saving failed.');
             const general = [];
-            Object.keys(e.fields).forEach(k => { if (['name', 'address', 'snmp.version', 'snmp.community', 'snmp.user', 'snmp.auth_proto', 'snmp.auth_pass', 'snmp.priv_proto', 'snmp.priv_pass', 'snmp.port'].includes(k)) editing.errors[k] = e.fields[k]; else general.push(e.fields[k]); });
-            f.community = f.authPass = f.privPass = '';
+            Object.keys(e.fields).forEach(k => { if (['name', 'address', 'snmp.version', 'snmp.community', 'snmp.user', 'snmp.auth_proto', 'snmp.auth_pass', 'snmp.priv_proto', 'snmp.priv_pass', 'snmp.port', 'ap.token', 'ap.port', 'ap.fingerprint', 'kind'].includes(k)) editing.errors[k] = e.fields[k]; else general.push(e.fields[k]); });
+            f.community = f.authPass = f.privPass = f.token = '';
             editing.message = general.join(' ') || (Object.keys(editing.errors).length ? 'Some settings need attention.' : e.general);
             render();
             return;
@@ -246,7 +273,8 @@ window.NetDevicesModule = (function () {
             if (!editing || !el.dataset.ed) return;
             const f = editing.form;
             if (el.dataset.ed === 'enabled') f.enabled = el.checked;
-            else if (['version', 'authProto', 'privProto'].includes(el.dataset.ed)) {
+            else if (el.dataset.ed === 'trust') f.trust = el.checked;
+            else if (['kind', 'version', 'authProto', 'privProto'].includes(el.dataset.ed)) {
                 f[el.dataset.ed] = el.value;
                 if (el.dataset.ed === 'authProto' && !el.value) f.privProto = '';
                 editing.errors = {};
@@ -256,8 +284,9 @@ window.NetDevicesModule = (function () {
         body.addEventListener('input', (e) => {
             const el = e.target;
             if (!editing || !el.dataset.ed || el.type === 'checkbox' || el.tagName === 'SELECT') return;
-            editing.form[el.dataset.ed] = el.value;
-            const key = { community: 'snmp.community', user: 'snmp.user', authPass: 'snmp.auth_pass', privPass: 'snmp.priv_pass', port: 'snmp.port' }[el.dataset.ed] || el.dataset.ed;
+            const f = editing.form;
+            f[el.dataset.ed] = el.value;
+            const key = { community: 'snmp.community', user: 'snmp.user', authPass: 'snmp.auth_pass', privPass: 'snmp.priv_pass', port: f.kind === 'peakroute-ap' ? 'ap.port' : 'snmp.port', token: 'ap.token' }[el.dataset.ed] || el.dataset.ed;
             delete editing.errors[key];
             el.removeAttribute('aria-invalid');
             el.closest('.form-field')?.querySelector('.field-error')?.remove();

@@ -537,7 +537,10 @@ func main() {
 	if wstore, err := netdevices.OpenStore(filepath.Join(configDir, "network_devices.json")); err != nil {
 		log.Printf("[!] Watched devices unavailable: %v", err)
 	} else {
-		watched = &netdevices.Service{Store: wstore, Drivers: map[string]netdevices.Driver{netdevices.KindSNMP: &netdevices.SNMPDriver{}}}
+		watched = &netdevices.Service{Store: wstore, Drivers: map[string]netdevices.Driver{
+			netdevices.KindSNMP: &netdevices.SNMPDriver{},
+			netdevices.KindAP:   &netdevices.APDriver{Pin: func(id, fp string) { _ = wstore.SetFingerprint(id, fp) }},
+		}}
 		whileRouter(watched.Run)
 		mux.HandleFunc("/api/v1/network-devices", requireAuth(routerOnly(watched.HandleCollection)))
 		mux.HandleFunc("/api/v1/network-devices/{id}", requireAuth(routerOnly(watched.HandleItem)))

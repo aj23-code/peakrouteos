@@ -221,7 +221,7 @@ func TestAnAccessPointThatHasADeviceAssociatedIsItsEdgeAndShowsItsWifi(t *testin
 	sw, _ := s.Store.Add(snmpDev("Switch", "192.168.1.2"))
 	ap := snmpDev("AP hall", "192.168.1.9")
 	ap.Kind = KindAP
-	ap.SNMP, ap.AP = nil, &APAuth{Token: "t"}
+	ap.SNMP, ap.AP = nil, &APAuth{Token: strings.Repeat("t", 43)}
 	apd, _ := s.Store.Add(ap)
 	mac := "a8:bb:cc:00:00:01"
 	sig := -61
@@ -314,4 +314,13 @@ func TestTheAPIAddsChangesAndRemovesDevicesAndNeverSendsASecret(t *testing.T) {
 	if rec, _ = call(t, s, s.HandlePoll, http.MethodGet, "", "nd1"); rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("%d", rec.Code)
 	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }

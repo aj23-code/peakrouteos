@@ -293,8 +293,11 @@ function loadView(viewName, fromHistory) {
             }
             break;
         case 'ap':
-            if (window.APModule) {
-                activeViewCleanup = window.APModule.init();
+            {
+                const cleanups = [];
+                if (window.APModule) cleanups.push(window.APModule.init());
+                if (window.APMonitorModule) cleanups.push(window.APMonitorModule.init());
+                activeViewCleanup = () => cleanups.forEach(f => { if (typeof f === 'function') f(); });
             }
             break;
         case 'diagnostics':
